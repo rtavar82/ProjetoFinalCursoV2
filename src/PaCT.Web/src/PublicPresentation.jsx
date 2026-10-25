@@ -27,7 +27,9 @@ function PublicAccordion({ label, title, titleId, className = '', bodyClassName 
   </details>
 }
 
-export default function PublicPresentation({ page, onNavigate, children, profile, onAccount }) {
+function ContentOnly({ children }) { return children }
+
+export default function PublicPresentation({ page, onNavigate, children, profile, onAccount, embedded = false }) {
   const resource = useLiveResource('publicPresentation', 'public-presentation', readPublicPresentation, !['PublicAgenda', 'PublicTestimonials'].includes(page))
   const [payment, setPayment] = useState(null)
   const [experienceConditions, setExperienceConditions] = useState(null)
@@ -38,6 +40,7 @@ export default function PublicPresentation({ page, onNavigate, children, profile
   const experienceCards = (data?.experiencePresentations || []).map(experience => ({ experience, service: activities.find(service => [experience.title, ...(experience.serviceTitles || [])].some(title => service.title.trim().toLocaleLowerCase('pt-PT') === title.trim().toLocaleLowerCase('pt-PT'))) }))
   const selectedExperience = experienceCards.find(card => card.experience.key === experienceConditions)?.experience
   const otherActivities = activities.filter(service => !experienceCards.some(card => card.service?.id === service.id))
+  const Layout = embedded ? ContentOnly : AppLayout
   function showServices(event) {
     event.preventDefault()
     const section = document.getElementById('servicos')
@@ -46,7 +49,7 @@ export default function PublicPresentation({ page, onNavigate, children, profile
     section?.scrollIntoView({ block: 'start' })
     section?.focus({ preventScroll: true })
   }
-  return <AppLayout publicNavigation onHome={() => onNavigate('PublicHome')} navigation={<nav className={styles.navigation} aria-label="Navegação principal"><button type="button" aria-current={['PublicHome', 'PublicTestimonials'].includes(page) ? 'page' : undefined} onClick={() => onNavigate('PublicHome')}><AppIcon name="leaf" />Início</button><button type="button" aria-current={page === 'PublicAgenda' ? 'page' : undefined} onClick={() => onNavigate('PublicAgenda')}><AppIcon name="calendar" />Agenda</button><button type="button" aria-current={page === 'PublicPromotions' ? 'page' : undefined} onClick={() => onNavigate('PublicPromotions')}><AppIcon name="heart" />Partilhas</button></nav>}
+  return <Layout publicNavigation onHome={() => onNavigate('PublicHome')} navigation={<nav className={styles.navigation} aria-label="Navegação principal"><button type="button" aria-current={['PublicHome', 'PublicTestimonials'].includes(page) ? 'page' : undefined} onClick={() => onNavigate('PublicHome')}><AppIcon name="leaf" />Início</button><button type="button" aria-current={page === 'PublicAgenda' ? 'page' : undefined} onClick={() => onNavigate('PublicAgenda')}><AppIcon name="calendar" />Agenda</button><button type="button" aria-current={page === 'PublicPromotions' ? 'page' : undefined} onClick={() => onNavigate('PublicPromotions')}><AppIcon name="heart" />Partilhas</button></nav>}
     session={profile ? <button type="button" className="secondary" onClick={onAccount}>Voltar à minha área</button> : <><span>Visitante</span><button type="button" className="secondary" onClick={() => onNavigate('SignIn')}>Iniciar sessão</button></>}>
     <div className={`${styles.page} ${page === 'PublicHome' ? styles.homePage : ''}`}>
       {['PublicAgenda', 'PublicTestimonials', 'PublicPromotions'].includes(page) ? children : <>
@@ -80,5 +83,5 @@ export default function PublicPresentation({ page, onNavigate, children, profile
       {paymentService && <PublicPaymentDialog key={paymentService.id} service={paymentService} information={data.paymentInformation} person={person} onClose={() => setPayment(null)} />}
       {selectedExperience && <PublicExperienceDialog key={selectedExperience.key} experience={selectedExperience} information={data.paymentInformation} person={person} onClose={() => setExperienceConditions(null)} />}
     </div>
-  </AppLayout>
+  </Layout>
 }

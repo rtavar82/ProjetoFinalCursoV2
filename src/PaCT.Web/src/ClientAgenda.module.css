@@ -57,6 +57,11 @@
 .accountNote { margin-block: .5rem; font-size: .9rem; }
 .accountNote p { color: var(--muted); margin-top: .5rem; font-size: .8rem; }
 .review { margin-top: 1rem; padding: 1rem; border: 1px solid var(--line); border-radius: 1rem; background: var(--tint); }
+.bookingDetails { display: grid; gap: .9rem; margin: 1.2rem 0; }
+.bookingDetails dt { color: var(--muted); font-size: .8rem; }
+.bookingDetails dd { margin: .2rem 0 0; overflow-wrap: anywhere; }
+.bookingActions { display: grid; gap: .65rem; margin-top: 1rem; }
+.bookingActions button { margin: 0; }
 .savedText { white-space: pre-wrap; overflow-wrap: anywhere; }
 .srOnly { position: absolute; height: 1px; width: 1px; overflow: hidden; clip-path: inset(50%); }
 @media (max-width: 359px) { .calendar { margin-inline: -16px; padding-inline: 4px; } }

@@ -10,6 +10,9 @@ import FinancePage from './FinancePage'
 import ConsultationAlerts from './ConsultationAlerts'
 import ClientConsultationHistory from './ClientConsultationHistory'
 import TestimonialManager from './TestimonialManager'
+import PublicPresentation from './PublicPresentation'
+import PublicTestimonials from './PublicTestimonials'
+import PublicPromotions from './PublicPromotions'
 import { apiRequest } from './identityApi'
 import { isManager } from './identityRoles'
 import { observeResource } from './liveUpdates'
@@ -26,6 +29,7 @@ function WorkspaceContent({ profile, busy, perform, notify, error, message, erro
   const client = profile.role === 'Client'
   const operational = isManager(profile.role)
   const [page, setPage] = useState('Agenda')
+  const [homePage, setHomePage] = useState('PublicHome')
   const [consultationEntry, setConsultationEntry] = useState(null)
   const [testimonialEntry, setTestimonialEntry] = useState(null)
   const [online, setOnline] = useState(navigator.onLine)
@@ -72,10 +76,18 @@ function WorkspaceContent({ profile, busy, perform, notify, error, message, erro
   }
   async function guard(action) { if (confirmLeaving()) { try { await flushPrivateDrafts(); setDraftError(''); await action() } catch (failure) { setDraftError(failure.message) } } }
   function signOut() { guard(onSignOut) }
-  function navigate(next) { if (next !== page) guard(() => { setConsultationEntry(null); setPage(next) }) }
+  function navigate(next) { if (next !== page || next === 'Home') guard(() => { setConsultationEntry(null); if (next === 'Home') { setHomePage('PublicHome'); window.scrollTo(0, 0) } setPage(next) }) }
+  function navigateHome(next, serviceId = '') {
+    guard(() => {
+      if (next === 'PublicAgenda') { setConsultationEntry({ browse: true, serviceId }); setPage('Agenda') }
+      else { setHomePage(next); setPage('Home') }
+      window.scrollTo(0, 0)
+    })
+  }
   function openReviews() { guard(() => { setClientEntry(previous => ({ version: previous.version + 1, view: 'Reviews' })); setPage('Clients') }) }
   const ActiveConsultationPage = page === 'Finance' ? FinancePage : page === 'Consultations' ? ConsultationHistoryPage : AgendaPage
   const navigationItems = [
+    ...(client ? [{ id: 'Home', label: 'Início', icon: 'leaf', active: page === 'Home' }] : []),
     ...((client || operational) ? [{ id: 'Agenda', label: 'Agenda', icon: 'calendar', active: page === 'Agenda' }] : []),
     ...(operational ? [{ id: 'Consultations', label: 'Consultas', icon: 'clock', active: page === 'Consultations' }, { id: 'Finance', label: 'Financeiro', icon: 'wallet', active: page === 'Finance' }] : []),
     ...(client ? [{ id: 'Followup', label: 'Consultas fechadas', icon: 'clock', active: page === 'Followup' }] : []),
@@ -83,7 +95,7 @@ function WorkspaceContent({ profile, busy, perform, notify, error, message, erro
     ...(operational ? [{ id: 'Testimonials', label: 'Testemunhos', icon: 'heart', active: page === 'Testimonials' }] : []),
     { id: client ? 'Profile' : 'Account', label: 'Meu perfil', icon: 'user', active: ['Profile', 'Account'].includes(page) },
   ]
-  return <AppLayout authenticated onResetCapture={event => dirty.current.delete(event.target)} onChangeCapture={event => { const form = event.target.closest('form[data-protect-draft]'); if (form) dirty.current.add(form) }}
+  return <AppLayout authenticated onHome={client ? () => navigate('Home') : undefined} onResetCapture={event => dirty.current.delete(event.target)} onChangeCapture={event => { const form = event.target.closest('form[data-protect-draft]'); if (form) dirty.current.add(form) }}
     navigation={<AppNavigation items={navigationItems} onNavigate={navigate} />} session={<><span className="header-label">{client ? 'Cliente' : profile.role === 'TechnicalManager' ? 'Gestor técnico' : 'Gestora-terapeuta'}</span><button className="secondary" disabled={busy} onClick={signOut}>Terminar sessão</button></>} alerts={<>
       <PrivateDraftStatus />
       {!online && <p className="notice" role="status">Sem rede. Podes continuar um rascunho já desbloqueado; o fecho e as outras operações continuam a exigir ligação.</p>}
@@ -103,6 +115,10 @@ function WorkspaceContent({ profile, busy, perform, notify, error, message, erro
         {client && <button className={page === 'Profile' ? '' : 'secondary'} aria-current={page === 'Profile' ? 'page' : undefined} onClick={() => navigate('Profile')}>Meus dados</button>}
         <button className={page === 'Account' ? '' : 'secondary'} aria-current={page === 'Account' ? 'page' : undefined} onClick={() => navigate('Account')}>A minha conta</button>
       </nav></section>}
+      {client && page === 'Home' && <PublicPresentation embedded page={homePage} profile={profile} onNavigate={navigateHome}>
+        {homePage === 'PublicTestimonials' && <PublicTestimonials onBack={() => navigateHome('PublicHome')} />}
+        {homePage === 'PublicPromotions' && <PublicPromotions onAgenda={serviceId => navigateHome('PublicAgenda', serviceId)} />}
+      </PublicPresentation>}
       {!client && page === 'Clients' && <Clients key={clientEntry.version} initialView={clientEntry.view} pendingReviewCount={reviewSummary.count} busy={busy} perform={perform} notify={notify} guard={guard} />}
       {client && page === 'Profile' && <PersonalProfile busy={busy} perform={perform} notify={notify} />}
       {(client || operational) && ['Agenda', 'Consultations', 'Finance'].includes(page) && <ActiveConsultationPage key={`${page}:${consultationEntry?.payments ? 'payments' : consultationEntry?.events ? 'events' : consultationEntry?.packs ? 'packs' : consultationEntry?.guests ? 'guests' : 'default'}`} manager={operational} initialEntry={consultationEntry} guard={guard} onFollowup={id => guard(() => { setConsultationEntry({ id, revision: Date.now() }); setPage('Followup') })} onCreateClient={() => { setClientEntry(previous => ({ version: previous.version + 1, view: 'Create' })); setPage('Clients') }} />}

@@ -23,12 +23,14 @@ const states = { Requested: 'A aguardar confirmação', Confirmed: 'Confirmada',
 function badge(c) { return c.section === 'Payments' ? c.financialState === 'ConditionsPending' ? 'Por validar condições' : 'Pagamento pendente' : c.state === 'Performed' ? c.financialState === 'Paid' ? 'Fechada — paga' : 'Fechada — sem dívida' : states[c.state] || c.state }
 
 export default function ClientAgenda({ initialEntry, guard, onFollowup }) {
-  const [view, setView] = useState(initialEntry?.events ? 'Events' : initialEntry?.packs ? 'Packs' : 'List')
-  const [section, setSection] = useState('Payments'), [page, setPage] = useState(1), [seen, setSeen] = useState(false)
+  const [view, setView] = useState(initialEntry?.browse ? 'Calendar' : initialEntry?.events ? 'Events' : initialEntry?.packs ? 'Packs' : 'List')
+  const [sectionChoice, setSectionChoice] = useState(() => ({ section: 'Payments', automatic: !initialEntry?.payments }))
+  const section = sectionChoice.section
+  const [page, setPage] = useState(1), [seen, setSeen] = useState(false)
   const [request, setRequest] = useState(initialEntry?.bookingDraft ? { id: initialEntry.id, scope: initialEntry.recoverScope } : null)
   const [detail, setDetail] = useState(null), [domain, setDomain] = useState(initialEntry?.id || null)
   const [busy, setBusy] = useState(false), [uncertain, setUncertain] = useState(false)
-  const [extrasOpen, setExtrasOpen] = useState(false), [browseService, setBrowseService] = useState('')
+  const [extrasOpen, setExtrasOpen] = useState(false), [browseService, setBrowseService] = useState(initialEntry?.serviceId || '')
   const [error, setError] = useState(''), [message, setMessage] = useState('')
   const pending = useRef(null), activeWrite = useRef(false)
   const vault = usePrivateVault()
@@ -83,7 +85,12 @@ export default function ClientAgenda({ initialEntry, guard, onFollowup }) {
   }
   const feedback = <>{error && <p role="alert" className="notice error">{error}</p>}{message && <p role="status" className="notice success">{message}</p>}{uncertain && !request && <button disabled={busy} onClick={() => void act(null, {}, true)}>Verificar resultado</button>}</>
   const result = list.data
-  function changeSection(value) { guard(() => { setSection(value); setPage(1); setSeen(false) }) }
+  // Resolve the default once, from the actual Payments list. Explicit navigation
+  // and later refreshes must never replace a section the client has chosen.
+  if (sectionChoice.automatic && view === 'List' && result && !list.error) {
+    setSectionChoice({ section: result.total === 0 ? 'Upcoming' : 'Payments', automatic: false })
+  }
+  function changeSection(value) { guard(() => { setSectionChoice({ section: value, automatic: false }); setPage(1); setSeen(false) }) }
   return <section className={styles.page} data-pending-command={busy || uncertain ? 'true' : undefined}>
     <p className={styles.eyebrow}>A tua agenda</p><h1>Um tempo para ti.</h1><p>Escolhe o dia. Encontra o teu horário.</p>
     {!detail && !request && !['Packs', 'Events'].includes(view) && feedback}
@@ -102,7 +109,7 @@ export default function ClientAgenda({ initialEntry, guard, onFollowup }) {
     <details onToggle={event => setExtrasOpen(event.currentTarget.open)}><summary>Outras opções da agenda</summary><nav className={styles.tabs} aria-label="Outras áreas da agenda"><button className="secondary" onClick={() => domainOpen('Pack', null)}>Packs</button><button className="secondary" onClick={() => domainOpen('Event', null)}>Grupos e retiros</button></nav>{extrasOpen && view === 'List' && section === 'Payments' && <ClientFinance onOpenDomain={domainOpen} />}</details>
     {view === 'Events' && <GroupEventsPanel manager={false} send={command => send(command).catch(() => null)} disabled={busy || uncertain} guard={guard} feedback={feedback} initialEntry={domain ? { events: true, id: domain } : null} />}
     {view === 'Packs' && <SessionPacksPanel manager={false} send={command => send(command).catch(() => null)} disabled={busy || uncertain} guard={guard} feedback={feedback} initialId={domain} />}
-    {request && <ClientBookingDialog key={request.id} seed={request} onBrowseService={id => { setRequest(null); setBrowseService(id); setView('Calendar') }} send={send} disabled={busy} guard={guard} onClose={() => setRequest(null)} onConfirmed={() => { setRequest(null); setSection('Other'); setPage(1); setView('List') }} />}
+    {request && <ClientBookingDialog key={request.id} seed={request} onBrowseService={id => { setRequest(null); setBrowseService(id); setView('Calendar') }} send={send} disabled={busy} guard={guard} onClose={() => setRequest(null)} onConfirmed={() => { setRequest(null); setSectionChoice({ section: 'Other', automatic: false }); setPage(1); setView('List') }} />}
     {detail && <ClientDetail detail={detail} latest={latest} feedback={feedback} disabled={busy || uncertain} act={act} onClose={() => guard(() => setDetail(null))} onReview={after => guard(() => { setDetail(latest.data); after() })} onFollowup={() => onFollowup(detail.id)} />}
   </section>
 }
