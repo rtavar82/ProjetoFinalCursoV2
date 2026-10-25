@@ -1,0 +1,25 @@
+.page { min-width: 0; }
+.page :global(.section-tabs), .page :global(.button-row), .page :global(.pager) { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+.page :global(.section-tabs) button, .page :global(.button-row) button, .page :global(.pager) button { width: auto; margin: 0; }
+.page :global(.section-tabs) { margin: 28px 0; gap: 8px; }
+.page :global(.section-tabs) button, .page :global(.button-row) button { flex: 1 1 100%; }
+.page :global(.search-panel), .page :global(.record-panel) { padding: 18px; background: #fff; border: 1px solid var(--line); border-radius: 20px; margin-bottom: 24px; min-width: 0; }
+.page :global(.search-panel) > p { font-size: 14px; color: var(--muted); }
+.page :global(.search-panel) :global(.field-help) { margin-top: 16px; margin-bottom: 0; }
+.page :global(.client-badge) { display: inline-block; font-size: 11px; color: var(--accent); background: var(--tint); padding: 4px 9px; border-radius: 7px; margin-top: 8px; }
+.page :global(.client-form) :global(.field-help) { margin: 0; }
+.page :global(.review-card) { border: 1px solid #dfd6b8; background: #fffdf6; padding: 18px; border-radius: 16px; margin-top: 24px; }
+.page :global(.review-card) fieldset { min-width: 0; display: grid; gap: 12px; border: 1px solid var(--line); border-radius: 12px; padding: 18px; }
+.page :global(.review-card) :global(.checkbox) { overflow-wrap: anywhere; }
+.page :global(.comparison-links) { display: grid; gap: 8px; margin-top: 16px; }
+.page :global(.comparison-links) :global(.text-button) { text-align: left; padding: 8px 0; margin: 0; text-decoration: underline; }
+.page :global(.client-comparison) { width: min(640px, calc(100% - 24px)); max-height: calc(100dvh - 24px); padding: 20px; border: 1px solid var(--line); border-radius: 18px; color: var(--ink); background: #fff; overflow: auto; }
+.page :global(.client-comparison)::backdrop { background: #183b3080; }
+.page :global(.client-comparison) p { font-size: 14px; }
+.page :global(.client-data-summary) { display: grid; gap: 14px; }
+.page :global(.client-data-summary) > div { border-bottom: 1px solid var(--line); padding-bottom: 10px; }
+.page :global(.client-data-summary) dt { color: var(--muted); font-size: 12px; }
+.page :global(.client-data-summary) dd { margin: 4px 0 0; overflow-wrap: anywhere; }
+.page :global(.pager) { justify-content: center; margin-top: 24px; }
+.page :global(.pager) span { font-size: 13px; }
+@media (min-width: 421px) { .page :global(.section-tabs) { gap: 12px; } .page :global(.section-tabs) button { flex: 0 1 auto; } .page :global(.review-card) { padding: 24px; } }

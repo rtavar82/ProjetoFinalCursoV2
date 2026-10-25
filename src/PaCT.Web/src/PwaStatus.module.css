@@ -1,0 +1,4 @@
+.status { margin: 0 auto; padding: 15px max(16px, env(safe-area-inset-right)) 15px max(16px, env(safe-area-inset-left)); background: var(--tint); border-bottom: 1px solid var(--line); font-size: 14px; overflow-wrap: anywhere; }
+.status button { margin: 8px 0 0; }
+.status p { margin: 8px 0; }
+@media (min-width: 781px) { .status { display: flex; align-items: center; gap: 20px; padding: 15px 24px; } .status button { width: auto; } }

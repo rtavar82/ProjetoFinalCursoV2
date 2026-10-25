@@ -1,0 +1,10 @@
+.conversation { min-width: 0; padding-block: 1rem; border-top: 1px solid var(--line); }
+.conversation h3 { font-family: Georgia, 'Times New Roman', serif; font-size: 1.5rem; }
+.conversation form { margin-block-start: 1rem; }
+.conversation textarea { min-height: 8rem; resize: vertical; }
+.messages { display: grid; gap: .8rem; list-style: none; padding: 0; margin-block: 1rem; }
+.messages li { border: 1px solid var(--line); border-radius: 1rem; padding: .85rem; background: var(--surface); min-width: 0; }
+.messages .own { background: var(--tint); }
+.author { font-size: .875rem; color: var(--muted); margin-block: 0 .6rem; overflow-wrap: anywhere; }
+.text { white-space: pre-wrap; overflow-wrap: anywhere; margin: 0; }
+.pages { display: flex; flex-wrap: wrap; gap: .5rem; }

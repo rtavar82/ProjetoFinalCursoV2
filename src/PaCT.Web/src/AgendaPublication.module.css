@@ -1,0 +1,16 @@
+.card { margin-bottom: 24px; }
+.fields { display: grid; gap: 18px; min-width: 0; margin: 0; padding: 0; border: 0; }
+.range { display: grid; gap: 14px; grid-template-columns: minmax(0, 1fr); }
+.row, .pattern { min-width: 0; border: 1px solid var(--line); border-radius: 14px; padding: 14px; }
+.row { display: grid; gap: 14px; }
+.row legend { padding-inline: 6px; }
+.row button, .pattern button { margin-top: 0; }
+.pattern > * + * { margin-top: 16px; }
+.pattern > summary { min-height: 48px; }
+.weekdays { display: flex; flex-wrap: wrap; gap: 12px 18px; }
+.weekdays label { min-height: 44px; align-items: center; }
+.review { margin-top: 24px; padding: 18px; border: 1px solid var(--accent); border-radius: 16px; background: var(--tint); }
+.review li { margin-bottom: 10px; }
+.review ul { padding-left: 20px; overflow-wrap: anywhere; }
+.review label { margin-block: 18px; }
+@media (min-width: 641px) { .range { grid-template-columns: repeat(2, minmax(0, 1fr)); } }

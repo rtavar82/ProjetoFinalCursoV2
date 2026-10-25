@@ -1,0 +1,6 @@
+.frame { min-height: 100dvh; min-width: 0; }
+.notices:empty { display: none; }
+@media (min-width: 1080px) {
+  .notices { position: sticky; top: 0; z-index: 40; }
+}
+@media print { .notices { display: none; } }

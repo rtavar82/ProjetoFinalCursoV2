@@ -1,0 +1,39 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/PaCT.Api/PaCT.Api.csproj" />
+  </Folder>
+  <Folder Name="/src/PaCT.Web/">
+    <File Path="src/PaCT.Web/package.json" />
+    <File Path="src/PaCT.Web/package-lock.json" />
+    <File Path="src/PaCT.Web/vite.config.js" />
+    <File Path="src/PaCT.Web/eslint.config.js" />
+    <File Path="src/PaCT.Web/index.html" />
+    <File Path="src/PaCT.Web/src/main.jsx" />
+    <File Path="src/PaCT.Web/src/App.jsx" />
+    <File Path="src/PaCT.Web/src/App.css" />
+    <File Path="src/PaCT.Web/src/identityApi.js" />
+    <File Path="src/PaCT.Web/src/registrationValidation.js" />
+    <File Path="src/PaCT.Web/src/RegistrationFields.jsx" />
+    <File Path="src/PaCT.Web/src/TherapistManagement.jsx" />
+    <File Path="src/PaCT.Web/src/InvitedTherapistRegistration.jsx" />
+    <File Path="src/PaCT.Web/src/Workspace.jsx" />
+    <File Path="src/PaCT.Web/src/Clients.jsx" />
+    <File Path="src/PaCT.Web/src/ClientComparison.jsx" />
+    <File Path="src/PaCT.Web/src/ClientDataSummary.jsx" />
+    <File Path="src/PaCT.Web/src/ClientProfileForm.jsx" />
+    <File Path="src/PaCT.Web/src/PhoneFields.jsx" />
+    <File Path="src/PaCT.Web/src/PwaStatus.jsx" />
+    <File Path="src/PaCT.Web/src/publicStorage.js" />
+    <File Path="src/PaCT.Web/src/service-worker.js" />
+    <File Path="src/PaCT.Web/public/manifest.webmanifest" />
+    <File Path="src/PaCT.Web/public/app-icon.svg" />
+    <File Path="src/PaCT.Web/src/index.css" />
+    <File Path="src/PaCT.Web/README.md" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/PaCT.Api.Tests/PaCT.Api.Tests.csproj" />
+    <File Path="tests/PaCT.Web.Tests/client-visual-check.cjs" />
+    <File Path="tests/PaCT.Web.Tests/pwa-check.cjs" />
+    <File Path="tests/PaCT.Web.Tests/render-icons.cjs" />
+  </Folder>
+</Solution>

@@ -1,0 +1,6 @@
+.dialog { background: var(--surface); color: var(--ink); border: 1px solid var(--line); border-radius: var(--card-radius); padding: 1.1rem; width: min(calc(100% - 1.2rem), 36rem); max-height: calc(100dvh - 1.5rem - env(safe-area-inset-top) - env(safe-area-inset-bottom)); overflow-y: auto; overflow-wrap: anywhere; box-sizing: border-box; scroll-padding-block: 1rem; }
+.dialog::backdrop { background: #253e3480; }
+.dialog h2 { font-family: Georgia, 'Times New Roman', serif; font-size: 1.4rem; margin-top: 0; }
+.compactClose { position: sticky; top: 0; float: right; width: 44px; min-height: 44px; margin: -.5rem -.5rem .2rem .5rem; padding: .3rem; font-size: 1.6rem; border: 0; background: var(--surface); color: var(--ink); z-index: 2; }
+.compactClose:hover:not(:disabled) { background: var(--tint); color: var(--ink); }
+@media (min-width: 640px) { .dialog { padding: 1.5rem; } }

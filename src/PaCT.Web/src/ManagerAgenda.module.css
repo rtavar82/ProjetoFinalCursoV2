@@ -1,0 +1,49 @@
+.page { display: grid; gap: 24px; min-width: 0; }
+.card { min-width: 0; padding: 20px 16px; border: 1px solid var(--line); border-radius: var(--card-radius); background: var(--surface); }
+.card h1 { margin: 8px 0 10px; }
+.card h2 { font-size: clamp(24px, 3vw, 30px); margin: 8px 0 0; }
+.eyebrow { color: var(--muted); font-size: 11px; letter-spacing: .12em; text-transform: uppercase; margin: 0; }
+.actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin-top: 24px; }
+.actions button { width: 100%; min-height: 52px; margin: 0; padding: 12px; font-size: 14px; }
+.actions p { font-size: 12px; line-height: 1.6; color: var(--muted); margin: 10px 0 0; }
+.heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.heading > :global(.text-button) { flex: 0 0 auto; width: auto; margin: 0; padding: 8px 0; font-size: 12px; }
+.description { color: var(--muted); font-size: 13px; line-height: 1.7; margin: 24px 0 18px; }
+.tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin: 0 0 16px; }
+.tabs button { width: 100%; min-height: 60px; padding: 10px; margin: 0; font-size: 13px; line-height: 1.4; }
+.tabs button[aria-pressed='true'] { color: white; background: var(--accent); border-color: var(--accent); }
+.period { border: 1px solid var(--line); border-radius: 16px; padding: 18px; margin-bottom: 16px; background: var(--canvas); }
+.periodModes { display: flex; gap: 8px; margin-bottom: 16px; }
+.periodModes button { width: auto; margin: 0; min-height: 44px; padding: 10px 16px; }
+.periodModes button[aria-pressed='true'] { border-color: var(--accent); background: var(--tint); color: var(--ink); }
+.period label { max-width: 340px; font-size: 13px; color: var(--muted); }
+.period input { min-height: 44px; }
+.periodNavigation { display: flex; justify-content: space-between; align-items: center; gap: 6px; margin-top: 14px; }
+.periodNavigation button { width: auto; min-height: 44px; padding: 8px 0; margin: 0; font-size: 12px; }
+.period > p { margin: 10px 0 0; font-size: 12px; }
+.results { display: grid; gap: 14px; }
+.booking { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 20px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); overflow-wrap: anywhere; }
+.booking > div { min-width: 0; }
+.booking h3 { font-size: 20px; margin: 14px 0 8px; }
+.booking p { font-size: 13px; margin: 8px 0; }
+.booking > button { flex-shrink: 0; width: auto; margin: 0; min-height: 44px; padding: 10px 16px; }
+.badge { display: inline-block; font-size: 11px; padding: 6px 10px; border-radius: 8px; background: var(--tint); }
+.booking .pending { color: var(--ink); font-weight: 600; }
+.booking .reference { font-size: 10px; color: var(--muted); }
+.empty { text-align: center; border: 1px solid var(--line); border-radius: 16px; padding: 36px 20px; background: var(--surface); }
+.pagination { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.pagination button { width: auto; }
+@media (max-width: 479px) {
+  .card { padding: 18px 12px; }
+  .tabs { gap: 6px; }
+  .tabs button { padding: 10px 5px; font-size: 12px; }
+  .actions { gap: 10px; }
+  .actions button { font-size: 13px; }
+  .heading { gap: 10px; align-items: flex-start; }
+  .heading h2 { font-size: 25px; }
+  .heading > :global(.text-button) { max-width: 70px; }
+  .period { padding: 14px; }
+  .booking { align-items: flex-start; flex-direction: column; gap: 12px; padding: 16px; }
+}
+@media (max-width: 599px) { .actions { grid-template-columns: 1fr; } }
+@media (min-width: 768px) { .card { padding: 28px; } }

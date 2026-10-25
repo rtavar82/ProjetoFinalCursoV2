@@ -1,0 +1,39 @@
+.page { min-width: 0; }
+.page > p:first-child { margin-top: .6rem; }
+.dayHeading { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; }
+.dayHeading > span { font-size: .75rem; color: var(--muted); }
+.dialog { padding: 1.2rem; }
+.dialog h2 { padding-right: 2.5rem; }
+.dialog h3 { font-size: 1.1rem; margin: 0 0 .8rem; }
+.dialog form { margin-top: 1.3rem; }
+.dialog form[hidden] { display: none; }
+.fields { display: grid; gap: 1.1rem; border: 0; margin: 0; padding: 0; min-width: 0; }
+.fields label { min-width: 0; }
+.date { display: flex; align-items: center; gap: .6rem; font-size: .85rem; margin-block: 1.1rem 1.5rem; }
+.help { color: var(--muted); font-size: .78rem; margin: -.5rem 0 0; }
+.times { display: flex; align-items: center; gap: .8rem; border-radius: .8rem; background: var(--tint); padding: 1rem; }
+.times > div { min-width: 0; }
+.times p { margin: .15rem 0; font-size: .85rem; }
+.price { border-top: 1px solid var(--line); padding-top: .6rem; margin-top: .6rem !important; }
+.signIn { border-block: 1px solid var(--line); padding-block: 1rem; }
+.signIn p { font-size: .8rem; color: var(--muted); margin: 0 0 .5rem; }
+.signIn button { margin-top: 0; width: auto; }
+.identity { border: 0; margin: 0; padding: 0; display: grid; gap: 1rem; min-width: 0; }
+.identity legend { font-size: 1rem; font-weight: 600; margin-bottom: 1rem; }
+.names { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .8rem; }
+.phone { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.8fr); gap: .8rem; align-items: end; }
+.phone label { min-width: 0; }
+.phone select { text-overflow: ellipsis; }
+.policy { padding: 1rem; background: var(--tint); border-radius: .8rem; font-size: .85rem; }
+.warning { display: flex; gap: .65rem; padding: 1rem; border-radius: .8rem; background: var(--notice-bg); color: var(--notice-ink); font-size: .8rem; }
+.warning > span:first-child { flex-shrink: 0; }
+.review { min-width: 0; }
+.review dl { display: grid; gap: .2rem; font-size: .9rem; margin-bottom: 1.5rem; }
+.review dt { margin-top: .6rem; color: var(--muted); font-size: .75rem; }
+.review dd { margin: 0; overflow-wrap: anywhere; }
+.reviewActions { display: grid; gap: .7rem; }
+.reviewActions button { margin: 0; }
+.eventText { white-space: pre-wrap; overflow-wrap: anywhere; }
+.closed { padding: 1rem; border: 1px solid var(--line); border-radius: 1rem; }
+@media (min-width: 480px) { .dialog { padding: 1.5rem; } }
+@media (max-width: 359px) { .names, .phone { grid-template-columns: minmax(0, 1fr); } }

@@ -1,0 +1,7 @@
+.page { display: grid; gap: 20px; min-width: 0; }
+.consultation { display: grid; gap: 16px; padding: 18px 0; border-bottom: 1px solid var(--line); min-width: 0; }
+.consultation h2, .consultation p { margin: 0; }
+.note { padding: 20px; border: 1px solid var(--line); border-radius: 18px; background: #fff; white-space: pre-wrap; overflow-wrap: anywhere; }
+.images { display: grid; gap: 12px; }
+.images img { display: block; max-width: 100%; height: auto; border-radius: 14px; }
+@media (min-width: 800px) { .images { grid-template-columns: repeat(2, minmax(0, 1fr)); } }

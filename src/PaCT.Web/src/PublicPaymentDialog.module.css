@@ -1,0 +1,23 @@
+.content { min-width: 0; line-height: 1.7; }
+.heading { padding: 0 2.3rem .8rem 0; margin-bottom: 1rem; border-bottom: 1px solid var(--line); }
+.heading h2 { margin-bottom: 0; }
+.content h3 { font: inherit; font-weight: 600; margin: 0 0 1rem; }
+.content h4 { margin: 1rem 0 .6rem; }
+.content h5 { font: inherit; margin: 1rem 0 .35rem; }
+.content p { margin-bottom: .8rem; overflow-wrap: anywhere; }
+.policy { margin-bottom: 1.2rem; }
+.conditions { padding: 1.25rem; background: var(--tint); border: 1px solid var(--line); border-radius: 14px; margin-bottom: 1.2rem; }
+.conditions h4 { margin: 0 0 .6rem; font-size: 1.05rem; }
+.conditions ul { padding-left: 1.25rem; margin: .75rem 0; }
+.conditions li { overflow-wrap: anywhere; }
+.conditions li + li { margin-top: .65rem; }
+.conditions ul + h4 { margin-top: 1.5rem; }
+.conditions p:last-child { margin-bottom: 0; }
+.modality { color: var(--muted); font-size: .85rem; }
+.methods p { font-size: .9rem; }
+.bankCode { user-select: text; overflow-wrap: anywhere; }
+.copyLink { width: auto; min-height: 44px; margin: 0; padding: .5rem 0; background: transparent; color: var(--accent); border: 0; text-decoration: underline; text-align: left; font-weight: 500; }
+.copyLink:hover:not(:disabled) { background: transparent; }
+.contact { border-top: 1px solid var(--line); padding-top: 1rem; margin-top: 1rem; font-size: .9rem; }
+.contact a { display: flex; align-items: center; gap: .6rem; width: fit-content; min-height: 44px; color: var(--accent); }
+.contact svg { flex-shrink: 0; }

@@ -1,0 +1,6 @@
+.section { min-width: 0; }
+.section p { overflow-wrap: anywhere; }
+.action { margin-top: .75rem; }
+.action summary { cursor: pointer; min-height: 44px; display: flex; align-items: center; font-weight: 600; }
+.action form { margin-top: 1rem; }
+.action button { min-height: 44px; white-space: normal; }

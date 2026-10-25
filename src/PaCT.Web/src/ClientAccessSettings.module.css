@@ -1,0 +1,6 @@
+.section { border-top: 1px solid var(--border, #d2ddd3); margin-top: 1.75rem; padding-top: 1.25rem; min-width: 0; }
+.section p { overflow-wrap: anywhere; }
+.action { border: 1px solid var(--border, #d2ddd3); border-radius: 12px; margin-top: 1rem; padding: 1rem; }
+.action summary { cursor: pointer; min-height: 44px; display: flex; align-items: center; font-weight: 600; }
+.action form { margin-top: 1rem; }
+.action button { min-height: 44px; white-space: normal; }

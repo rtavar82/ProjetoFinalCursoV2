@@ -1,0 +1,21 @@
+.card { display: grid; grid-template-columns: 36px minmax(0,1fr); gap: .9rem; background: var(--surface); padding: 1.2rem; border: 1px solid var(--line); border-radius: var(--card-radius); min-width: 0; }
+.icon { display: grid; place-items: center; align-self: start; width: 36px; height: 36px; border-radius: 50%; color: var(--accent); background: var(--tint); }
+.copy { min-width: 0; }
+.copy h3 { font-size: 1.3rem; margin-bottom: .6rem; }
+.copy p { overflow-wrap: anywhere; }
+.introduction { font-weight: 600; }
+.facts { display: flex; flex-wrap: wrap; gap: .4rem 1rem; margin-block: 1rem; font-size: .85rem; }
+.facts span { display: inline-flex; align-items: center; gap: .4rem; }
+.facts svg, .locations svg { color: var(--accent); flex-shrink: 0; }
+.investment { background: var(--tint); padding: .85rem 1rem; border-radius: 12px; margin-block: 1rem; }
+.investment > span { font-size: .75rem; color: var(--muted); }
+.investment p { margin: .3rem 0 0; font-size: .9rem; }
+.recommendations { white-space: pre-line; }
+.paymentLink { display: block; width: auto; min-height: 44px; margin: 0; padding: .5rem 0; border: 0; color: var(--accent); background: transparent; text-align: left; text-decoration: underline; font-weight: 500; }
+.paymentLink:hover:not(:disabled) { background: transparent; }
+.locations { list-style: none; padding: 1rem 0 0; margin: 1rem 0; border-top: 1px solid var(--line); }
+.locations li { display: flex; align-items: start; gap: .6rem; font-size: .85rem; margin-bottom: .6rem; }
+.locations p { margin: .25rem 0 0; color: var(--muted); }
+.agenda { display: inline-flex; align-items: center; gap: .5rem; width: auto; margin: .5rem 0 0; }
+@media (min-width: 700px) { .card { padding: 1.8rem; gap: 1.2rem; } }
+@media (max-width: 359px) { .card { grid-template-columns: minmax(0,1fr); } }

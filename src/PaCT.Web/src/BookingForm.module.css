@@ -1,0 +1,8 @@
+.card { max-width: 780px; }
+.fields { border: 0; padding: 0; margin: 0; min-width: 0; display: grid; gap: 18px; }
+.summary { border-left: 3px solid var(--accent); background: var(--tint); border-radius: 12px; padding: 14px; font-size: 14px; }
+.summary p { margin-bottom: 5px; }
+.summary p:last-child { margin: 0; }
+.fields details { border-top: 1px solid var(--line); }
+.fields details > label { margin-bottom: 16px; }
+.fields details p { font-size: 13px; }

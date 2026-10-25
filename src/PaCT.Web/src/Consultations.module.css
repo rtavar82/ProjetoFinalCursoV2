@@ -1,0 +1,24 @@
+.page { min-width: 0; }
+.page .results { padding: 0; border: 0; background: transparent; }
+.filters { border: 1px solid var(--line); border-radius: 16px; background: #fff; padding: 4px 18px; margin-block: 20px; }
+.filters > summary { font-size: 16px; font-weight: 600; min-height: 48px; }
+.filters[open] { padding-bottom: 18px; }
+.page { min-width: 0; }
+.page :global(.consultation-tabs) { display: flex; flex-wrap: wrap; gap: .65rem; align-items: center; margin: 1rem 0; }
+.page :global(.consultation-tabs) > button { flex: 1 1 9rem; min-height: 44px; }
+.page nav:global(.consultation-tabs) { flex-wrap: wrap; padding: 4px; background: var(--tint); border-radius: 14px; }
+.page nav:global(.consultation-tabs) > button { flex: 1 1 8rem; width: auto; min-width: 0; margin: 0; padding: 10px 12px; border: 0; color: var(--muted); background: transparent; font-size: 13px; }
+.page nav:global(.consultation-tabs) > button:not(:global(.secondary)), .page nav:global(.consultation-tabs) > button[aria-pressed='true'] { background: var(--surface); color: var(--accent); }
+.page nav:global(.consultation-tabs) > button:hover:not(:disabled) { background: var(--surface); color: var(--accent); }
+.page :global(.consultation-panels) { display: grid; gap: 1rem; }
+.page form { display: grid; gap: 1rem; }
+.page label { display: grid; gap: .4rem; min-width: 0; }
+.page input, .page select, .page textarea { width: 100%; min-width: 0; max-width: 100%; box-sizing: border-box; }
+.page textarea { min-height: 6rem; }
+.page :global(.checkbox) { display: flex; align-items: center; }
+.page :global(.checkbox) input { width: auto; }
+.page :global(.consultation-dialog)::backdrop { background: #193b2dcc; }
+.page :global(.consultation-dialog) { background: var(--canvas); color: var(--ink); border: 1px solid var(--line); border-radius: var(--card-radius); padding: 1rem; padding-bottom: max(1rem, env(safe-area-inset-bottom)); width: min(calc(100% - 1.2rem), 45rem); max-height: calc(100dvh - 1.2rem - env(safe-area-inset-top)); overflow-y: auto; box-sizing: border-box; overflow-wrap: anywhere; scroll-padding-block: 20px; }
+.page :global(.consultation-dialog) > button, .page :global(.consultation-dialog) > form { margin-block: .7rem; }
+.page :global(.shared-consultation-note) { background: white; border: 1px solid #cad9d0; padding: 1rem; border-radius: .7rem; white-space: pre-wrap; line-height: 1.7; margin-block: 1rem; }
+@media (min-width: 760px) { .page :global(.consultation-panels) { grid-template-columns: repeat(2, minmax(0, 1fr)); } .page :global(.consultation-dialog) { padding: 1.8rem; } }

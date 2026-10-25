@@ -1,0 +1,27 @@
+# Ficheiros gerados
+.vs/
+**/bin/
+**/obj/
+artifacts/
+TestResults/
+*.user
+*.suo
+/docs
+/tests
+
+# Configuração privada e material de segurança
+.env
+.env.*
+appsettings.Local.json
+**/secrets.json
+*.pfx
+*.p12
+*.key
+*.pem
+*.sql
+
+# Saídas do frontend
+**/node_modules/
+**/dist/
+src/PaCT.Api/wwwroot/
+

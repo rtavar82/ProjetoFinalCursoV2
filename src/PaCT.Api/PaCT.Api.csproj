@@ -1,0 +1,49 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>PaCT.Api</RootNamespace>
+    <UserSecretsId>pact-v02-96a80f0d-8ad7-46f6-b662-e294ff2f5606</UserSecretsId>
+    <FrontendRoot>$([System.IO.Path]::GetFullPath('$(MSBuildProjectDirectory)/../PaCT.Web'))</FrontendRoot>
+    <DefaultItemExcludes>$(DefaultItemExcludes);wwwroot/**</DefaultItemExcludes>
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+    <NuGetAudit>true</NuGetAudit>
+    <NuGetAuditMode>all</NuGetAuditMode>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="PaCT.Api.Tests" />
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.13" />
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.Google" Version="10.0.13" />
+    <PackageReference Include="MySql.Data" Version="26.7.0" />
+    <PackageReference Include="MailKit" Version="4.18.1" />
+    <PackageReference Include="System.Security.Cryptography.Pkcs" Version="10.0.13" />
+    <PackageReference Include="WebPush" Version="1.0.13" />
+    <PackageReference Include="Fido2" Version="4.3.1" />
+    <PackageReference Include="Otp.NET" Version="1.4.1" />
+  </ItemGroup>
+
+  <Target Name="RestoreFrontend" Inputs="$(FrontendRoot)/package.json;$(FrontendRoot)/package-lock.json"
+          Outputs="$(FrontendRoot)/node_modules/.package-lock.json" Condition="'$(DesignTimeBuild)' != 'true'">
+    <Exec WorkingDirectory="$(FrontendRoot)" Command="npm ci --no-audit --no-fund" />
+  </Target>
+
+  <Target Name="BuildFrontend" BeforeTargets="PrepareForBuild" DependsOnTargets="RestoreFrontend"
+          Condition="'$(DesignTimeBuild)' != 'true'">
+    <Exec WorkingDirectory="$(FrontendRoot)" Command="npm run build" />
+    <!-- wwwroot is generated exclusively from the public frontend build, never private files. -->
+    <RemoveDir Directories="$(MSBuildProjectDirectory)/wwwroot" />
+    <ItemGroup>
+      <FrontendOutput Include="$(FrontendRoot)/dist/**/*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(FrontendOutput)"
+          DestinationFiles="@(FrontendOutput->'$(MSBuildProjectDirectory)/wwwroot/%(RecursiveDir)%(Filename)%(Extension)')" />
+    <ItemGroup>
+      <Content Remove="wwwroot/**/*" />
+      <Content Include="wwwroot/**/*" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    </ItemGroup>
+  </Target>
+
+</Project>

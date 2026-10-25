@@ -1,0 +1,53 @@
+.dialog { box-sizing: border-box; width: min(760px, calc(100vw - 20px)); height: min(1100px, calc(100dvh - 20px)); max-width: none; max-height: none; padding: 0; border: 1px solid var(--line); border-radius: 18px; color: var(--ink); background: var(--surface); overflow: hidden; }
+.dialog[open] { display: flex; flex-direction: column; }
+.dialog::backdrop { background: #253e3480; }
+.header { position: sticky; top: 0; z-index: 3; display: flex; flex-shrink: 0; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 20px; border-bottom: 1px solid var(--line); background: var(--surface); }
+.header h2 { margin: 0; font-size: 22px; }
+.header button { width: 44px; min-height: 44px; padding: 0; margin: 0; font-size: 28px; text-decoration: none; }
+.body { flex: 1; min-height: 0; overflow-y: auto; padding: 22px 20px max(24px, env(safe-area-inset-bottom)); scroll-padding-block: 24px; }
+.intro, .help { color: var(--muted); font-size: 13px; line-height: 1.65; margin: 0 0 24px; }
+.fields { display: grid; gap: 22px; min-width: 0; border: 0; margin: 0; padding: 0; }
+.fields label, .search label { display: grid; gap: 8px; font-size: 13px; color: var(--muted); min-width: 0; }
+.fields :is(input, select), .search :is(input, select) { min-height: 46px; font-size: 15px; }
+.pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.search { border: 1px solid var(--line); border-radius: 14px; padding: 18px; display: grid; gap: 18px; }
+.search h3 { font-family: 'Segoe UI', sans-serif; font-size: 18px; margin: 0; }
+.search p { margin: 0; }
+.search button { width: fit-content; margin: 0; }
+.search .help { margin: -10px 0 0; }
+.people { display: grid; gap: 14px; }
+.person { display: grid; gap: 8px; padding-top: 14px; border-top: 1px solid var(--line); overflow-wrap: anywhere; }
+.person p { font-size: 13px; }
+.actions { display: grid; gap: 10px; margin-top: 28px; }
+.actions button { width: 100%; min-height: 46px; margin: 0; }
+.quick, .dayTools { display: flex; flex-wrap: wrap; gap: 8px; }
+.quick { margin: 6px 0 8px; }
+.quick button { width: auto; min-height: 44px; padding: 10px 18px; margin: 0; }
+.days { border: 0; padding: 0; margin: 0; min-width: 0; }
+.days legend { font-size: 15px; font-weight: 600; margin-bottom: 16px; }
+.dayChoices { display: grid; grid-template-columns: repeat(auto-fit, minmax(145px, 1fr)); gap: 10px; padding: 3px; max-height: 270px; overflow-y: auto; }
+.dayChoices label { display: flex; align-items: center; gap: 10px; padding: 10px; border: 1px solid var(--line); border-radius: 10px; min-height: 46px; font-size: 13px; color: var(--ink); }
+.dayChoices input, .check input { width: 18px; min-height: 18px; height: 18px; flex-shrink: 0; accent-color: var(--accent); }
+.dayTools { margin-top: 18px; gap: 14px; }
+.dayTools button { width: auto; min-height: 44px; padding: 8px 0; margin: 0; font-size: 13px; }
+.summary { background: var(--tint); border: 1px solid var(--line); border-radius: 14px; padding: 18px; overflow-wrap: anywhere; }
+.summary h3 { font-size: 20px; margin: 0 0 12px; }
+.summary p { margin: 10px 0; font-size: 14px; line-height: 1.65; }
+.summary p:last-child { margin-bottom: 0; }
+.dialog .check { display: flex; align-items: flex-start; gap: 12px; font-size: 14px; line-height: 1.6; margin: 20px 0; }
+.check input { margin-top: 4px; }
+.conflicts { background: #fff3db; border: 1px solid #ead2a1; border-radius: 14px; padding: 18px; margin-block: 18px; }
+.conflicts h3 { margin: 0 0 10px; font-size: 20px; }
+.conflicts li { margin-block: 12px; font-size: 14px; }
+.conflicts ul { padding-left: 22px; }
+.tools { border-top: 1px solid var(--line); padding-top: 18px; margin-top: 26px; }
+.tools button { width: auto; font-size: 13px; }
+.pager { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.pager button { width: auto; }
+.body .help { margin: 8px 0 0; }
+@media (max-width: 599px) {
+  .dialog { width: 100vw; height: 100dvh; margin: 0; border-radius: 0; border: 0; }
+  .header { padding-inline: 18px; }
+  .body { padding-inline: 18px; }
+  .pair { grid-template-columns: 1fr; }
+}

@@ -1,0 +1,38 @@
+.eyebrow { color: var(--muted); font-size: 11px; letter-spacing: 1.8px; font-weight: 650; margin: 0 0 18px; }
+h1 { font-family: var(--heading-font); font-size: 34px; font-weight: 400; line-height: 1.17; letter-spacing: -1.2px; margin: 0 0 18px; }
+h2 { font-family: var(--heading-font); font-size: 24px; font-weight: 400; line-height: 1.25; margin: 0 0 14px; letter-spacing: -.5px; }
+h3 { font-family: var(--heading-font); font-size: 20px; font-weight: 400; line-height: 1.35; }
+.muted { color: var(--muted); }
+.record-panel { padding: 18px; background: #fff; border: 1px solid var(--line); border-radius: 20px; margin-bottom: 24px; min-width: 0; }
+.button-row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+.button-row button { margin: 0; }
+form { display: grid; gap: 18px; margin-top: 25px; }
+label { display: grid; gap: 7px; font-size: 13px; font-weight: 550; }
+input, select, textarea { font: inherit; font-size: 16px; min-width: 0; width: 100%; border: 1px solid var(--line); background: var(--surface); color: var(--ink); border-radius: 12px; padding: 12px; min-height: 48px; }
+textarea { resize: vertical; line-height: 1.7; }
+input:read-only { background: var(--tint); color: var(--muted); }
+input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-visible, a:focus-visible, summary:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+.fields-grid { display: grid; grid-template-columns: minmax(0,1fr); gap: 18px 14px; }
+.full-width { grid-column: 1 / -1; }
+.field-help { font-size: 12px; color: var(--muted); font-weight: 400; line-height: 1.65; margin: -9px 0 0; }
+button { font: inherit; font-weight: 600; font-size: 14px; border: 1px solid var(--green); border-radius: 12px; padding: 13px 18px; min-height: 48px; background: var(--green); color: #fff; cursor: pointer; width: 100%; line-height: 1.45; text-align: center; touch-action: manipulation; }
+button:hover:not(:disabled) { background: #244d3c; }
+button:disabled { opacity: .55; cursor: wait; }
+.secondary { background: #fff; color: var(--green); border-color: var(--line); margin-top: 12px; }
+.secondary:hover:not(:disabled) { background: var(--tint); }
+.text-button { background: transparent; border: 0; color: var(--green); font-weight: 500; padding: 16px 0 0; margin-top: 8px; min-height: 44px; }
+.text-button:hover:not(:disabled) { background: transparent; text-decoration: underline; }
+.notice { font-size: 14px; border: 1px solid var(--line); border-radius: 14px; padding: 14px; margin: 0 0 20px; overflow-wrap: anywhere; }
+.notice.error { color: #9c2525; border-color: #e3b8b8; background: #fff6f5; }
+.notice.success { color: #245e3c; border-color: #cadbcf; background: #eff6f0; }
+.notice.review-alert { color: var(--notice-ink); border-color: var(--notice-line); background: var(--notice-bg); }
+.checkbox { display: flex; gap: 10px; align-items: start; font-weight: 400; }
+.checkbox input { width: 20px; height: 20px; min-height: 20px; margin: 2px 0 0; flex-shrink: 0; accent-color: var(--green); }
+summary { cursor: pointer; font-size: 13px; text-decoration: underline; padding: 12px 0; }
+.review-alert p { margin: 0; }
+.review-alert .text-button { padding: 8px 0 0; margin: 0; text-align: left; text-decoration: underline; }
+.record-panel > details { margin-top: 28px; }
+@media (min-width: 421px) { h1 { font-size: 36px; } }
+@media (min-width: 641px) { .fields-grid { grid-template-columns: repeat(2,minmax(0,1fr)); } }
+@media (min-width: 781px) { h1 { font-size: clamp(32px,3.5vw,47px); } h2 { font-size: 26px; } }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; } }

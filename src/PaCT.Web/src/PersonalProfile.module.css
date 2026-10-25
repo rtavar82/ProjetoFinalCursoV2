@@ -1,0 +1,2 @@
+.page { min-width: 0; background: #fff; border: 1px solid var(--line); border-radius: 18px; padding: 18px; }
+@media (min-width: 48rem) { .page { padding: 24px; } }

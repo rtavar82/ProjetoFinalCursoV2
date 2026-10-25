@@ -1,0 +1,8 @@
+.panel { min-width: 0; }
+.panel form { display: grid; gap: 1rem; margin-block: 1rem; }
+.panel input { width: 100%; box-sizing: border-box; min-width: 0; }
+.panel label { display: grid; gap: .5rem; }
+.panel p { overflow-wrap: anywhere; }
+.panel :global(.checkbox) { display: flex; align-items: flex-start; }
+.panel input[type="checkbox"] { width: 20px; flex: 0 0 20px; }
+.panel summary { cursor: pointer; padding-block: 1rem; }
