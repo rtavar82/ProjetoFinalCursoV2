@@ -1,3 +1,4 @@
+import AdaptiveSelect from './AdaptiveSelect'
 import { useCallback, useState } from 'react'
 import { apiRequest } from './identityApi'
 import useLiveResource from './useLiveResource'
@@ -33,11 +34,11 @@ export default function ManualEventBooking({ service, person, disabled, publish,
     {(error || events.error) && <p className="notice error" role="alert">{error || events.error}</p>}
     {events.loading && <p role="status">A consultar as datas…</p>}
     {!review ? <form data-protect-draft onSubmit={preview}><fieldset className={styles.fields} disabled={disabled || checking}>
-      <label>Data do grupo ou retiro<select aria-label="Data do grupo ou retiro" required value={eventId} onChange={event => setEventId(event.target.value)}><option value="">Escolhe a ocorrência</option>{events.data?.items.filter(item => item.state === 'Scheduled' && Date.parse(item.startsAt) > events.data.observedAt).map(item => <option key={item.id} value={item.id}>{agendaDate(item.startsAt)} · {item.publicLocation} · {item.remaining} vagas</option>)}</select></label>
+      <label>Data do grupo ou retiro<AdaptiveSelect aria-label="Data do grupo ou retiro" required value={eventId} onChange={event => setEventId(event.target.value)}><option value="">Escolhe a ocorrência</option>{events.data?.items.filter(item => item.state === 'Scheduled' && Date.parse(item.startsAt) > events.data.observedAt).map(item => <option key={item.id} value={item.id}>{agendaDate(item.startsAt)} · {item.publicLocation} · {item.remaining} vagas</option>)}</AdaptiveSelect></label>
       {events.data?.total === 0 && <p>Não há datas criadas para esta atividade. Define uma ocorrência em Construir e editar agenda.</p>}
       {events.data?.total > 8 && <nav className="pager"><button type="button" disabled={page === 1} onClick={() => { setPage(page - 1); setEventId('') }}>Anterior</button><span>Página {page}</span><button type="button" disabled={page * 8 >= events.data.total} onClick={() => { setPage(page + 1); setEventId('') }}>Seguinte</button></nav>}
-      <label>Inscrição<select aria-label="Estado da inscrição" value={choice} onChange={event => setChoice(event.target.value)}><option value="Confirmed">Confirmada</option><option value="Waiting">Em espera</option></select></label>
-      <div className={styles.actions}><button type="button" className="secondary" onClick={onBack}>Voltar à agenda</button><button disabled={!eventId || !person || checking}>Rever inscrição</button></div>
+      <label>Inscrição<AdaptiveSelect aria-label="Estado da inscrição" value={choice} onChange={event => setChoice(event.target.value)}><option value="Confirmed">Confirmada</option><option value="Waiting">Em espera</option></AdaptiveSelect></label>
+      <div className={styles.actions}><button type="button" className="secondary" onClick={onBack}>Voltar à agenda</button><button disabled={!eventId || !person || checking}>Rever antes de validar</button></div>
     </fieldset></form> : <>
       <section className={styles.summary} aria-label="Rever inscrição"><h3>Rever inscrição</h3><p>{person?.data.firstName} {person?.data.lastName}</p><p>{review.event.title}</p><p>{agendaDate(review.event.startsAt)} — {agendaDate(review.event.endsAt)}</p><p>{review.event.publicLocation} · {servicePrice({ ...review.event, referencePrice: review.event.totalPrice ?? review.event.referencePrice })}</p><p>{review.choice === 'Waiting' ? 'Inscrição em espera.' : 'Inscrição confirmada; a confirmação não regista um pagamento.'}</p></section>
       <div className={styles.actions}><button type="button" className="secondary" disabled={disabled} onClick={() => setReview(null)}>Voltar à edição</button><button type="button" disabled={disabled || person?.id !== review.personId} onClick={() => publish({ action: 'JoinEvent', id: review.event.id, version: review.event.version, personId: review.personId, choice: review.choice }, onSaved, () => setReview(null))}>Confirmar inscrição</button></div>

@@ -1,22 +1,18 @@
-import { useEffect, useId, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useRef } from 'react'
 import { apiRequest } from './identityApi'
 import ClientDataSummary from './ClientDataSummary'
+import useLiveResource from './useLiveResource'
 
 export default function ClientComparison({ personId, onClose }) {
   const dialog = useRef(null)
   const titleId = useId()
-  const [client, setClient] = useState(null)
-  const [error, setError] = useState('')
+  const read = useCallback(() => apiRequest('clients/' + personId), [personId])
+  const { data: client, error } = useLiveResource('clients', 'comparison:' + personId, read)
   useEffect(() => {
     const element = dialog.current
     element.showModal()
     return () => element.close()
   }, [])
-  useEffect(() => {
-    let current = true
-    apiRequest('clients/' + personId).then(result => { if (current) setClient(result) }).catch(failure => { if (current) setError(failure.message) })
-    return () => { current = false }
-  }, [personId])
   return <dialog ref={dialog} className="client-comparison" aria-labelledby={titleId} onCancel={event => { event.preventDefault(); onClose() }}>
     <h2 id={titleId}>Ficha existente — comparação</h2>
     <p>Consulta os dados antes de decidir. Abrir esta ficha não associa perfis nem altera informação.</p>

@@ -1,3 +1,4 @@
+import AdaptiveSelect from './AdaptiveSelect'
 import { useCallback, useEffect, useState } from 'react'
 import { apiRequest } from './identityApi'
 import useLiveResource from './useLiveResource'
@@ -12,7 +13,11 @@ export default function SessionPacksPanel({ manager, send, disabled, guard, feed
   const [scope, setScope] = useState(initialId ? 'Unpaid' : 'Available')
   const [page, setPage] = useState(1)
   const [creating, setCreating] = useState(false)
-  const [detail, setDetail] = useState(null)
+  const [openedDetail, setDetail] = useState(null)
+  const detailId = openedDetail?.id
+  const readDetail = useCallback(() => apiRequest('consultations/packs/' + detailId), [detailId])
+  const latestDetail = useLiveResource('packs', 'pack-detail:' + detailId, readDetail, !!detailId)
+  const detail = detailId ? latestDetail.data || openedDetail : null
   const [error, setError] = useState('')
   useEffect(() => { if (initialId) { let active = true; apiRequest('consultations/packs/' + initialId).then(value => { if (active) setDetail(value) }).catch(failure => { if (active) setError(failure.message) }); return () => { active = false } } }, [initialId])
   const read = useCallback(signal => apiRequest(`consultations/packs?scope=${scope}&page=${page}`, undefined, { signal }), [scope, page])
@@ -31,7 +36,7 @@ export default function SessionPacksPanel({ manager, send, disabled, guard, feed
       <form data-protect-draft onSubmit={async event => { event.preventDefault(); const fields = new FormData(event.currentTarget); try {
         const result = await send({ action: 'PurchasePack', packPurchase: { personId: fields.get('personId'), title: fields.get('title'), sessions: Number(fields.get('sessions')), amount: Number(fields.get('amount')), purchasedAt: instant(fields.get('purchasedAt')), serviceIds: fields.getAll('serviceId'), regularTotal: Number(fields.get('regularTotal')), validUntil: fields.get('validUntil') ? instant(fields.get('validUntil')) : null } }); if (result) setCreating(false)
       } catch (failure) { setError(failure.message) } }}>
-        <fieldset disabled={disabled}><label>Cliente<select name="personId" required defaultValue=""><option value="">Seleciona a ficha</option>{(clients.data || []).filter(p => p.identityReviewStatus !== 'Pending').map(p => <option value={p.id} key={p.id}>{p.data.firstName} {p.data.lastName}</option>)}</select></label>
+        <fieldset disabled={disabled}><label>Cliente<AdaptiveSelect name="personId" required defaultValue=""><option value="">Seleciona a ficha</option>{(clients.data || []).filter(p => p.identityReviewStatus !== 'Pending').map(p => <option value={p.id} key={p.id}>{p.data.firstName} {p.data.lastName}</option>)}</AdaptiveSelect></label>
           <label>Nome do pack<input name="title" maxLength="200" required /></label><label>Sessões<input name="sessions" type="number" min="1" max="1000" required /></label><label>Valor total acordado<input name="amount" type="number" min="0.01" max="1000000" step="0.01" required /></label><label>Valor das mesmas sessões avulso<input name="regularTotal" type="number" min="0.01" max="1000000" step="0.01" required /></label><label>Data de revisão interna (opcional)<input name="validUntil" type="datetime-local" /></label><p>A compra utiliza o valor total do saldo monetário. O recebimento deve estar confirmado antes de comprar o pack.</p><label>Data da compra (Lisboa)<input name="purchasedAt" type="datetime-local" required /></label>
           <fieldset><legend>Serviços compatíveis</legend>{setup.data?.services.filter(s => s.active).map(s => <label className="checkbox" key={s.id}><input type="checkbox" name="serviceId" value={s.id} disabled={s.serviceKind === 'Retreat' || s.paymentMode === 'Free'} />{s.title}{s.serviceKind === 'Retreat' || s.paymentMode === 'Free' ? ' — não abrangido por packs' : ''}</label>)}</fieldset><button>Guardar compra</button>
         </fieldset>

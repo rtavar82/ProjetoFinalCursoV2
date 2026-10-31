@@ -1,4 +1,8 @@
 .page { min-width: 0; }
+.sharedNote { padding: 20px; border: 1px solid var(--line); border-radius: 18px; background: var(--surface); white-space: pre-wrap; overflow-wrap: anywhere; }
+.sharedImages { display: grid; gap: 12px; }
+.sharedImages img { display: block; max-width: 100%; height: auto; border-radius: 14px; }
+@media (min-width: 800px) { .sharedImages { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .eyebrow { text-transform: uppercase; letter-spacing: .16em; color: var(--muted); font-size: .68rem; margin: 1.4rem 0 .7rem; }
 .page h1 { margin-block: 0 .6rem; }
 .page h2 { font-family: 'Segoe UI', Arial, sans-serif; font-size: 1.1rem; font-weight: 600; }
@@ -50,6 +54,22 @@
 .appointment h2 { font-family: Georgia, 'Times New Roman', serif; font-size: 1.25rem; line-height: 1.45; }
 .badge { display: inline-block; border-radius: .5rem; padding: .3rem .5rem; background: var(--tint); font-size: .7rem; }
 .appointment button { width: auto; margin-top: 1rem; }
+.appointmentActions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .6rem; margin-top: 1rem; }
+.appointmentActions > button { width: 100%; min-width: 0; margin: 0; padding: .75rem .5rem; font-size: .85rem; line-height: 1.4; }
+.appointmentActions > button:only-child { grid-column: 1 / -1; }
+.historySearch > summary { display: flex; align-items: flex-start; justify-content: space-between; gap: .8rem; cursor: pointer; list-style: none; text-decoration: none; }
+.historySearch > summary::-webkit-details-marker { display: none; }
+.historySearch > summary > div { min-width: 0; }
+.historySearch > summary h2 { margin: 0 0 .8rem; color: var(--accent); text-decoration-line: underline; text-decoration-thickness: 1px; text-underline-offset: .18em; }
+.historySearch > summary p { margin: 0; }
+.historySearch > summary > svg { width: 20px; height: 20px; flex-shrink: 0; color: var(--accent); }
+.historySearch[open] > summary > svg { transform: rotate(180deg); }
+.historySearch > form { display: grid; gap: .9rem; margin-top: 1.2rem; }
+.historySearch label { min-width: 0; font-size: .8rem; }
+.historySearch input, .historySearch select { min-width: 0; width: 100%; }
+.historyDates { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .7rem; }
+.historyDates input { padding-inline: .5rem; font-size: .85rem; }
+.historySearch .tabs { margin: .2rem 0 0; }
 .formFields { min-width: 0; display: grid; gap: 1rem; padding: 0; border: 0; }
 .formFields p { margin-block: 0; }
 .requestSummary { background: var(--tint); padding: 1rem; border-radius: .9rem; }

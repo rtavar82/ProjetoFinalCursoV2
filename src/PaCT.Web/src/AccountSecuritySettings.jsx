@@ -1,28 +1,25 @@
-import { useEffect, useRef, useState } from 'react'
+import { useRef } from 'react'
 import { request } from './identityApi'
 import PasswordField from './PasswordField'
 import styles from './AccountSecuritySettings.module.css'
 import InformationCard from './InformationCard'
+import useLiveResource from './useLiveResource'
+
+const readGoogle = () => request('google/status')
 
 export function GoogleSignInButton({ busy, perform }) {
-  const [enabled, setEnabled] = useState(false)
-  useEffect(() => { let current = true; request('google/status').then(result => { if (current) setEnabled(result.enabled) }).catch(() => {}); return () => { current = false } }, [])
-  return enabled && <button type="button" className="secondary" disabled={busy || !navigator.onLine} onClick={() => perform(async () => {
+  const { data } = useLiveResource('accountSecurity', 'google-status', readGoogle)
+  const enabled = data?.enabled
+  return enabled && <button type="button" className={`secondary ${styles.googleSignIn}`} disabled={busy || !navigator.onLine} onClick={() => perform(async () => {
     const result = await request('google/start', { mode: 'SignIn' })
     if (result.url !== '/api/identity/google/challenge') throw new Error('Não foi possível iniciar a entrada com Google.')
     window.location.assign(result.url)
-  })}>Entrar com Google</button>
+  })}><span>Entrar com a conta</span><img className={styles.googleWordmark} src="/google-wordmark.svg" alt="Google" width="74" height="24" /></button>
 }
 
 export default function AccountSecuritySettings({ busy, perform, notify, guard, onSignedOut }) {
-  const [google, setGoogle] = useState(null)
-  const [error, setError] = useState('')
+  const { data: google, error } = useLiveResource('accountSecurity', 'google-status', readGoogle)
   const operationId = useRef(crypto.randomUUID())
-  useEffect(() => {
-    let current = true
-    request('google/status').then(result => { if (current) setGoogle(result) }).catch(failure => { if (current) setError(failure.message) })
-    return () => { current = false }
-  }, [])
   function passwordChange(event) {
     event.preventDefault(); const form = event.currentTarget
     const password = new FormData(form).get('password')
@@ -47,7 +44,7 @@ export default function AccountSecuritySettings({ busy, perform, notify, guard, 
       <details className={styles.action}><summary>Alterar palavra-passe</summary>
         <p>Recebe um email com o link para escolheres a nova palavra-passe.</p>
         <form onSubmit={passwordChange}><PasswordField label="Palavra-passe atual" name="password" autoComplete="current-password" required maxLength="128" />
-          <button disabled={busy || !navigator.onLine}>Enviar email para alterar a palavra-passe</button>
+          <button disabled={busy}>Enviar email para alterar a palavra-passe</button>
         </form>
       </details>
     </section></InformationCard>
@@ -59,7 +56,7 @@ export default function AccountSecuritySettings({ busy, perform, notify, guard, 
       {(google?.enabled || google?.linked) && <details className={styles.action}><summary>{google.linked ? 'Desassociar Google' : 'Associar conta Google'}</summary>
         <p>{google.linked ? 'Poderás continuar a entrar com o teu email e a palavra-passe.' : 'Usa a tua conta Google para entrar. A tua palavra-passe e as Passkeys mantêm-se.'}</p>
         <form onSubmit={googleChange}><PasswordField label="Confirma a tua palavra-passe" name="password" autoComplete="current-password" required maxLength="128" />
-          <button disabled={busy || !navigator.onLine}>{google.linked ? 'Confirmar desassociação' : 'Continuar para o Google'}</button>
+          <button disabled={busy}>{google.linked ? 'Confirmar desassociação' : 'Continuar para o Google'}</button>
         </form>
       </details>}
     </section></InformationCard>

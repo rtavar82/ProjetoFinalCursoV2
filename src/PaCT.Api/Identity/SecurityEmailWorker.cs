@@ -40,7 +40,9 @@ public sealed class SmtpSecurityEmailTransport(IConfiguration configuration, Ins
             message.From.Add(new MailboxAddress(configuration["Email:Smtp:FromName"] ?? "PaCT", configuration["Email:Smtp:FromEmail"]!));
             message.To.Add(MailboxAddress.Parse(payload.Recipient));
             message.Subject = content.Subject;
-            message.Body = new TextPart("plain") { Text = content.Body };
+            message.Body = payload.Appointment is not null
+                ? AppointmentEmailLayout.Create(content.Subject, content.Body, installation.PublicWebUrl)
+                : new TextPart("plain") { Text = content.Body };
             sending = true;
             await smtp.SendAsync(message, timeout.Token);
             return "Submitted";
@@ -53,6 +55,8 @@ internal static class SecurityEmailContent
 {
     internal static (string Subject, string Body) Create(EmailPayload payload, string publicWebUrl) => payload.Kind switch
     {
+        "GroupAcceptanceSummary" or "GroupConfirmation" => GroupSummary(payload, publicWebUrl),
+        "PrepaymentApproval" or "BookingConfirmation" or "AppointmentReminder" or "AppointmentSharedInformation" => AppointmentContent(payload, publicWebUrl),
         "ConfirmEmail" => ("PaCT — confirma o teu email", "Confirma o email da tua conta de gestão PaCT.\n\n"
             + publicWebUrl + "/#confirm-email=" + Uri.EscapeDataString(payload.Token)
             + "\n\nO link é pessoal e válido durante 24 horas. Abri-lo não confirma a ação. Se não fizeste este pedido, ignora esta mensagem."),
@@ -74,6 +78,52 @@ internal static class SecurityEmailContent
             + publicWebUrl + "/#inicio\n\nAs sessões não são retiradas nem bloqueadas automaticamente por esta data."),
         _ => throw new InvalidOperationException("Unknown security email kind.")
     };
+    private static (string Subject, string Body) GroupSummary(EmailPayload payload, string publicWebUrl)
+    {
+        var summary = payload.Appointment ?? throw new InvalidOperationException("Missing group acceptance summary.");
+        var zone = TimeZoneInfo.FindSystemTimeZoneById("Europe/Lisbon");
+        var date = TimeZoneInfo.ConvertTime(summary.StartsAt, zone).ToString("dd/MM/yyyy HH:mm");
+        var end = TimeZoneInfo.ConvertTime(summary.EndsAt, zone).ToString("HH:mm");
+        if (summary.PaymentMode != "Prepayment")
+            return ("PaCT — inscrição confirmada", "A tua inscrição na consulta de grupo ficou confirmada.\n\n"
+                + summary.Service + "\n" + date + " — " + end + " (hora de Lisboa)\n\n" + summary.Instructions
+                + "\n\nConsulta a tua inscrição na PaCT:\n" + publicWebUrl + "/#agenda");
+        var amount = summary.Price is { } price ? price.ToString("0.00", System.Globalization.CultureInfo.GetCultureInfo("pt-PT")) + " €" : summary.PaymentMode == "Contribution" ? "Contribuição livre" : "Valor a combinar";
+        var next = summary.PaymentMode == "Prepayment"
+            ? "Aceitaste as condições e indicaste que vais efetuar o pagamento de seguida. Tens oito horas para o fazer. O recebimento será confirmado pela terapeuta."
+            : summary.PaymentMode == "Contribution" ? "Aceitaste as condições. Escolhes a tua contribuição e pagas depois da consulta."
+            : "Aceitaste as condições. O pagamento é feito depois da consulta.";
+        return ("PaCT — resumo da inscrição e das condições aceites", "A tua inscrição na consulta de grupo ficou confirmada.\n\n"
+            + summary.Service + "\n" + date + " — " + end + " (hora de Lisboa)\n" + summary.Instructions + "\nValor: " + amount
+            + "\n\n" + next + "\nPodes pagar por transferência bancária, MB WAY ou dinheiro combinado com a terapeuta."
+            + "\nOs meios e as condições que aceitaste estão disponíveis na tua inscrição na PaCT."
+            + "\n\n" + publicWebUrl + "/#agenda");
+    }
+    private static (string Subject, string Body) AppointmentContent(EmailPayload payload, string publicWebUrl)
+    {
+        var summary = payload.Appointment ?? throw new InvalidOperationException("Missing appointment summary.");
+        var zone = TimeZoneInfo.FindSystemTimeZoneById("Europe/Lisbon");
+        var date = TimeZoneInfo.ConvertTime(summary.StartsAt, zone).ToString("dd/MM/yyyy HH:mm");
+        var subject = payload.Kind switch { "PrepaymentApproval" => "PaCT — condições da tua marcação", "BookingConfirmation" => "PaCT — marcação confirmada",
+            "AppointmentReminder" => "PaCT — lembra-te da tua consulta", _ => "PaCT — informação disponível sobre a tua consulta" };
+        var text = payload.Kind switch { "PrepaymentApproval" => "A gestão validou a tua marcação.\nAbre a PaCT para ler e aceitar as condições e consultar os meios de pagamento.",
+            "BookingConfirmation" => "A tua marcação foi confirmada.", "AppointmentReminder" => "Brevemente faltarão 24 horas para a tua consulta.",
+            _ => "Tens informação partilhada disponível na tua área PaCT." };
+        var body = text + "\n\n" + summary.Service + "\n" + date + " (hora de Lisboa)";
+        if (payload.Kind == "PrepaymentApproval")
+        {
+            if (summary.Price is { } price) body += "\nValor de referência: " + price.ToString("0.00", System.Globalization.CultureInfo.GetCultureInfo("pt-PT")) + " €";
+            body += "\n\nCondições de pagamento\n" + string.Join("\n", PaCT.Api.Consultations.PublicPresentationContent.PrepaymentConditions.Select(line => "- " + line))
+                + "\n\nCancelamentos ou faltas\n" + string.Join("\n", PaCT.Api.Consultations.PublicPresentationContent.PrepaymentCancellations.Select(line => "- " + line));
+            var methods = JsonSerializer.SerializeToElement(PaCT.Api.Consultations.PublicPresentationContent.PaymentInformation);
+            body += "\n\nForma de pagamento\nTransferência bancária\nIBAN: " + methods.GetProperty("iban").GetString()
+                + "\nBIC/SWIFT: " + methods.GetProperty("bic").GetString()
+                + "\nMB WAY: " + methods.GetProperty("mbWay").GetString()
+                + "\nDinheiro: combinado com a terapeuta antes da consulta.\n" + methods.GetProperty("transferNote").GetString();
+        }
+        else body += "\n\n" + summary.Instructions;
+        return (subject, body + "\n\n" + publicWebUrl + "/#agenda");
+    }
 }
 
 public sealed class SecurityEmailWorker(IIdentityStore store, ITherapistInvitationStore invitations, IdentitySecurity security, IInstallationSecrets installation,
@@ -129,11 +179,27 @@ public sealed class SecurityEmailWorker(IIdentityStore store, ITherapistInvitati
             eligible = await clientAccess.CanSendEmailAsync(job, payload, ct);
         if (payload.Kind == "PasswordChange" && passwords is not null)
             eligible = await passwords.CanSendAsync(job, payload, ct);
+        if (payload.Kind is "GroupAcceptanceSummary" or "GroupConfirmation" && consultations is not null && job.CreatedAt.AddHours(24) > now && job.Id == payload.Token
+            && account is { Role: Roles.Client, ClosedAt: null, PersonActive: true, LinkStatus: "Verified", EmailConfirmedAt: not null }
+            && payload.Recipient == security.Decrypt(account.PersonId, "email", account.EmailCiphertext))
+            eligible = await consultations.ReadAsync(data => data.EventNotices.Any(n => n.Id == payload.Token
+                && n.Kind == (payload.Kind == "GroupConfirmation" ? "EventConfirmed" : "EventAcceptanceSummary") && n.PersonId == account.PersonId && !n.Cancelled
+                && data.Participations.Any(p => p.Id == n.ParticipationId && p.PersonId == account.PersonId && p.State == "Confirmed"
+                    && (payload.Kind == "GroupConfirmation" || p.AcceptedAt is not null))
+                && data.Events.Any(e => e.Id == n.EventId && e.State != "Cancelled" && e.ScheduleVersion == n.ScheduleVersion
+                    && (payload.Kind != "GroupConfirmation" || PaCT.Api.Consultations.GroupEvents.IsFree(e.Service)))), ct);
         if (payload.Kind == "PackReminder" && consultations is not null && account is { Role: Roles.Client, ClosedAt: null, PersonActive: true, LinkStatus: "Verified", EmailConfirmedAt: not null }
             && payload.Recipient == security.Decrypt(account.PersonId, "email", account.EmailCiphertext))
             eligible = await consultations.ReadAsync(data => data.PackNotices.Any(n => n.Id == payload.Token && n.PersonId == account.PersonId
                 && !n.Cancelled && n.Kind.StartsWith("PackExpiry:") && n.DueAt <= time.GetUtcNow() && n.ExpiresAt > time.GetUtcNow()
                 && PaCT.Api.Consultations.SessionPacks.Remaining(data, n.PackId) > 0), ct);
+        if (payload.Kind is "PrepaymentApproval" or "BookingConfirmation" or "AppointmentReminder" or "AppointmentSharedInformation"
+            && consultations is not null && job.CreatedAt.AddHours(24) > now && job.Id == payload.Token
+            && account is { Role: Roles.Client, ClosedAt: null, PersonActive: true, LinkStatus: "Verified", EmailConfirmedAt: not null }
+            && payload.Recipient == security.Decrypt(account.PersonId, "email", account.EmailCiphertext))
+            eligible = await consultations.ReadAsync(data => data.Notices.Any(n => n.Id == payload.Token && n.PersonId == account.PersonId
+                && data.Consultations.Any(c => c.Id == n.ConsultationId && c.PersonId == account.PersonId
+                    && PaCT.Api.Consultations.AppointmentCommunications.EmailKind(n, c, time.GetUtcNow()) == payload.Kind)), ct);
         var state = eligible ? await transport.SendAsync(payload, ct) : "Cancelled";
         await store.CompleteEmailAsync(job.Id, state, time.GetUtcNow().UtcDateTime, ct);
         return true;

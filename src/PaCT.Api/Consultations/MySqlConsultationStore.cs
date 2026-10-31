@@ -18,6 +18,7 @@ public interface IConsultationStore
     Task<ConsultationResult> SubmitEventGuestAsync(string eventId, GuestSubmission input, CancellationToken ct) => throw new IdentityProblem(503, "Não foi possível enviar o pedido. Tenta novamente.");
     Task AdvanceAsync(CancellationToken ct);
     Task<bool> UpdateBalancePushAsync(string id, string state, CancellationToken ct);
+    Task<bool> UpdateConsultationPushAsync(string id, string state, CancellationToken ct) => Task.FromResult(false);
 }
 
 public sealed class MySqlConsultationStore(DatabaseConnectionSettings settings, IdentitySecurity security, TimeProvider time) : IConsultationStore
@@ -41,12 +42,16 @@ public sealed class MySqlConsultationStore(DatabaseConnectionSettings settings, 
             if (json is string text) data.Consultations.Add(JsonSerializer.Deserialize<Consultation>(text)!);
         }
         var c = ConsultationConversation.Authorized(data, id, actor);
+        var owners = actor.IsManager ? new Dictionary<string, string>() : await PaCT.Api.Clients.ClientAggregation.LoadReadOwnersAsync(connection, transaction, ct);
+        var readAccounts = owners.Where(pair => pair.Value == actor.PersonId).Select(pair => pair.Key).Append(actor.AccountId).Distinct().ToArray();
+        var readPredicate = actor.IsManager ? "1=1" : "r.account_id IN (" + string.Join(',', readAccounts.Select((_, index) => "@read" + index)) + ")";
+        var readParameters = readAccounts.Select((account, index) => ("@read" + index, (object?)account)).ToArray();
         var messages = new List<ConsultationMessage>(); var reads = new List<string>();
-        await using (var command = Command(connection, transaction, """
-            SELECT m.data,EXISTS(SELECT 1 FROM consultation_message_reads r WHERE r.message_id=m.id AND r.account_id=@account)
+        await using (var command = Command(connection, transaction, $"""
+            SELECT m.data,EXISTS(SELECT 1 FROM consultation_message_reads r WHERE r.message_id=m.id AND ({readPredicate}))
             FROM consultation_messages m WHERE m.consultation_id=@id AND (@before IS NULL OR m.sequence<@before)
             ORDER BY m.sequence DESC LIMIT 20
-            """, ("@id", id), ("@account", actor.AccountId), ("@before", before)))
+            """, readParameters.Concat(new (string, object?)[] { ("@id", id), ("@before", before) }).ToArray()))
         await using (var reader = await command.ExecuteReaderAsync(ct))
             while (await reader.ReadAsync(ct))
             {
@@ -54,12 +59,13 @@ public sealed class MySqlConsultationStore(DatabaseConnectionSettings settings, 
                 if (reader.GetBoolean(1)) reads.Add(message.Id);
             }
         int unread; long latest, oldest;
-        await using (var command = Command(connection, transaction, """
+        await using (var command = Command(connection, transaction, $"""
             SELECT COALESCE(MAX(m.sequence),0),COALESCE(MIN(m.sequence),0),
-                COALESCE(SUM(JSON_UNQUOTE(JSON_EXTRACT(m.data,'$.AuthorIsManager'))=@sender AND r.id IS NULL),0)
-            FROM consultation_messages m LEFT JOIN consultation_message_reads r ON r.message_id=m.id AND r.account_id=@account
+                COALESCE(SUM(JSON_UNQUOTE(JSON_EXTRACT(m.data,'$.AuthorIsManager'))=@sender
+                    AND NOT EXISTS(SELECT 1 FROM consultation_message_reads r WHERE r.message_id=m.id AND ({readPredicate}))),0)
+            FROM consultation_messages m
             WHERE m.consultation_id=@id
-            """, ("@id", id), ("@account", actor.AccountId), ("@sender", actor.IsManager ? "false" : "true")))
+            """, readParameters.Concat(new (string, object?)[] { ("@id", id), ("@sender", actor.IsManager ? "false" : "true") }).ToArray()))
         await using (var reader = await command.ExecuteReaderAsync(ct))
         {
             await reader.ReadAsync(ct); latest = reader.GetInt64(0); oldest = reader.GetInt64(1); unread = reader.GetInt32(2);
@@ -67,13 +73,8 @@ public sealed class MySqlConsultationStore(DatabaseConnectionSettings settings, 
         var page = messages.OrderBy(m => m.Sequence).ToArray();
         return new(c, page, reads.ToArray(), unread, latest, page.Length > 0 && oldest < page[0].Sequence);
     }
-    public async Task<T> ReadEventCatalogueAsync<T>(Func<ConsultationData, T> read, CancellationToken ct)
-    {
-        await using var connection = settings.CreateConnection(); await connection.OpenAsync(ct);
-        await using var transaction = await connection.BeginTransactionAsync(System.Data.IsolationLevel.RepeatableRead, ct);
-        var data = await LoadEventCatalogue(connection, transaction, ct);
-        var result = read(data); await transaction.CommitAsync(ct); return result;
-    }
+    public Task<T> ReadEventCatalogueAsync<T>(Func<ConsultationData, T> read, CancellationToken ct) =>
+        Write((_, _, data) => Task.FromResult(read(data)), ct, eventCatalogue: true, synchronizeClock: true);
     internal static async Task<ConsultationData> LoadEventCatalogue(MySqlConnection connection, MySqlTransaction transaction, CancellationToken ct)
     {
         var data = new ConsultationData();
@@ -90,12 +91,23 @@ public sealed class MySqlConsultationStore(DatabaseConnectionSettings settings, 
         await using (var reader = await command.ExecuteReaderAsync(ct))
             while (await reader.ReadAsync(ct)) data.Participations.Add(new(reader.GetGuid(0).ToString(), reader.GetGuid(1).ToString(), reader.IsDBNull(2) ? null : reader.GetGuid(2).ToString(), reader.GetString(3), DateTimeOffset.UnixEpoch, ProtectedSeat: reader.GetString(4) == "true"));
     }
-    private async Task<T> ReadCore<T>(Func<ConsultationData, T> read, bool agendaOnly, CancellationToken ct)
+    private Task<T> ReadCore<T>(Func<ConsultationData, T> read, bool agendaOnly, CancellationToken ct) =>
+        Write((_, _, data) => Task.FromResult(read(data)), ct, agendaOnly: agendaOnly, synchronizeClock: true);
+
+    // Persist only lifecycle changes before serving a read. Public snapshots remain stripped of private fields.
+    internal static async Task PersistLifecycle(MySqlConnection connection, MySqlTransaction transaction, DateTimeOffset now, CancellationToken ct)
     {
-        await using var connection = settings.CreateConnection(); await connection.OpenAsync(ct);
-        await using var transaction = await connection.BeginTransactionAsync(System.Data.IsolationLevel.RepeatableRead, ct);
-        var data = await Load(connection, transaction, ct, agendaOnly); var result = read(data);
-        await transaction.CommitAsync(ct); return result;
+        var data = new ConsultationData();
+        async Task Fill<T>(string table, List<T> rows)
+        {
+            await using var command = Command(connection, transaction, "SELECT data FROM " + table + " ORDER BY id");
+            await using var reader = await command.ExecuteReaderAsync(ct);
+            while (await reader.ReadAsync(ct)) rows.Add(JsonSerializer.Deserialize<T>(reader.GetString(0))!);
+        }
+        await Fill("consultations", data.Consultations); await Fill("guest_consultation_requests", data.GuestRequests);
+        await Fill("group_events", data.Events); await Fill("event_participations", data.Participations);
+        var before = Snapshot(data); ProcessLifecycle.Advance(data, now);
+        await Save(connection, transaction, data, before, ct);
     }
     public Task<ConsultationResult> ExecuteAsync(ConsultationCommand input, ConsultationActor actor, CancellationToken ct) => Write(async (connection, transaction, data) =>
     {
@@ -125,21 +137,34 @@ public sealed class MySqlConsultationStore(DatabaseConnectionSettings settings, 
         }
         var before = Snapshot(data);
         var now = time.GetUtcNow();
+        var appliedInput = input;
+        if (input.Action == "LinkGuestRequest")
+        {
+            var guest = data.GuestRequests.SingleOrDefault(g => g.Id == input.Id) ?? throw new IdentityProblem(404, "Pedido não encontrado.");
+            var personId = await PaCT.Api.Clients.GuestClientIdentity.PrepareApprovalAsync(
+                PaCT.Api.Clients.MySqlClientStore.InTransaction(connection, transaction, ct), guest, input, actor, now, security);
+            appliedInput = input with { PersonId = personId, ConditionsAccepted = true };
+            // The verified identity decision may have reassigned existing records in this transaction.
+            data = await Load(connection, transaction, ct); before = Snapshot(data);
+            appliedInput = appliedInput with { Version = data.GuestRequests.Single(g => g.Id == input.Id).Version };
+        }
         // Compare the reviewed revision with the locked snapshot before housekeeping can
         // increment unrelated expired-record versions. Occupation checks still use now.
         var reviewedSchedule = input.Action == "PublishAvailability" || input.Action == "Manual" && input.ManualReviewRevision is not null;
         ConsultationResult result;
         if (reviewedSchedule)
         {
-            result = ConsultationRules.Apply(data, input, actor, now, Encrypt);
+            result = ConsultationRules.Apply(data, appliedInput, actor, now, Encrypt);
             ConsultationRules.Advance(data, now);
         }
         else
         {
             ConsultationRules.Advance(data, now);
-            result = ConsultationRules.Apply(data, input, actor, now, Encrypt);
+            result = ConsultationRules.Apply(data, appliedInput, actor, now, Encrypt);
         }
         await QueuePackReminders(connection, transaction, data, ct);
+        await QueueGroupSummaries(connection, transaction, data, ct);
+        await QueueAppointmentEmails(connection, transaction, data, ct);
         await Save(connection, transaction, data, before, ct);
         await using var record = Command(connection, transaction, "INSERT INTO consultation_commands(id,author_id,request_hash,result,created_at) VALUES(@id,@author,@hash,@result,@now)",
             ("@id", input.OperationId), ("@author", actor.AccountId), ("@hash", hash), ("@result", JsonSerializer.Serialize(result)), ("@now", time.GetUtcNow().UtcDateTime));
@@ -164,6 +189,8 @@ public sealed class MySqlConsultationStore(DatabaseConnectionSettings settings, 
     {
         var before = Snapshot(data); ConsultationRules.Advance(data, time.GetUtcNow());
         await QueuePackReminders(connection, transaction, data, ct);
+        await QueueGroupSummaries(connection, transaction, data, ct);
+        await QueueAppointmentEmails(connection, transaction, data, ct);
         await Save(connection, transaction, data, before, ct); return true;
     }, ct);
     public Task<bool> UpdateBalancePushAsync(string id, string state, CancellationToken ct) => Write(async (connection, transaction, data) =>
@@ -177,7 +204,14 @@ public sealed class MySqlConsultationStore(DatabaseConnectionSettings settings, 
             PushSentAt = state == "Submitted" ? time.GetUtcNow() : notice.PushSentAt };
         await Save(connection, transaction, data, before, ct); return true;
     }, ct);
-    private async Task<T> Write<T>(Func<MySqlConnection, MySqlTransaction, ConsultationData, Task<T>> action, CancellationToken ct)
+    public Task<bool> UpdateConsultationPushAsync(string id, string state, CancellationToken ct) => Write(async (connection, transaction, data) =>
+    {
+        var before = Snapshot(data);
+        if (!ConsultationPush.ChangeState(data, id, state, time.GetUtcNow())) return false;
+        await Save(connection, transaction, data, before, ct); return true;
+    }, ct);
+    private async Task<T> Write<T>(Func<MySqlConnection, MySqlTransaction, ConsultationData, Task<T>> action, CancellationToken ct,
+        bool agendaOnly = false, bool eventCatalogue = false, bool synchronizeClock = false)
     {
         await using var connection = settings.CreateConnection(); await connection.OpenAsync(ct);
         await using var gate = new MySqlCommand("SELECT GET_LOCK('pact0.2_db:client-writes',5)", connection);
@@ -185,7 +219,9 @@ public sealed class MySqlConsultationStore(DatabaseConnectionSettings settings, 
         try
         {
             await using var transaction = await connection.BeginTransactionAsync(ct);
-            var data = await Load(connection, transaction, ct); var result = await action(connection, transaction, data);
+            if (synchronizeClock) await PersistLifecycle(connection, transaction, time.GetUtcNow(), ct);
+            var data = eventCatalogue ? await LoadEventCatalogue(connection, transaction, ct) : await Load(connection, transaction, ct, agendaOnly);
+            var result = await action(connection, transaction, data);
             await transaction.CommitAsync(ct); return result;
         }
         finally
@@ -193,6 +229,57 @@ public sealed class MySqlConsultationStore(DatabaseConnectionSettings settings, 
             await using var release = new MySqlCommand("SELECT RELEASE_LOCK('pact0.2_db:client-writes')", connection);
             await release.ExecuteScalarAsync(CancellationToken.None);
         }
+    }
+    internal async Task QueueGroupSummaries(MySqlConnection connection, MySqlTransaction transaction, ConsultationData data, CancellationToken ct)
+    {
+        for (var i = 0; i < data.EventNotices.Count; i++)
+        {
+            var notice = data.EventNotices[i];
+            var freeConfirmation = notice.Kind == "EventConfirmed" && notice.EmailPending;
+            if (notice.Kind != "EventAcceptanceSummary" && !freeConfirmation || notice.EmailQueuedAt is not null || notice.Cancelled || notice.PersonId is null) continue;
+            var participation = data.Participations.Single(p => p.Id == notice.ParticipationId);
+            var item = data.Events.Single(e => e.Id == notice.EventId);
+            if (item.Service.ServiceKind != "Group" || participation.State != "Confirmed"
+                || (freeConfirmation ? !GroupEvents.IsFree(item.Service) : GroupEvents.IsFree(item.Service) || participation.AcceptedAt is null)) continue;
+            var summary = AppointmentCommunications.Summary(item.Service, item.Definition.StartsAt, item.Definition.EndsAt,
+                item.Definition.PublicLocation, GroupPaymentConditions.Mode(item));
+            if (string.IsNullOrWhiteSpace(summary.Instructions)) continue;
+            if (!await QueueClientEmail(connection, transaction, notice.PersonId, notice.Id, freeConfirmation ? "GroupConfirmation" : "GroupAcceptanceSummary", summary, ct)) continue;
+            var now = time.GetUtcNow();
+            data.EventNotices[i] = notice with { EmailQueuedAt = now, EmailPending = false };
+        }
+    }
+    internal async Task QueueAppointmentEmails(MySqlConnection connection, MySqlTransaction transaction, ConsultationData data, CancellationToken ct)
+    {
+        for (var i = 0; i < data.Notices.Count; i++)
+        {
+            var notice = data.Notices[i];
+            if (!notice.EmailPending || notice.EmailQueuedAt is not null || notice.PersonId is null) continue;
+            var c = data.Consultations.Single(c => c.Id == notice.ConsultationId);
+            var kind = AppointmentCommunications.EmailKind(notice, c, time.GetUtcNow());
+            if (kind is null) continue;
+            var summary = AppointmentCommunications.Summary(c.Service, c.StartsAt, c.EndsAt, mode: c.FinancialChoice);
+            if (AppointmentCommunications.NeedsInstructions(kind) && string.IsNullOrWhiteSpace(summary.Instructions)) continue;
+            if (await QueueClientEmail(connection, transaction, notice.PersonId, notice.Id, kind, summary, ct))
+                data.Notices[i] = notice with { EmailPending = false, EmailQueuedAt = time.GetUtcNow() };
+        }
+    }
+    private async Task<bool> QueueClientEmail(MySqlConnection connection, MySqlTransaction transaction, string person, string id,
+        string kind, AppointmentEmailSummary summary, CancellationToken ct)
+    {
+        string? account = null; byte[]? address = null;
+        await using (var command = Command(connection, transaction, """
+            SELECT a.id,p.email_ciphertext FROM accounts a JOIN people p ON p.id=a.origin_person_id
+            WHERE a.origin_person_id=@person AND p.is_active=1 AND a.role='Client' AND a.closed_at IS NULL
+                AND a.link_status='Verified' AND a.email_confirmed_at IS NOT NULL
+            """, ("@person", person)))
+        await using (var reader = await command.ExecuteReaderAsync(ct))
+            if (await reader.ReadAsync(ct)) { account = reader.GetGuid(0).ToString(); address = (byte[])reader[1]; }
+        if (account is null || address is null) return false;
+        var payload = new EmailPayload(security.Decrypt(person, "email", address), id, kind, Appointment: summary);
+        await MySqlIdentityStore.InsertEmailAsync(connection, transaction, new(id, account,
+            security.Encrypt(id, "email-job", JsonSerializer.Serialize(payload)), "Pending", time.GetUtcNow().UtcDateTime), ct);
+        return true;
     }
     private async Task QueuePackReminders(MySqlConnection connection, MySqlTransaction transaction, ConsultationData data, CancellationToken ct)
     {
@@ -238,6 +325,15 @@ public sealed class MySqlConsultationStore(DatabaseConnectionSettings settings, 
         if (agendaOnly) await FillPublicParticipations(connection, transaction, data, ct);
         if (!agendaOnly)
         {
+            await using (var accounts = Command(connection, transaction, """
+                SELECT DISTINCT a.origin_person_id FROM accounts a JOIN people p ON p.id=a.origin_person_id
+                WHERE a.role='Client' AND a.closed_at IS NULL AND p.is_active=1 AND a.link_status='Verified'
+                  AND a.email_confirmed_at IS NOT NULL AND a.password_hash IS NOT NULL
+                  AND NOT EXISTS(SELECT 1 FROM client_reviews r WHERE r.person_id=p.id AND r.kind='Registration' AND r.status='Open')
+                """))
+            await using (var reader = await accounts.ExecuteReaderAsync(ct))
+                while (await reader.ReadAsync(ct)) data.ClientAccountPeople.Add(reader.GetGuid(0).ToString());
+            foreach (var owner in await PaCT.Api.Clients.ClientAggregation.LoadReadOwnersAsync(connection, transaction, ct)) data.ClientReadOwners.Add(owner.Key, owner.Value);
             await Fill("credit_entries", data.Entries); await Fill("consultation_notices", data.Notices);
             await Fill("balance_notices", data.BalanceNotices);
             await Fill("session_packs", data.Packs); await Fill("pack_uses", data.PackUses); await Fill("pack_notices", data.PackNotices);
@@ -271,6 +367,7 @@ public sealed class MySqlConsultationStore(DatabaseConnectionSettings settings, 
         {
             var json = JsonSerializer.Serialize(value, value.GetType());
             if (before.TryGetValue(id, out var previous) && previous == json) continue;
+            ProcessLifecycle.Validate(value);
             if (before.ContainsKey(id))
             {
                 if (table is "credit_entries" or "pack_uses" or "event_cash_entries" or "consultation_messages" or "consultation_message_reads") throw new InvalidOperationException("Historical entries are immutable.");

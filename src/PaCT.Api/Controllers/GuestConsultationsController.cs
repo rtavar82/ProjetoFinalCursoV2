@@ -4,12 +4,13 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using PaCT.Api.Consultations;
 using PaCT.Api.Identity;
+using PaCT.Api.Clients;
 
 namespace PaCT.Api.Controllers;
 
 [ApiController, Route("api/consultations/guests")]
 [RequestSizeLimit(8192), ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
-public sealed class GuestConsultationsController(IConsultationStore store, IdentitySecurity security, TimeProvider time) : ControllerBase
+public sealed class GuestConsultationsController(IConsultationStore store, IClientStore clients, IdentitySecurity security, TimeProvider time) : ControllerBase
 {
     [HttpPost, AllowAnonymous, EnableRateLimiting("guest-request")]
     public async Task<IActionResult> Submit(GuestSubmission input, CancellationToken ct)
@@ -30,14 +31,21 @@ public sealed class GuestConsultationsController(IConsultationStore store, Ident
         }, ct));
     }
     [HttpGet("{id:guid}"), Authorize(Roles = Roles.Managers)]
-    public async Task<IActionResult> Detail(string id, CancellationToken ct) => Ok(await store.ReadAsync(data =>
-        View(data.GuestRequests.SingleOrDefault(g => g.Id == id) ?? throw new IdentityProblem(404, "Pedido não encontrado."), time.GetUtcNow()), ct));
+    public async Task<IActionResult> Detail(string id, CancellationToken ct)
+    {
+        var request = await store.ReadAsync(data => data.GuestRequests.SingleOrDefault(g => g.Id == id)
+            ?? throw new IdentityProblem(404, "Pedido não encontrado."), ct);
+        var identity = GuestConsultations.Occupies(request, time.GetUtcNow())
+            ? await clients.ExecuteAsync(session => GuestClientIdentity.DescribeAsync(session, request.PersonId!, security), false, ct) : null;
+        return Ok(View(request, time.GetUtcNow(), identity));
+    }
 
-    private object View(GuestConsultationRequest request, DateTimeOffset now) => new
+    private object View(GuestConsultationRequest request, DateTimeOffset now, GuestIdentityInfo? identity = null) => new
     {
         request.Id, request.Version, request.StartsAt, request.EndsAt, request.CreatedAt,
-        serviceTitle = request.Service.Title, request.Service.Modality, request.Service.PublicLocation,
-        state = GuestConsultations.State(request, now), request.PersonId, request.ConsultationId,
+        serviceTitle = request.Service.Title, request.Service.Modality, request.Service.PublicLocation, request.Service.PaymentMode,
+        process = ProcessLifecycle.Status(request, now), state = ProcessLifecycle.Substate(request, now), request.PersonId, request.ConsultationId,
+        identity,
         contact = JsonSerializer.Deserialize<GuestContact>(security.Decrypt(request.Id, "consultation-guest-contact", Convert.FromBase64String(request.ContactCiphertext))),
         history = request.History ?? []
     };

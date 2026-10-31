@@ -71,6 +71,18 @@ public sealed class ConsultationPhotoStore
         }
     }
 
+    public async Task ValidateMessageAsync(ConsultationCommand command, string authorId, CancellationToken ct)
+    {
+        var ids = command.PhotoIds ?? [];
+        if (ids.Length > 20 || ids.Distinct(StringComparer.Ordinal).Count() != ids.Length)
+            throw new IdentityProblem(400, "Seleciona até 20 fotografias diferentes.");
+        foreach (var id in ids)
+        {
+            var photo = await ReadAsync(command.Id!, id, ct);
+            if (photo.AuthorId != authorId) throw new IdentityProblem(403, "Esta fotografia não pertence ao teu envio.");
+        }
+    }
+
     public static void ValidateImage(byte[] bytes, string type)
     {
         if (bytes.Length is 0 or > 4194304) throw new IdentityProblem(400, "Cada fotografia pode ter até 4 MB.");

@@ -21,7 +21,7 @@ export default function CloseAccount({ busy, perform, guard, onClosed }) {
       <form className={styles.form} onSubmit={submit}>
         <PasswordField label="Confirma a palavra-passe" name="password" autoComplete="current-password" required maxLength="128" />
         <label className={styles.confirm}><input name="confirm" type="checkbox" required />Compreendo que vou perder o acesso à conta.</label>
-        <button disabled={busy || !navigator.onLine} type="submit">{busy ? 'A processar…' : 'Confirmar encerramento da conta'}</button>
+        <button disabled={busy} type="submit">{busy ? 'A processar…' : 'Confirmar encerramento da conta'}</button>
       </form>
     </details>
   </section>

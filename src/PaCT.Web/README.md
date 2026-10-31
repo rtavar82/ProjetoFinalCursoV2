@@ -38,4 +38,6 @@ Consultar as instruções de instalação e os limites desta entrega no README d
 
 Layout base para 320 px, expandido por min-width. Manifesto e ícones públicos; o build gera um único service-worker.js versionado, com lista permitida de recursos. IndexedDB guarda exclusivamente versão e data do build público, usadas no aviso offline. Nenhum dado privado ou fila de operações é persistido no navegador.
 
-Nova versão aguarda confirmação; rascunhos nesta ou noutra janela impedem a atualização. Testes reais do worker/IndexedDB em tests/PaCT.Web.Tests/pwa-check.cjs e verificação isolada dos ecrãs em client-visual-check.cjs. Repetir ambos após novos incrementos. A simulação não substitui instalação/ensaio no Android físico com HTTPS confiável.
+Nova versão aguarda confirmação; alterações não submetidas nesta ou noutra janela impedem a atualização. Testes reais do worker/IndexedDB em tests/PaCT.Web.Tests/pwa-check.cjs e verificação isolada dos ecrãs em client-visual-check.cjs. Repetir ambos após novos incrementos. A simulação não substitui instalação/ensaio no Android físico com HTTPS confiável.
+
+Os formulários não guardam cópias automáticas no aparelho. Ao carregar a nova versão, apenas a base retirada PaCT.PrivateDrafts.v1 é eliminada; as notas, imagens e mensagens já gravadas expressamente no servidor são preservadas.

@@ -1,3 +1,4 @@
+import AdaptiveSelect from './AdaptiveSelect'
 import { useId, useRef, useState } from 'react'
 import PhoneFields from './PhoneFields'
 
@@ -34,11 +35,11 @@ export default function ClientProfileForm({ client, manual = false, registration
       <label>Email<input name="email" type="email" defaultValue={data.email || ''} maxLength="256" readOnly={client?.hasAccount} autoComplete="email" required={registration} /></label>
       <PhoneFields data={data} required={registration} />
       <label>Data de nascimento — {requireBirthDate || registration ? 'obrigatória' : 'opcional'}<input name="birthDate" type="date" defaultValue={data.birthDate || ''} autoComplete="bday" required={requireBirthDate || registration} /></label>
-      <label>Género{!registration && ' — para completar a ficha'}<select name="gender" defaultValue={data.gender || ''} required={registration}><option value="">{registration ? 'Seleciona o género' : 'Não indicado'}</option><option value="Female">Feminino</option><option value="Male">Masculino</option></select></label>
+      <label>Género{!registration && ' — para completar a ficha'}<AdaptiveSelect name="gender" defaultValue={data.gender || ''} required={registration}><option value="">{registration ? 'Seleciona o género' : 'Não indicado'}</option><option value="Female">Feminino</option><option value="Male">Masculino</option></AdaptiveSelect></label>
       <label>Número de filhos — opcional<input name="childrenCount" type="number" min="0" max="65535" step="1" defaultValue={data.childrenCount ?? ''} /></label>
-      <label>Situação pessoal — opcional<select name="relationshipStatus" defaultValue={data.relationshipStatus || ''}>
-        <option value="">Não indicada</option><option value="Married">Casada</option><option value="Separated">Separada</option><option value="Partnered">Comprometida</option><option value="Unpartnered">Sem compromisso</option><option value="Widowed">Viúva</option>
-      </select></label>
+      <label>Estado civil — opcional<AdaptiveSelect name="relationshipStatus" defaultValue={data.relationshipStatus || ''}>
+        <option value="">Não indicado</option><option value="Married">Casada</option><option value="Separated">Separada</option><option value="Partnered">Comprometida</option><option value="Unpartnered">Sem compromisso</option><option value="Widowed">Viúva</option>
+      </AdaptiveSelect></label>
       <label className="full-width">Morada — opcional<input name="address" defaultValue={data.address || ''} maxLength="1000" autoComplete="street-address" /></label>
       <label>Código postal — opcional<input name="postalCode" defaultValue={data.postalCode || ''} maxLength="30" autoComplete="postal-code" /></label>
       {(client?.hasAccount || registration) && <label>Nome público{registration && ' — opcional'}<input name="displayName" defaultValue={data.displayName || ''} maxLength="201" autoComplete="nickname" /></label>}

@@ -1,5 +1,6 @@
 import { apiRequest, SESSION_EXPIRED } from './identityApi'
 import { invalidateResources } from './liveUpdates'
+import { submittedWrite } from './submittedWrites'
 
 export function validateTestimonials(rows, manager = false) {
   if (!Array.isArray(rows) || rows.some(row => typeof row.id !== 'string' || !/^[a-f0-9-]{36}$/.test(row.id) || typeof row.text !== 'string' || row.text.length > 10000
@@ -11,18 +12,20 @@ export async function readPublicTestimonials() { return validateTestimonials(awa
 export async function readManagedTestimonials() { return validateTestimonials(await apiRequest('testimonials'), true) }
 
 export async function saveTestimonial(item, fields, file, published) {
-  if (!navigator.onLine) throw new Error('Sem ligação. A publicação permanece no rascunho deste aparelho.')
-  const csrf = await apiRequest('identity/csrf')
   const form = new FormData()
   form.set('text', fields.text); form.set('version', String(item.version)); form.set('operationId', fields.operationId)
   form.set('published', String(published)); form.set('removeImage', String(!file && fields.removeImage))
   if (file) form.set('image', file)
+  return submittedWrite(async sent => {
+  const csrf = await apiRequest('identity/csrf')
   let response
+  sent()
   try { response = await fetch(`/api/testimonials/${item.id}`, { method: 'POST', credentials: 'same-origin', cache: 'no-store', headers: { 'X-PaCT-CSRF': csrf.token }, body: form }) }
-  catch { throw new Error('A ligação foi interrompida. Verifica se a publicação foi guardada antes de repetir; o rascunho foi conservado.') }
+  catch { throw new Error('A ligação foi interrompida. Verifica se a publicação foi guardada antes de repetir; o preenchimento foi mantido neste formulário.') }
   const result = await response.json().catch(() => ({}))
   if (response.status === 401) window.dispatchEvent(new Event(SESSION_EXPIRED))
-  if (!response.ok || !result.confirmed || result.publication?.id !== item.id) throw new Error(result.title || 'Não foi possível confirmar a gravação da publicação.')
+  if (!response.ok || !result.confirmed || result.publication?.id !== item.id) { const error = new Error(result.title || 'Não foi possível confirmar a gravação da publicação.'); if (!response.ok) error.status = response.status; throw error }
   invalidateResources(['testimonials', 'publicTestimonials'])
   return validateTestimonials([result.publication], true)[0]
+  }, true)
 }

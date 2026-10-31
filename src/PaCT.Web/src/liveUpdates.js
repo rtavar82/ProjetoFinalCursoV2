@@ -1,7 +1,12 @@
 export const REFRESH_INTERVAL_MS = 60000
 const changeEvent = 'pact:resources-changed'
 const revisions = new Map()
+const activeResources = new Map()
 export function resourceRevision(resource) { return revisions.get(resource) || 0 }
+
+export function refreshOpenedView() {
+  if (activeResources.size) invalidateResources([...activeResources.keys()])
+}
 
 // Only pending reads are shared. No response cache, persistence or cross-session
 // state: the map belongs to the authenticated workspace and is discarded with it.
@@ -25,23 +30,26 @@ export function announceSuccessfulWrite(path, body) {
   const endpoint = path.split('?')[0]
   const resources = []
   if (/^(clients(?:\/|$)|profile$|identity\/client-registration$)/.test(endpoint)) resources.push('clientReviews', 'clients', 'profile', 'clientAccess')
+  if (/^clients\/reviews\/[^/]+$/.test(endpoint) && body?.accept) resources.push('consultations', 'finance', 'agenda', 'guestRequests', 'packs', 'events', 'consultationNotices', 'consultationMessages')
   if (endpoint === 'consultations/commands') {
-    if (['SendMessage', 'ReadMessages', 'BlockConversation', 'ReopenConversation'].includes(body?.action)) resources.push('consultationNotices', 'consultations', 'consultationMessages')
+    if (['SendMessage', 'ReadMessages', 'ReadMessageNotice', 'BlockConversation', 'ReopenConversation'].includes(body?.action)) resources.push('consultationNotices', 'consultations', 'consultationMessages')
     else resources.push('consultationNotices', 'consultations', 'finance', 'agenda', 'guestRequests', 'packs', 'events')
+    if (body?.action === 'LinkGuestRequest') resources.push('clients', 'clientReviews')
   }
-  if (/^consultations\/events\/[^/]+\/requests$/.test(endpoint)) resources.push('events', 'consultationNotices')
-  if (endpoint === 'consultations/guests') resources.push('agenda', 'consultationNotices', 'guestRequests')
+  if (/^consultations\/events\/[^/]+\/requests$/.test(endpoint)) resources.push('events', 'consultationNotices', 'clients', 'clientReviews')
+  if (endpoint === 'consultations/guests') resources.push('agenda', 'consultationNotices', 'guestRequests', 'clients', 'clientReviews')
   if (/^identity\/(passkeys|google|password-change)/.test(endpoint)) resources.push('accountSecurity')
   if (resources.length) invalidateResources(resources)
 }
 
 // Refresh readers only. Never hydrate, remount or submit an editing form here.
 export function observeResource(resource, read) {
+  activeResources.set(resource, (activeResources.get(resource) || 0) + 1)
   let stopped = false
   let loading = false
   let queued = false
   async function refresh(force = false) {
-    if (stopped || !navigator.onLine || document.visibilityState === 'hidden') return
+    if (stopped || (!navigator.onLine && force !== true) || document.visibilityState === 'hidden') return
     if (loading) { if (force === true) queued = true; return }
     loading = true
     try { await read() }
@@ -58,9 +66,12 @@ export function observeResource(resource, read) {
   document.addEventListener('visibilitychange', refresh)
   // StrictMode can set up and remove an effect in the same turn. Do not send a
   // request for that discarded observer, or for a page already left behind.
-  queueMicrotask(() => { void refresh() })
+  queueMicrotask(() => { void refresh(true) })
   return () => {
     stopped = true
+    const remaining = activeResources.get(resource) - 1
+    if (remaining) activeResources.set(resource, remaining)
+    else activeResources.delete(resource)
     window.clearInterval(timer)
     window.removeEventListener(changeEvent, changed)
     window.removeEventListener('focus', refresh)

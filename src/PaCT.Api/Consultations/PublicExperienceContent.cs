@@ -25,7 +25,7 @@ public static class PublicExperienceContent
         ]),
         new("Pagamento", [
             "Consulta o valor e as condições da sessão publicada na Agenda. Pode ser exigido pagamento antecipado.",
-            "Cada participante tem uma situação financeira própria. A liquidação é integral e pode utilizar saldo monetário ou Saldo Pack de um acordo que abranja esta consulta de grupo."
+            "Cada participante tem uma situação financeira própria. A gestão pode confirmar a utilização parcial ou total de crédito monetário. Uma sessão de Saldo Pack elegível cobre a consulta completa e não pode ser combinada com pagamentos monetários nessa consulta."
         ]),
         new("Cancelamentos ou faltas", [
             "Podes cancelar antes do início da consulta, sem penalização financeira automática. Uma nova data exige uma nova inscrição.",
@@ -63,7 +63,7 @@ public static class PublicExperienceContent
                     "Com conta PaCT, a inscrição fica confirmada se existir vaga. Sem conta, o pedido aguarda confirmação e os contactos posteriores são tratados diretamente com a terapeuta."
                 ]),
                 new("Pagamento", [
-                    "O preço é igual para todos os participantes do mesmo retiro. Pode existir pagamento integral ou faseado, com sinal e prestações, conforme as condições publicadas.",
+                    "O preço é igual para todos os participantes do mesmo retiro. O pagamento é integral, conforme as condições publicadas para o retiro.",
                     "A confirmação da inscrição não confirma o recebimento nem utiliza automaticamente saldo monetário. O Saldo Pack não pode ser utilizado para pagar retiros."
                 ]),
                 new("Desistência do participante", [

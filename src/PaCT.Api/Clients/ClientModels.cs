@@ -19,7 +19,9 @@ public sealed record ClientReview(string Id, string Kind, string? PersonId, byte
     string? DecidedBy = null, DateTime? DecidedAt = null, string? AssociatedPersonId = null, string[]? SelectedFields = null);
 public sealed record ClientNote(string Id, string PersonId, byte[] Content, string CreatedBy, string UpdatedBy,
     DateTime CreatedAt, DateTime UpdatedAt, ulong Version = 1);
-public sealed record ReviewProposal(ClientProfile Data);
+public sealed record ReviewProposal(ClientProfile Data,
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] string? Origin = null,
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] ClientAggregationItem[]? Aggregation = null);
 public sealed record ClientView(string Id, ClientProfile Data, bool HasAccount, string? AccountState,
     bool IsComplete, DateTime CreatedAt, DateTime UpdatedAt, ulong Version, string? IdentityReviewStatus = null);
 public sealed record ClientSaveResult(bool Saved, bool UnderReview, string Message, ClientView? Client = null, string? ReviewToken = null);
@@ -31,6 +33,8 @@ public interface IClientStore
 }
 public interface IClientSession
 {
+    Task<ClientCommandReceipt?> CommandAsync(string id);
+    Task SaveCommandAsync(ClientCommandReceipt receipt);
     Task<IReadOnlyList<StoredClient>> ClientsAsync();
     Task<IReadOnlyList<StoredClientName>> ClientNamesAsync(string[] ids);
     Task<IReadOnlyList<ClientReview>> ReviewsAsync();
@@ -41,5 +45,5 @@ public interface IClientSession
     Task SaveNoteAsync(ClientNote note, bool create);
     Task CreateRegistrationAsync(PrivatePerson person, IdentityAccount account, EmailJob email);
     Task QueueSetupEmailAsync(IdentityAccount account, EmailJob email);
-    Task ConsolidateAsync(StoredClient primary, StoredClient absorbed, DateTime now, string authorId);
+    Task<ClientAggregationItem[]> ConsolidateAsync(StoredClient primary, StoredClient absorbed, DateTime now, string authorId);
 }

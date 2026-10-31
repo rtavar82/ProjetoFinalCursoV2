@@ -3,3 +3,9 @@
 .request > div { min-width: 0; overflow-wrap: anywhere; }
 .request h3 { margin: 0 0 8px; }
 .request p { margin: 4px 0; }
+.approval { display: grid; gap: 14px; }
+.identity { display: grid; gap: 12px; min-width: 0; }
+.identity h3 { font: inherit; font-weight: 600; margin: 0; }
+.search { border: 1px solid var(--line); border-radius: 16px; padding: 16px; min-width: 0; }
+.search summary { color: var(--green); cursor: pointer; min-height: 32px; overflow-wrap: anywhere; }
+.search[open] summary { margin-bottom: 16px; }

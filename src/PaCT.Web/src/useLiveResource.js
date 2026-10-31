@@ -1,6 +1,7 @@
 import { useCallback, useContext, useEffect, useState } from 'react'
 import { invalidateResources, observeResource, readInFlight, resourceRevision } from './liveUpdates'
 import { LiveResourceContext } from './liveResourceContext'
+import { reportStaleContent, unavailableRead } from './readFreshness'
 
 // Keep the last confirmed read mounted during revalidation. Editable state must
 // live separately: a newer snapshot never hydrates or changes the key of a form.
@@ -19,6 +20,7 @@ export default function useLiveResource(resource, key, read, enabled = true) {
         const data = await readInFlight(reads, resource, key, revision, read)
         if (current && resourceRevision(resource) === revision) setSnapshot({ key, data, error: '', refreshing: false })
       } catch (failure) {
+        if (current && unavailableRead(failure)) reportStaleContent()
         if (current && resourceRevision(resource) === revision) setSnapshot(previous => ({ key, data: previous?.key === key ? previous.data : null, error: failure.message, refreshing: false }))
       }
     }

@@ -6,10 +6,11 @@
 .toggle svg { flex-shrink: 0; transition: transform .15s ease; }
 .toggle[aria-expanded='true'] svg { transform: rotate(180deg); }
 .card .reset { display: inline-flex; align-items: center; flex: 0 0 auto; gap: .35rem; width: auto; font-size: .78rem; padding: .35rem .45rem; margin: 0; min-height: 36px; white-space: nowrap; }
-.reset:disabled { cursor: default; }
 .reset svg { width: 16px; height: 16px; }
 .help, .selection { font-size: .8rem; line-height: 1.6; margin: .45rem 0 .9rem; overflow-wrap: anywhere; }
 .selection { margin-bottom: 0; }
+.card .prompt { display: block; width: 100%; padding: 0; border: 0; background: transparent; color: inherit; text-align: left; font-weight: 400; border-radius: 6px; box-shadow: none; }
+.card .prompt:hover:not(:disabled) { background: transparent; color: inherit; }
 .fields { display: grid; gap: .85rem; grid-template-columns: minmax(0, 1fr); }
 .fields label { min-width: 0; font-size: .8rem; }
 .fields select { background: var(--surface); font-size: 1rem; min-width: 0; max-width: 100%; }

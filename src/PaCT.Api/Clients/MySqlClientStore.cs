@@ -9,20 +9,9 @@ public sealed class MySqlClientStore(DatabaseConnectionSettings settings) : ICli
 {
     internal static Task CreateGuestAsync(MySqlConnection connection, MySqlTransaction transaction, string id,
         PaCT.Api.Consultations.GuestSubmission raw, IdentitySecurity security, DateTime now, CancellationToken ct)
-    {
-        var input = PaCT.Api.Consultations.GuestConsultations.Normalize(raw);
-        var fields = new Dictionary<string, byte[]> {
-            ["first-name"] = security.Encrypt(id, "first-name", input.FirstName),
-            ["last-name"] = security.Encrypt(id, "last-name", input.LastName),
-            ["dial-code"] = security.Encrypt(id, "dial-code", input.DialCode),
-            ["phone"] = security.Encrypt(id, "phone", input.Phone)
-        };
-        if (input.Email is not null) fields["email"] = security.Encrypt(id, "email", input.Email);
-        // A declared contact is not proof of ownership of an existing ficha or account.
-        var row = new StoredClient(id, new(), fields, input.Email is null ? null : security.EmailHash(input.Email),
-            security.PhoneHash(input.DialCode, input.Phone), null, null, now, now, 1);
-        return new Session(connection, transaction, ct).SaveClientAsync(row, true);
-    }
+        => GuestClientIdentity.CreateAsync(InTransaction(connection, transaction, ct), id, raw, security, now);
+    internal static IClientSession InTransaction(MySqlConnection connection, MySqlTransaction transaction, CancellationToken ct)
+        => new Session(connection, transaction, ct);
     public async Task<T> ExecuteAsync<T>(Func<IClientSession, Task<T>> action, bool write, CancellationToken ct)
     {
         await using var connection = settings.CreateConnection();
@@ -47,6 +36,19 @@ public sealed class MySqlClientStore(DatabaseConnectionSettings settings) : ICli
 
     private sealed class Session(MySqlConnection connection, MySqlTransaction? transaction, CancellationToken ct) : IClientSession
     {
+        public async Task<ClientCommandReceipt?> CommandAsync(string id)
+        {
+            await using var command = Command("SELECT author_id,request_hash,result_ciphertext,created_at FROM client_commands WHERE id=@id FOR UPDATE", ("@id", id));
+            await using var reader = await command.ExecuteReaderAsync(ct);
+            return await reader.ReadAsync(ct) ? new(id, reader.IsDBNull(0) ? null : reader.GetGuid(0).ToString("D"),
+                reader.GetString(1), (byte[])reader[2], reader.GetDateTime(3)) : null;
+        }
+        public async Task SaveCommandAsync(ClientCommandReceipt receipt)
+        {
+            await using var command = Command("INSERT INTO client_commands(id,author_id,request_hash,result_ciphertext,created_at) VALUES(@id,@author,@hash,@result,@now)",
+                ("@id", receipt.Id), ("@author", receipt.AuthorId), ("@hash", receipt.RequestHash), ("@result", receipt.Result), ("@now", receipt.CreatedAt));
+            await command.ExecuteNonQueryAsync(ct);
+        }
         private MySqlCommand Command(string sql, params (string Key, object? Value)[] values)
         {
             var command = new MySqlCommand(sql, connection, transaction);
@@ -151,8 +153,8 @@ public sealed class MySqlClientStore(DatabaseConnectionSettings settings) : ICli
             return rows;
         }
         public Task SaveReviewAsync(ClientReview r, bool create) => Execute(create ? """
-            INSERT INTO client_reviews (id,kind,person_id,proposal_ciphertext,candidate_ids,status,author_id,created_at,source_version,version)
-            VALUES (@id,@kind,@person,@proposal,@candidates,@status,@author,@created,@sourceVersion,@version)
+            INSERT INTO client_reviews (id,kind,person_id,proposal_ciphertext,candidate_ids,status,author_id,created_at,source_version,version,decided_by,decided_at,associated_person_id,selected_fields)
+            VALUES (@id,@kind,@person,@proposal,@candidates,@status,@author,@created,@sourceVersion,@version,@decidedBy,@decidedAt,@associated,@fields)
             """ : """
             UPDATE client_reviews SET status=@status,person_id=@person,source_version=@sourceVersion,proposal_ciphertext=@proposal,candidate_ids=@candidates,decided_by=@decidedBy,decided_at=@decidedAt,
             associated_person_id=@associated,selected_fields=@fields,version=@version WHERE id=@id AND version=@previous AND status IN ('Open','Accepted')
@@ -181,8 +183,9 @@ public sealed class MySqlClientStore(DatabaseConnectionSettings settings) : ICli
         public Task CreateRegistrationAsync(PrivatePerson person, IdentityAccount account, EmailJob email) =>
             MySqlIdentityStore.InsertIdentityAsync(connection, transaction ?? throw new InvalidOperationException("Registration requires a transaction."), person, account, email, ct);
 
-        public async Task ConsolidateAsync(StoredClient primary, StoredClient absorbed, DateTime now, string authorId)
+        public async Task<ClientAggregationItem[]> ConsolidateAsync(StoredClient primary, StoredClient absorbed, DateTime now, string authorId)
         {
+            var aggregation = await ClientAggregation.ReassignAsync(connection, transaction ?? throw new InvalidOperationException("Aggregation requires a transaction."), absorbed.Id, primary.Id, now, ct);
             if (absorbed.AccountId is not null && primary.AccountId is null)
                 await Execute("""
                     UPDATE accounts SET origin_person_id=@primary,display_name=@name,phone_login_hash=@phone,link_verified_at=@now,
@@ -204,6 +207,7 @@ public sealed class MySqlClientStore(DatabaseConnectionSettings settings) : ICli
                     ("@phone", primary.PhoneHash), ("@now", now), ("@id", primary.AccountId));
             await Execute("UPDATE people SET is_active=0,updated_at=@now,version=version+1 WHERE id=@id AND version=@version AND is_active=1",
                 ("@now", now), ("@id", absorbed.Id), ("@version", absorbed.Version));
+            return aggregation;
         }
 
         public async Task QueueSetupEmailAsync(IdentityAccount account, EmailJob email)

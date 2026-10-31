@@ -9,7 +9,6 @@ export default function PwaStatus() {
   const [installPrompt, setInstallPrompt] = useState(null)
   const [waiting, setWaiting] = useState(null)
   const [error, setError] = useState('')
-  const [metadata, setMetadata] = useState(null)
   const [reloadReady, setReloadReady] = useState(false)
   const dirtyForms = useRef(new Set())
 
@@ -21,7 +20,7 @@ export default function PwaStatus() {
     function changed(event) { const form = event.target.closest('form:not([data-allow-update])'); if (form) dirtyForms.current.add(form) }
     async function status() {
       setOnline(navigator.onLine)
-      try { const saved = await readPublicBuild(); if (current) setMetadata(saved) } catch { if (current) setError('O armazenamento público offline não está disponível. A utilização online continua possível.') }
+      try { await readPublicBuild() } catch { if (current) setError('O armazenamento público offline não está disponível. A utilização online continua possível.') }
     }
     function install(event) { if (window.matchMedia('(min-width: 781px)').matches) { event.preventDefault(); setInstallPrompt(event) } }
     function installed() { setInstallPrompt(null) }
@@ -83,7 +82,6 @@ export default function PwaStatus() {
   }
   if (online && !installPrompt && !waiting && !error && !reloadReady) return null
   return <aside className={styles.status} aria-label="Estado da aplicação">
-    {!online && <div role="status"><strong>Sem ligação à rede.</strong> Rascunhos privados já desbloqueados podem continuar a ser editados neste aparelho. Depois de reabrir a aplicação, é necessário iniciar sessão online para os desbloquear. Fechos e outros envios não são executados automaticamente.{metadata?.cachedAt && <p>Recursos públicos preparados em {new Intl.DateTimeFormat('pt-PT', { timeZone: 'Europe/Lisbon', dateStyle: 'short', timeStyle: 'short' }).format(new Date(metadata.cachedAt))}.</p>}</div>}
     {installPrompt && <button className="secondary" onClick={async () => { await installPrompt.prompt(); await installPrompt.userChoice; setInstallPrompt(null) }}>Instalar PaCT</button>}
     {(waiting || reloadReady) && <div><button disabled={!online} onClick={refresh}>actualizar a pagina PaCT</button></div>}
     {error && <p role="alert" className="notice error">{error}</p>}

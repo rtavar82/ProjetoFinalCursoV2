@@ -12,7 +12,7 @@
 .card:hover:not(:disabled) { background: var(--surface); border-color: var(--accent); }
 .card img { display: block; width: 100%; max-height: 22rem; height: auto; object-fit: contain; border-radius: 12px; background: var(--tint); }
 .card p { display: -webkit-box; -webkit-line-clamp: 6; -webkit-box-orient: vertical; overflow: hidden; white-space: pre-line; font-weight: 400; margin: 0; overflow-wrap: anywhere; }
-.readMore { font-weight: 600; color: var(--accent); text-decoration: underline; }
+.readMore { font-weight: 600; color: var(--accent); text-decoration-line: underline; text-decoration-thickness: 1px; text-underline-offset: .18em; }
 .hint { color: var(--muted); font-size: .85rem; }
 .viewer:global(.consultation-dialog) { width: min(calc(100% - 1.2rem),64rem); }
 .viewer img, .preview img { display: block; max-width: 100%; height: auto; margin: 0 auto 1rem; }

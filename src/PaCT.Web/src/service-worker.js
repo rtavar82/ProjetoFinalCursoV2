@@ -11,7 +11,7 @@ self.addEventListener('push', event => {
     await self.registration.showNotification('PaCT', {
       body: value?.body || 'Existe uma atualização na aplicação.',
       tag: typeof value?.tag === 'string' ? value.tag : 'pact-update',
-      data: { url: '/?view=payments' }, icon: '/app-icon-192.png',
+      data: { url: value?.url === '/#agenda' ? '/#agenda' : '/?view=payments' }, icon: '/app-icon-192.png',
     })
   })())
 })
@@ -19,10 +19,11 @@ self.addEventListener('notificationclick', event => {
   event.notification.close()
   event.waitUntil((async () => {
     const clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
+    const url = event.notification.data?.url === '/#agenda' ? '/#agenda' : '/?view=payments'
     if (clients.length) {
-      await clients[0].focus()
-      clients[0].postMessage({ type: 'PACT_OPEN_PAYMENTS' })
-    } else await self.clients.openWindow('/?view=payments')
+      try { await clients[0].focus() } catch { /* The tab can still receive its destination when the browser refuses focus. */ }
+      clients[0].postMessage({ type: url === '/#agenda' ? 'PACT_OPEN_AGENDA' : 'PACT_OPEN_PAYMENTS' })
+    } else await self.clients.openWindow(url)
   })())
 })
 

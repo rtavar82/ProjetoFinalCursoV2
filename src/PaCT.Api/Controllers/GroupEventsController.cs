@@ -37,6 +37,8 @@ public sealed class GroupEventsController(IConsultationStore store, IIdentitySto
         {
             var e = data.Events.SingleOrDefault(e => e.Id == id && (manager || e.Definition.Published || data.Participations.Any(p => p.EventId == e.Id && p.PersonId == account.PersonId))) ?? throw new IdentityProblem(404, "Evento não encontrado.");
             return new { summary = Public(e, data, account), definition = manager ? e.Definition : null, e.ActualStartsAt, e.ActualEndsAt,
+                balance = manager ? (decimal?)null : data.Balance(account.PersonId),
+                paymentConditions = e.Service.ServiceKind == "Group" ? GroupPaymentConditions.Describe(e) : null,
                 instructions = manager || data.Participations.Any(p => p.EventId == e.Id && p.PersonId == account.PersonId && p.State == "Confirmed") ? e.Service.Instructions : null,
                 ownParticipations = !manager ? data.Participations.Where(p => p.EventId == e.Id && p.PersonId == account.PersonId).Select(p => Participation(p, data, false)).ToArray() : [],
                 history = manager ? e.History ?? [] : [], e.KeepBlocked,
@@ -66,19 +68,25 @@ public sealed class GroupEventsController(IConsultationStore store, IIdentitySto
 
     private object Public(GroupEvent e, ConsultationData data, IdentityAccount? account) => new
     {
-        e.Id, e.Version, e.State, serviceId = e.Service.Id, title = e.Service.Title, kind = e.Service.ServiceKind,
+        e.Id, e.Version, e.State, process = ProcessLifecycle.Status(e, time.GetUtcNow()), serviceId = e.Service.Id, title = e.Service.Title, kind = e.Service.ServiceKind,
         e.Definition.StartsAt, e.Definition.EndsAt, e.Definition.PublicLocation, e.Definition.Capacity, e.Definition.Published,
-        e.Definition.Program, e.Definition.TotalPrice, e.Definition.PaymentPlan, e.Definition.Installments, e.Definition.CancellationConditions,
+        e.Definition.Program, e.Definition.TotalPrice, e.Definition.CancellationConditions,
         remaining = e.State == "Scheduled" ? Math.Max(0, e.Definition.Capacity - GroupEvents.Seats(data, e.Id)) : 0, restricted = e.Definition.AllowedPersonIds is { Length: > 0 },
         eligible = account?.Role == Roles.Client && GroupEvents.Eligible(e, account.PersonId),
-        e.Service.ReferencePrice, e.Service.PaymentMode, isFree = SharingWorkshop.Matches(e.Service.Title),
+        e.Service.ReferencePrice, paymentMode = GroupPaymentConditions.Mode(e), isFree = GroupEvents.IsFree(e.Service),
         hasParticipation = account is not null && data.Participations.Any(p => p.EventId == e.Id && p.PersonId == account.PersonId && p.State is "Confirmed" or "Waiting")
     };
     private object Participation(EventParticipation p, ConsultationData data, bool manager) => new
     {
-        p.Id, p.EventId, p.PersonId, p.Version, p.State, p.ProtectedSeat, p.CreatedAt, p.Attendance, p.FinancialChoice, p.FinalAmount, p.SettlementId,
+        process = ProcessLifecycle.Status(data.Events.Single(e => e.Id == p.EventId), p, time.GetUtcNow()), p.Id, p.EventId, p.PersonId, p.Version, p.State, p.ProtectedSeat, p.CreatedAt, p.Attendance, p.FinancialChoice, p.FinalAmount, p.SettlementId,
         p.ConfirmedAt, p.ConfirmedScheduleVersion, balance = p.PersonId is null ? 0 : data.Balance(p.PersonId),
-        p.AgreedTotal, applied = RetreatFinance.Applied(data, p), remaining = GroupEvents.AmountDue(data, p), p.ReturnDue,
+        p.ArchivedAt, p.PublicContentVersion, p.ArchivedContentVersion,
+        p.AcceptedAt, p.AcceptedTermsVersion, p.AcceptedConditions, p.ExpectationOpen, p.AdvanceSatisfiedAt,
+        referencePrice = data.Events.Single(e => e.Id == p.EventId).Service.ReferencePrice,
+        canReceive = manager && (data.Events.Single(e => e.Id == p.EventId).Service.ServiceKind == "Retreat" ? RetreatFinance.CanReceive(data, p) : GroupPaymentConditions.CanReceive(data, data.Events.Single(e => e.Id == p.EventId), p)),
+        section = ClientAgenda.Section(data, data.Events.Single(e => e.Id == p.EventId), p, time.GetUtcNow()),
+        financialState = ClientAgenda.FinancialState(data, data.Events.Single(e => e.Id == p.EventId), p),
+        p.AgreedTotal, p.SettledAmount, p.CreditProposals, applied = RetreatFinance.Applied(data, p), remaining = GroupEvents.AmountDue(data, p), p.ReturnDue,
         returned = RetreatFinance.Returned(p), p.Returns, p.CancellationBy,
         sharedSummary = p.Attendance == "Performed" && p.SharedSummaryCiphertext is not null ? Decrypt(p.Id, "event-shared", p.SharedSummaryCiphertext) : null,
         privateNote = manager && p.PrivateNoteCiphertext is not null ? Decrypt(p.Id, "event-private", p.PrivateNoteCiphertext) : null,

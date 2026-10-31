@@ -18,7 +18,10 @@ public sealed record PasswordSignInResult(IdentityAccount? Account, int Status =
 public sealed record FactorVerification(string Code, bool RememberDevice = false);
 public sealed record EmailConfirmation(string Token);
 public sealed record ActionToken(string AccountId, string Stamp, string? EmailId = null, string Method = "Password");
-public sealed record EmailPayload(string Recipient, string Token, string Kind = "ConfirmEmail", string? InvitationId = null);
+public sealed record AppointmentEmailSummary(string Service, DateTimeOffset StartsAt, DateTimeOffset EndsAt,
+    string PublicLocation, string PaymentMode, decimal? Price, string Instructions = "");
+public sealed record EmailPayload(string Recipient, string Token, string Kind = "ConfirmEmail", string? InvitationId = null,
+    AppointmentEmailSummary? Appointment = null);
 public sealed record EmailJob(string Id, string AccountId, byte[] Payload, string State, DateTime CreatedAt);
 public sealed record PrivatePerson(string Id, byte[]? FirstName, byte[]? LastName, string? Locality,
     byte[] Email, byte[] EmailHash, DateTime CreatedAt);

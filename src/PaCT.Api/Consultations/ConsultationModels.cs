@@ -29,7 +29,8 @@ public sealed record AvailabilityWindow(string Id,
 public sealed record AvailabilityConstraints(
     [property: JsonConverter(typeof(ExplicitInstantConverter))] DateTimeOffset LastStartAt,
     string? ServiceId = null, string? Modality = null, string? PublicLocation = null, string Audience = "All",
-    [property: JsonConverter(typeof(OptionalExplicitInstantConverter))] DateTimeOffset? FirstStartAt = null);
+    [property: JsonConverter(typeof(OptionalExplicitInstantConverter))] DateTimeOffset? FirstStartAt = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] bool ClientChoicesConfirmed = false);
 public sealed record AvailabilitySlice(
     [property: JsonConverter(typeof(ExplicitInstantConverter))] DateTimeOffset StartsAt,
     [property: JsonConverter(typeof(ExplicitInstantConverter))] DateTimeOffset EndsAt, bool Available,
@@ -40,7 +41,7 @@ public sealed record AvailabilityPublication(
     AvailabilitySlice[] Windows, bool ReplaceWholeDays = false, bool ConfirmConflicts = false,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string[]? SelectedDays = null);
 public sealed record AvailabilityRange(DateTimeOffset StartsAt, DateTimeOffset EndsAt);
-public sealed record AgendaConflict(string Id, DateTimeOffset StartsAt, DateTimeOffset EndsAt, string State);
+public sealed record AgendaConflict(string Id, DateTimeOffset StartsAt, DateTimeOffset EndsAt, string State, ProcessStatus Process);
 public sealed record AgendaPublicationPreview(string Revision, DateTimeOffset StartsAt, DateTimeOffset EndsAt,
     int ReplacedWindows, int PreservedParts, AgendaConflict[] Conflicts, AvailabilityRange[]? Ranges = null);
 public sealed record PublicAgendaSegment(DateTimeOffset StartsAt, DateTimeOffset EndsAt, string State);
@@ -53,6 +54,9 @@ public sealed record Consultation
     public required DateTimeOffset EndsAt { get; init; }
     public required DateTimeOffset CreatedAt { get; init; }
     public string State { get; init; } = "Requested";
+    [JsonRequired]
+    public ProcessStage Stage { get; init; } = ProcessStage.Request;
+    public ProcessStageChange[] StageHistory { get; init; } = [];
     public long Version { get; init; } = 1;
     public string? ApprovedBy { get; init; }
     public DateTimeOffset? ApprovedAt { get; init; }
@@ -76,6 +80,8 @@ public sealed record Consultation
     public decimal? FinalAmount { get; init; }
     public string? NoDebtReason { get; init; }
     public string? SettlementId { get; init; }
+    public decimal SettledAmount { get; init; }
+    public CreditUseProposal[] CreditProposals { get; init; } = [];
     public string? CancellationOrigin { get; init; }
     public string? CancelledBy { get; init; }
     public DateTimeOffset? CancelledAt { get; init; }
@@ -102,25 +108,32 @@ public sealed record Consultation
 public sealed record ConsultationRead(string AccountId, long PublicContentVersion, DateTimeOffset At);
 public sealed record ConversationDecision(string AccountId, bool Blocked, long Version, DateTimeOffset At);
 public sealed record ConsultationMessage(string Id, string ConsultationId, string AuthorId, bool AuthorIsManager,
-    long Sequence, DateTimeOffset CreatedAt, string TextCiphertext);
+    long Sequence, DateTimeOffset CreatedAt, string TextCiphertext,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string[]? PhotoIds = null);
 public sealed record ConsultationMessageRead(string Id, string MessageId, string AccountId, DateTimeOffset At);
 public sealed record ConsultationNoteRevision(long PublicContentVersion, string Kind, string AuthorId, DateTimeOffset At, string? ContentCiphertext);
 public sealed record CollectionDecision(string Id, bool Closed, string AuthorId, DateTimeOffset At, string? ReasonCiphertext);
 public sealed record PaymentCommunication(string Id, string? AuthorId, DateTimeOffset At);
 public sealed record CreditAllocation(string ReceiptId, decimal Amount);
+public sealed record CreditUseProposal(string Id, string AuthorId, decimal Amount, DateTimeOffset At,
+    string? Decision = null, string? DecidedBy = null, DateTimeOffset? DecidedAt = null, decimal? AppliedAmount = null);
 public sealed record CreditEntry(string Id, string PersonId, string? ConsultationId, string Kind, decimal Amount,
     string AuthorId, DateTimeOffset CreatedAt, string? OriginalId, string? Method, string? ReasonCiphertext,
     DateTimeOffset? EffectiveAt = null, string? Origin = null, string? OriginReference = null,
     CreditAllocation[]? Allocations = null, long Sequence = 0);
 public sealed record ConsultationNotice(string Id, string? PersonId, string ConsultationId, string Kind,
     DateTimeOffset DueAt, DateTimeOffset? ExpiresAt, DateTimeOffset? ReadAt = null, bool Cancelled = false,
-    string? ClosedBy = null, string? ClosureReason = null);
+    string? ClosedBy = null, string? ClosureReason = null, string? PushState = null,
+    bool EmailPending = false, DateTimeOffset? EmailQueuedAt = null);
 public sealed class ConsultationData
 {
     public List<ConsultationService> Services { get; } = [];
     public List<AvailabilityWindow> Windows { get; } = [];
     public List<Consultation> Consultations { get; } = [];
     public List<GuestConsultationRequest> GuestRequests { get; } = [];
+    // Current portal eligibility, loaded from accounts; never persisted in consultation snapshots.
+    public HashSet<string> ClientAccountPeople { get; } = [];
+    public Dictionary<string, string> ClientReadOwners { get; } = [];
     public List<SessionPack> Packs { get; } = [];
     public List<PackUse> PackUses { get; } = [];
     public List<PackNotice> PackNotices { get; } = [];
@@ -150,11 +163,15 @@ public sealed record ConsultationCommand
     public string? Choice { get; init; }
     public string? AvailabilityChoice { get; init; }
     public decimal? Amount { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public decimal? SettlementAmount { get; init; }
     public string? Method { get; init; }
     public string? Origin { get; init; }
     public string? OriginReference { get; init; }
     public string? Reason { get; init; }
     public bool ConditionsAccepted { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public PaCT.Api.Clients.GuestIdentityDecision? GuestIdentity { get; init; }
     public string? TermsVersion { get; init; }
     public string? SharedNote { get; init; }
     public string? PrivateNote { get; init; }

@@ -21,6 +21,7 @@ public sealed class IdentitySecurity(IDataProtectionProvider provider, IInstalla
         Encoding.UTF8.GetString(provider.CreateProtector("PaCT0.2.Private.v1", owner, field).Unprotect(value));
     public byte[] EmailHash(string email) => HMACSHA256.HashData(secrets.SearchKey, Encoding.UTF8.GetBytes("email:" + email.Trim().ToUpperInvariant()));
     public byte[] GoogleSubjectHash(string subject) => HMACSHA256.HashData(secrets.SearchKey, Encoding.UTF8.GetBytes("external:Google:" + subject));
+    public string CommandHash(string input) => Convert.ToHexString(HMACSHA256.HashData(secrets.SearchKey, Encoding.UTF8.GetBytes("client-command:" + input)));
     public byte[] PhoneHash(string dialCode, string number) => HMACSHA256.HashData(secrets.SearchKey, Encoding.UTF8.GetBytes("phone:" + dialCode + ":" + number));
     public string ProtectAction(string purpose, ActionToken value, TimeSpan lifetime) =>
         provider.CreateProtector("PaCT0.2.Action.v1", purpose).ToTimeLimitedDataProtector().Protect(JsonSerializer.Serialize(value), time.GetUtcNow().Add(lifetime));

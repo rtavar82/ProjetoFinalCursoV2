@@ -15,10 +15,10 @@ public static class SentirPublicOfferCorrection
         if (!PublicExperienceContent.IsSentir(current.Title)) throw new InvalidOperationException("This correction only applies to Sentir Além do Olhar.");
         var candidate = current with
         {
-            ReferencePrice = 50m,
+            ReferencePrice = 55m,
             PaymentMode = "Prepayment",
             BookingOptions = current.BookingOptions?.Select(option => option with {
-                ReferencePrice = option.ReferencePrice is null ? null : 50m,
+                ReferencePrice = option.ReferencePrice is null ? null : 55m,
                 PaymentMode = option.PaymentMode is null ? null : "Prepayment"
             }).ToArray(),
             Presentation = (current.Presentation ?? PublicPresentationContent.ServiceText(current.Title)!) with { PackSessions = null }

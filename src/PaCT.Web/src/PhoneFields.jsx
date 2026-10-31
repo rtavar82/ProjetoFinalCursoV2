@@ -1,3 +1,4 @@
+import AdaptiveSelect from './AdaptiveSelect'
 import { useState } from 'react'
 
 // Calling codes checked against ITU National Numbering Plans: https://www.itu.int/oth/t0202
@@ -32,10 +33,10 @@ export default function PhoneFields({ data = {}, required = false, codeFirst = f
   const selectedCountry = countries.find(country => country.id === countryId)
 
   return <>
-    <label>País / indicativo<select aria-label="País / indicativo" value={countryId} onChange={event => setCountryId(event.target.value)}>
+    <label>País / indicativo<AdaptiveSelect aria-label="País / indicativo" value={countryId} onChange={event => setCountryId(event.target.value)}>
       {countries.map(country => <option key={country.id} value={country.id}>{codeFirst ? `+${country.dialCode} · ${country.name}` : `${country.name} (+${country.dialCode})`}</option>)}
       <option value="Other">Outro</option>
-    </select></label>
+    </AdaptiveSelect></label>
     {selectedCountry
       ? <input name="dialCode" type="hidden" value={selectedCountry.dialCode} />
       : <label>Indicativo — outro país<input name="dialCode" type="tel" value={customDialCode} onChange={event => setCustomDialCode(event.target.value)} onBlur={() => { if (/^[0-9]{1,3}$/.test(customDialCode)) setCustomDialCode(`+${customDialCode}`) }} maxLength="4" pattern="\+?[0-9]{1,3}" title="Indicativo com 1 a 3 algarismos, por exemplo +61." placeholder="+…" required={required || hasPhone} inputMode="tel" autoComplete="tel-country-code" /></label>}

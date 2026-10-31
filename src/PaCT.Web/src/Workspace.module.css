@@ -1,4 +1,6 @@
 .profile { min-width: 0; }
+.notifications { margin-block: 1rem 1.5rem; min-width: 0; }
+.notifications button { width: 100%; min-height: 44px; white-space: normal; }
 .sections { display: flex; flex-wrap: wrap; gap: .75rem; margin-block: 1rem 1.5rem; }
 .sections button { flex: 1 1 8rem; min-height: 44px; white-space: normal; }
 @media (min-width: 48rem) { .sections button { flex: 0 1 auto; } }

@@ -12,6 +12,10 @@
 .page nav:global(.consultation-tabs) > button:hover:not(:disabled) { background: var(--surface); color: var(--accent); }
 .page :global(.consultation-panels) { display: grid; gap: 1rem; }
 .page form { display: grid; gap: 1rem; }
+.page .filterFields { gap: .8rem; grid-template-columns: minmax(0, 1fr); }
+.filterWide { grid-column: 1 / -1; min-width: 0; }
+@media (min-width: 380px) { .page .filterFields { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (min-width: 1000px) { .page .filterFields { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 .page label { display: grid; gap: .4rem; min-width: 0; }
 .page input, .page select, .page textarea { width: 100%; min-width: 0; max-width: 100%; box-sizing: border-box; }
 .page textarea { min-height: 6rem; }
@@ -22,3 +26,10 @@
 .page :global(.consultation-dialog) > button, .page :global(.consultation-dialog) > form { margin-block: .7rem; }
 .page :global(.shared-consultation-note) { background: white; border: 1px solid #cad9d0; padding: 1rem; border-radius: .7rem; white-space: pre-wrap; line-height: 1.7; margin-block: 1rem; }
 @media (min-width: 760px) { .page :global(.consultation-panels) { grid-template-columns: repeat(2, minmax(0, 1fr)); } .page :global(.consultation-dialog) { padding: 1.8rem; } }
+
+.page .clientLink { width: auto; margin: 0; padding: 0; text-align: left; text-decoration-line: underline; }
+.resolution { border: 1px solid var(--line); border-radius: var(--card-radius); padding: 1rem; background: var(--surface); margin-block: 1rem; }
+.resolutionActions { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr)); gap: .75rem; }
+.resolutionActions button { margin: 0; }
+
+.page :global(.consultation-dialog) > button[aria-label="Fechar"] { margin: -.5rem -.5rem .2rem .5rem; }

@@ -1,9 +1,9 @@
 import { apiRequest } from './identityApi'
 
 // The current public API exposes event details in its paginated catalogue.
-export async function readPublicEvent(eventId, serviceId, { signal } = {}) {
+export async function readPublicEvent(eventId, serviceId, { signal, publicOnly = false } = {}) {
   for (let page = 1; page <= 100000; page++) {
-    const result = await apiRequest(`consultations/events?serviceId=${encodeURIComponent(serviceId)}&page=${page}`, undefined, { signal })
+    const result = await apiRequest(`consultations/events?serviceId=${encodeURIComponent(serviceId)}&page=${page}`, undefined, { signal, publicOnly })
     if (!Array.isArray(result.items) || !Number.isInteger(result.total) || result.total < 0) throw new Error('Não foi possível ler esta atividade. Atualiza a Agenda.')
     const event = result.items.find(item => item.id === eventId)
     if (event) {

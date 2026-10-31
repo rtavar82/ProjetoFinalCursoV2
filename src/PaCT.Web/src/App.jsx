@@ -16,6 +16,7 @@ import PublicPresentation from './PublicPresentation'
 import PublicTestimonials from './PublicTestimonials'
 import PublicPromotions from './PublicPromotions'
 import { publicRoute } from './publicPresentationData'
+import { cancelSubmittedWrites } from './submittedWrites'
 
 function readLink() {
   const parameters = new URLSearchParams(window.location.hash.slice(1))
@@ -35,6 +36,7 @@ export default function App() {
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
   const [profile, setProfile] = useState(null)
+  useEffect(() => { cancelSubmittedWrites() }, [profile?.id])
   const [guestSelection, setGuestSelection] = useState(null)
   const [publicService, setPublicService] = useState(() => publicRoute().serviceId)
   const [recoveryCodes, setRecoveryCodes] = useState([])
@@ -209,7 +211,7 @@ export default function App() {
           {stage === 'GoogleReturn' && <p role="status">A concluir a entrada…</p>}
           {stage === 'PasswordChangeLink' && <><h2>Escolhe a nova palavra-passe</h2><p>Depois de guardares, entra novamente com o teu email e a nova palavra-passe.</p><form onSubmit={event => { event.preventDefault(); const form = event.currentTarget; const data = Object.fromEntries(new FormData(form)); perform(async () => { validatePasswordFields(data); const result = await request('password-change/confirm', { token: passwordChangeToken, ...data }); form.reset(); setProfile(null); setMessage(result.message); setStage('SignIn') }) }}><PasswordField label="Nova palavra-passe" name="password" autoComplete="new-password" required minLength="12" maxLength="128" /><PasswordField label="Confirmar nova palavra-passe" name="confirmPassword" autoComplete="new-password" required minLength="12" maxLength="128" /><p className="field-help">12 a 128 caracteres, com maiúscula, minúscula, algarismo e símbolo.</p><button disabled={busy}>Guardar nova palavra-passe</button></form></>}
           {stage === 'Loading' && <p role="status">A verificar a instalação…</p>}
-          {stage === 'Offline' && <><h2>Estrutura pública offline</h2><p>Sem rede não é possível entrar, consultar dados privados ou enviar operações. Não são guardados pedidos para envio automático quando a ligação voltar.</p><button disabled={!navigator.onLine} onClick={() => window.location.reload()}>Voltar a verificar a ligação</button></>}
+          {stage === 'Offline' && <><h2>Estrutura pública offline</h2><p>Retoma a ligação para entrar e consultar informação atualizada. Os formulários de uma janela fechada não são enviados depois de voltares a abrir a aplicação.</p><button disabled={!navigator.onLine} onClick={() => window.location.reload()}>Voltar a verificar a ligação</button></>}
           {stage === 'InvalidLink' && <><h2>Link inválido</h2><p>Abre apenas o link original do email de convite ou de confirmação. Não combines códigos de links diferentes.</p></>}
           {stage === 'Invitation' && <InvitedTherapistRegistration token={invitationToken} busy={busy} perform={perform} onSignIn={() => { setError(''); setStage('SignIn') }} onRegistered={async result => { setMessage(result.message); await showStage(result.stage) }} />}
           {stage === 'Insecure' && <><h2>Usa uma ligação segura</h2><p>Para criar contas e iniciar sessão, abre a aplicação pelo Visual Studio com F5, no perfil HTTPS. No PC de desenvolvimento, o endereço é https://localhost:7161.</p><p>O servidor Vite isolado não está configurado para este percurso de autenticação. Não introduzas palavras-passe num endereço HTTP.</p></>}
@@ -222,8 +224,8 @@ export default function App() {
               <RegistrationFields />
               <button disabled={busy} type="submit">{busy ? 'A criar a conta…' : 'Criar conta e confirmar email'}</button>
             </form><button className="text-button" disabled={busy} onClick={() => { setError(''); setStage('SignIn') }}>Já comecei a configuração — entrar</button></>}
-          {stage === 'SignIn' && <><p className="eyebrow">ACESSO À CONTA</p><h2>Bem-vindo de volta</h2><p className="muted">Entra com a tua conta para continuar.</p>
-            <form onSubmit={submitSignIn}><label>Email<input name="email" type="email" autoComplete="username" required maxLength="256" /></label><PasswordField label="Palavra-passe" name="password" autoComplete="current-password" required maxLength="128" /><button disabled={busy}>{busy ? 'A verificar…' : 'Continuar'}</button></form><GoogleSignInButton busy={busy} perform={perform} /><button className="secondary" disabled={busy} onClick={() => { setError(''); setMessage(''); setStage('ClientRegister') }}>Criar conta de cliente</button><button type="button" className="text-button" disabled={busy} onClick={() => { setError(''); setMessage(''); setStage('PublicAgenda') }}>Consultar agenda</button></>}
+          {stage === 'SignIn' && <><h2>Bem-vindo de volta</h2>
+            <form onSubmit={submitSignIn}><label>Email<input name="email" type="email" autoComplete="username" required maxLength="256" /></label><PasswordField label="Palavra-passe" name="password" autoComplete="current-password" required maxLength="128" /><button disabled={busy}>{busy ? 'A verificar…' : 'Entrar'}</button></form><GoogleSignInButton busy={busy} perform={perform} /><button className="secondary" disabled={busy} onClick={() => { setError(''); setMessage(''); setStage('ClientRegister') }}>Criar uma conta</button></>}
           {stage === 'ClientRegister' && <><h2>Criar conta de cliente</h2><p>Preenche nome, apelido, email, telefone, nascimento, género e localidade. Depois de confirmares o email, vais definir a tua palavra-passe.</p><ClientProfileForm registration busy={busy} onSave={submitClientRegistration} /></>}
           {stage === 'ClientReview' && <><h2>Pedido em análise</h2><p>O registo não foi concluído. A gestão irá verificar o teu pedido.</p></>}
           {stage === 'ClientEmailSent' && <><h2>Confirma o teu email</h2><p>Abre a mensagem recebida, incluindo a pasta de spam. O botão do link permite confirmar o endereço e definir a palavra-passe. Ainda não foi iniciada uma sessão.</p><button className="secondary" disabled={busy} onClick={() => { setError(''); setMessage(''); setStage('ClientRegister') }}>Pedir novo email para continuar o registo</button></>}

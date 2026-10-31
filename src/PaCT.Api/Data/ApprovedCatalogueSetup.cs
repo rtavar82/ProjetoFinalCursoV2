@@ -12,7 +12,7 @@ public static class ApprovedCatalogueSetup
 {
     internal static ConsultationService[] Definitions() =>
     [
-        Service("Consultas \"Sentir Além do Olhar\"", 120, 50m, "Prepayment"),
+        Service("Consultas \"Sentir Além do Olhar\"", 120, 55m, "Prepayment"),
         Service("Sessão de Reiki & Alinhamento Energético", 60, 33m, "Prepayment", remotePrice: 16.5m),
         Service("Sessão Individual de Constelação Familiar", 90, null, "Contribution")
     ];

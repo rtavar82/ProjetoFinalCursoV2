@@ -1,0 +1,22 @@
+.popup {
+  position: fixed;
+  inset: max(.75rem, env(safe-area-inset-top)) auto auto 50%;
+  transform: translateX(-50%);
+  box-sizing: border-box;
+  width: max-content;
+  max-width: calc(100% - 1.5rem);
+  margin: 0;
+  padding: .65rem .9rem;
+  border: 1px solid var(--color-border, #b8cdbf);
+  border-radius: .75rem;
+  background: var(--color-surface, #fff);
+  color: var(--color-text, #244336);
+  box-shadow: 0 .2rem .8rem #1f3b2e20;
+  font-family: inherit;
+  font-size: .875rem;
+  line-height: 1.4;
+  z-index: 1000;
+  pointer-events: none;
+}
+.popup[hidden] { display: none; }
+@media print { .popup { display: none; } }

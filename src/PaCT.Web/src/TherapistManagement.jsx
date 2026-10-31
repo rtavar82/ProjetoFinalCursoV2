@@ -1,6 +1,7 @@
 import styles from './TherapistManagement.module.css'
 import { useEffect, useState } from 'react'
 import { request } from './identityApi'
+import { observeResource } from './liveUpdates'
 
 const therapistStates = { ConfirmEmail: 'Aguarda confirmação do email', ConfigureAuthenticator: 'Aguarda configuração da Passkey', Ready: 'Acesso ativo · email confirmado e 2FA', Closed: 'Conta encerrada' }
 const invitationStates = { Pending: 'Convite pendente', Expired: 'Convite expirado', Cancelled: 'Convite cancelado', Accepted: 'Convite utilizado' }
@@ -13,8 +14,11 @@ export default function TherapistManagement({ busy, perform }) {
   const [message, setMessage] = useState('')
   useEffect(() => {
     let current = true
-    request('therapist-management').then(value => { if (current) setState(value) }).catch(error => { if (current) setLoadError(error.message) })
-    return () => { current = false }
+    const stop = observeResource('accountSecurity', async () => {
+      try { const value = await request('therapist-management'); if (current) { setState(value); setLoadError('') } }
+      catch (error) { if (current) setLoadError(error.message) }
+    })
+    return () => { current = false; stop() }
   }, [])
 
   async function reload() { setState(await request('therapist-management')); setLoadError('') }

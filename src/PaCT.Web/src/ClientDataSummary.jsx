@@ -6,7 +6,7 @@ export default function ClientDataSummary({ data, hasAccount, showEmpty = true }
     ['Nome', [data.firstName, data.lastName].filter(Boolean).join(' ')], ['Nome público', data.displayName],
     ['Email', data.email], ['Telefone', data.phone && `+${data.dialCode} ${data.phone}`],
     ['Localidade', data.locality], ['Data de nascimento', data.birthDate && data.birthDate.split('-').reverse().join('/')],
-    ['Género', genders[data.gender]], ['Número de filhos', data.childrenCount], ['Situação pessoal', relationships[data.relationshipStatus]],
+    ['Género', genders[data.gender]], ['Número de filhos', data.childrenCount], ['Estado civil', relationships[data.relationshipStatus]],
     ['Morada', data.address], ['Código postal', data.postalCode],
     ...(hasAccount === undefined ? [] : [['Conta de acesso', hasAccount ? 'Com conta' : 'Ficha sem conta']]),
   ]

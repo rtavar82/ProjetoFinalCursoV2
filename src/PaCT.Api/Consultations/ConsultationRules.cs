@@ -4,34 +4,43 @@ namespace PaCT.Api.Consultations;
 
 public static class ConsultationRules
 {
-    public const string TermsVersion = "individual-2026-10-20-v3.0";
-    public const string PaymentAcceptanceTerms = "Ao aceitar, indicas que vais efetuar o pagamento e inicia-se uma espera de oito horas. Só a gestão confirma o dinheiro recebido. O recebimento fica em crédito; pagar a consulta exige liquidação integral expressa no fecho ou depois dele. Não existe penalização por cancelamento; o cancelamento normal só é permitido antes do início.";
-    public const string Terms = "A marcação já está confirmada. " + PaymentAcceptanceTerms;
-    public static string State(Consultation c, DateTimeOffset now) => c.State switch
-    {
-        "Requested" when now >= c.StartsAt => "Expired",
-        "Confirmed" when now >= c.StartsAt => "AwaitingClosure",
-        _ => c.State
-    };
-    public static bool HasDebt(Consultation c) => c.State == "Performed" && c.SettlementId is null && c.NoDebtReason is null && (c.FinalAmount is null || c.FinalAmount > 0);
-    public static string ClientSection(Consultation c, DateTimeOffset now) => HasDebt(c) || c.ExpectationOpen && State(c, now) is "Confirmed" or "AwaitingClosure" ? "Payments"
-        : c.State is "Performed" or "NoShow" ? "Closed" : State(c, now) == "Confirmed" ? "Upcoming" : "Other";
-    public static string ManagerSection(Consultation c, DateTimeOffset now) => State(c, now) switch
+    public const string TermsVersion = "individual-2026-10-26-v3.5";
+    public static decimal Remaining(Consultation c) => c.SettlementId is not null || c.NoDebtReason is not null ? 0 : Math.Max(0, (c.FinalAmount ?? 0) - c.SettledAmount);
+    public static bool HasDebt(Consultation c) => c.State == "Performed" && c.SettlementId is null && c.NoDebtReason is null && (c.FinalAmount is null || Remaining(c) > 0);
+    public static string ClientSection(Consultation c, DateTimeOffset now) => HasDebt(c) || c.ExpectationOpen && ProcessLifecycle.Substate(c, now) is "Confirmed" or "AwaitingClosure" ? "Payments"
+        : c.State is "Performed" or "NoShow" || c.ArchivedAt is not null && CanArchive(c, now) ? "Closed" : ProcessLifecycle.Substate(c, now) == "Confirmed" && c.AcceptedAt is not null ? "Upcoming" : "Other";
+    public static bool CanArchive(Consultation c, DateTimeOffset now) => !HasDebt(c) && !c.ExpectationOpen
+        && ProcessLifecycle.Substate(c, now) is "Performed" or "NoShow" or "Expired" or "Rejected" or "CancelledClient" or "CancelledManager";
+    public static string ManagerSection(Consultation c, DateTimeOffset now) => ProcessLifecycle.Substate(c, now) switch
     {
         "Requested" => "Requests", "Confirmed" => c.ExpectationOpen ? "AwaitingReceipt" : "Upcoming", "AwaitingClosure" => "Closure",
         "Performed" => "Performed", "NoShow" => "NoShow", "CancelledClient" or "CancelledManager" => "Cancelled", _ => "Ended"
     };
     public static string FinancialState(Consultation c) => HasDebt(c) ? c.FinalAmount is null ? "ContributionUndefined" : c.Service.PaymentMode == "Contribution" ? "ContributionPending" : "Unpaid"
         : c.SettlementId is not null ? "Paid" : c.ExpectationOpen ? c.AcceptedAt is null ? "ConditionsPending" : "AwaitingReceipt" : "NoDebt";
-    public static bool Occupies(Consultation c, DateTimeOffset now) => State(c, now) is "Requested" or "Confirmed" or "AwaitingClosure" or "Performed" or "NoShow" || c.KeepBlocked;
+    public static bool Occupies(Consultation c, DateTimeOffset now) => ProcessLifecycle.Substate(c, now) is "Requested" or "Confirmed" or "AwaitingClosure" or "Performed" or "NoShow" || c.KeepBlocked;
     public static bool ActiveObligation(Consultation c) => HasDebt(c) || c.ExpectationOpen && c.State == "Confirmed";
     public static bool IsPaymentNotice(ConsultationNotice n) => n.Kind == "PaymentCommunication" || n.Kind.StartsWith("VerifyPayment:", StringComparison.Ordinal);
     public static bool PaymentNoticeActive(ConsultationNotice n) => IsPaymentNotice(n) && !n.Cancelled && n.ReadAt is null;
+    public static bool CanReceiveForConsultation(Consultation c, ConsultationData data)
+    {
+        if (c.SettlementId is not null || c.State is not ("Confirmed" or "Performed")) return false;
+        if (c.NoDebtReason is not null)
+            return c.NoDebtReason == "Gift" && data.Notices.Any(n => n.ConsultationId == c.Id && PaymentNoticeActive(n));
+        if (c.State == "Performed")
+            return HasDebt(c) && (c.FinalAmount is null || Remaining(c) > data.Balance(c.PersonId));
+        return c.ExpectationOpen && c.AdvanceSatisfiedAt is null;
+    }
+    public static bool ObsoleteAdvanceNotice(ConsultationNotice notice, Consultation c) => notice.ConsultationId == c.Id
+        && c.AdvanceSatisfiedAt is not null && notice.Kind is "Accepted" or "Wait8" or "Wait12";
     public static void SatisfyAdvances(ConsultationData data, DateTimeOffset now)
     {
+        var receipts = data.Entries.Where(e => e.Kind == "Receipt" && e.ConsultationId is not null)
+            .GroupBy(e => (e.PersonId, e.ConsultationId)).ToDictionary(g => g.Key, g => g.Sum(e => e.Amount));
         for (var i = 0; i < data.Consultations.Count; i++)
         {
             var c = data.Consultations[i];
+            var received = Math.Max(c.ReceivedAmount, receipts.GetValueOrDefault((c.PersonId, c.Id)));
             var legacyCommunications = data.Notices.Where(n => n.ConsultationId == c.Id && n.Kind.StartsWith("VerifyPayment:", StringComparison.Ordinal))
                 .Select(n => new PaymentCommunication(n.Kind["VerifyPayment:".Length..], null, n.DueAt))
                 .Where(message => !c.PaymentCommunications.Any(existing => existing.Id == message.Id)).ToArray();
@@ -40,9 +49,13 @@ public static class ConsultationRules
                 c = c with { PaymentCommunications = [..c.PaymentCommunications, ..legacyCommunications], Version = c.Version + 1 };
                 data.Consultations[i] = c;
             }
-            if (!c.ExpectationOpen || !Money(c.Service.ReferencePrice) || data.Balance(c.PersonId) < c.Service.ReferencePrice) continue;
-            Save(data, c with { ExpectationOpen = false, AdvanceSatisfiedAt = now, AdvanceSatisfiedBalance = data.Balance(c.PersonId), Version = c.Version + 1 });
+            // Only receipts confirmed for this booking satisfy its prepayment; unrelated credit remains free.
+            if (!c.ExpectationOpen || !Money(c.Service.ReferencePrice) || received < c.Service.ReferencePrice) continue;
+            var satisfied = c with { ExpectationOpen = false, AdvanceSatisfiedAt = now, AdvanceSatisfiedBalance = data.Balance(c.PersonId), Version = c.Version + 1 };
+            Save(data, satisfied);
+            CancelObsoleteNotices(data, satisfied);
         }
+        GroupPaymentConditions.SatisfyAdvances(data, now);
     }
     private static void Require(bool valid, string message, int status = 400) { if (!valid) throw new IdentityProblem(status, message); }
     private static void Manager(ConsultationActor actor) => Require(actor.IsManager, "Esta ação exige um gestor.", 403);
@@ -51,13 +64,14 @@ public static class ConsultationRules
     private static bool Overlap(DateTimeOffset start, DateTimeOffset end, DateTimeOffset otherStart, DateTimeOffset otherEnd) => start < otherEnd && otherStart < end;
     private static void Notice(ConsultationData data, Consultation c, string kind, string? person, DateTimeOffset due, DateTimeOffset? expires = null)
     {
-        if (person is not null && data.GuestRequests.Any(g => g.ConsultationId == c.Id)) return;
+        if (person is not null && data.GuestRequests.Any(g => g.ConsultationId == c.Id) && !data.ClientAccountPeople.Contains(person)) return;
         if (!data.Notices.Any(n => n.ConsultationId == c.Id && n.Kind == kind && n.PersonId == person))
-            data.Notices.Add(new(Id(), person, c.Id, kind, due, expires));
+            data.Notices.Add(new(Id(), person, c.Id, kind, due, expires, PushState: kind.StartsWith("CreditProposal:", StringComparison.Ordinal) ? null : "Pending",
+                EmailPending: kind is "Approved" or "Reminder26" or "Closed" || kind.StartsWith("SharedReport:", StringComparison.Ordinal)));
     }
     public static void Advance(ConsultationData data, DateTimeOffset now)
     {
-        GuestConsultations.Advance(data, now);
+        ProcessLifecycle.Advance(data, now);
         SessionPacks.Advance(data, now);
         GroupEvents.Advance(data, now);
         var conversationOwners = data.Consultations.ToDictionary(c => c.Id);
@@ -76,15 +90,19 @@ public static class ConsultationRules
         for (var i = 0; i < data.Consultations.Count; i++)
         {
             var c = data.Consultations[i];
-            if (c.State == "Requested" && now >= c.StartsAt)
+            if (c.State == "Confirmed" && c.StartsAt > now && data.ClientAccountPeople.Contains(c.PersonId)
+                && data.GuestRequests.Any(g => g.ConsultationId == c.Id))
             {
-                c = c with { State = "Expired", Version = c.Version + 1 };
-                data.Consultations[i] = c;
-                Notice(data, c, "Expired", null, now);
-                Notice(data, c, "Expired", c.PersonId, now);
+                // Creating an account changes delivery, not the booking or its agreed financial state.
+                if (c.AcceptedAt is null) Notice(data, c, "Approved", c.PersonId, now);
+                if (c.ExpectationOpen && c.FinancialChoice == "Prepayment" && c.AcceptedAt is { } accepted)
+                    foreach (var hours in new[] { 8, 12 }) Notice(data, c, "Wait" + hours, c.PersonId, accepted.AddHours(hours));
+                var due26 = c.StartsAt.AddHours(-26);
+                if (now <= due26 && due26 - c.CreatedAt > TimeSpan.FromHours(96)) Notice(data, c, "Reminder26", c.PersonId, due26, c.StartsAt.AddHours(-24));
+                if (now <= c.StartsAt.AddHours(-2)) Notice(data, c, "Reminder2", c.PersonId, c.StartsAt.AddHours(-2), c.StartsAt);
             }
             CancelObsoleteNotices(data, c);
-            if (c.State == "Expired") Notice(data, c, "Expired", c.PersonId, c.StartsAt);
+            if (c.State == "Expired") foreach (var recipient in new string?[] { null, c.PersonId }) Notice(data, c, "Expired", recipient, c.StartsAt);
         }
     }
     private static void CancelObsoleteNotices(ConsultationData data, Consultation c)
@@ -94,7 +112,11 @@ public static class ConsultationRules
             var n = data.Notices[i];
             if (n.ConsultationId != c.Id) continue;
             var unverifiedGiftReceipt = c.State == "Performed" && c.NoDebtReason == "Gift" && PaymentNoticeActive(n);
-            var obsolete = n.Kind == "Request" && c.State != "Requested"
+            var obsolete = n.Kind.StartsWith("Receipt:", StringComparison.Ordinal)
+                || n.Kind == "Request" && c.State != "Requested"
+                || ObsoleteAdvanceNotice(n, c)
+                || n.Kind == "Approved" && c.AcceptedAt is not null
+                || n.Kind.StartsWith("CreditProposal:", StringComparison.Ordinal) && !c.CreditProposals.Any(p => n.Kind == "CreditProposal:" + p.Id && p.Decision is null)
                 || n.Kind is "Wait8" or "Wait12" && !c.ExpectationOpen
                 || n.Kind is "Reminder26" or "Reminder2" && c.State != "Confirmed"
                 || IsPaymentNotice(n) && c.State is "Performed" or "CancelledClient" or "CancelledManager" or "NoShow" && !HasDebt(c) && !unverifiedGiftReceipt
@@ -135,9 +157,9 @@ public static class ConsultationRules
             else throw new IdentityProblem(400, "Aviso inválido.");
             return new(input.Id!, "Aviso marcado como lido.");
         }
-        if (input.Action is "StartGuestTreatment" or "RejectGuestRequest" or "LinkGuestRequest") return GuestConsultations.Manage(data, input, actor, now);
+        if (input.Action is "RejectGuestRequest" or "LinkGuestRequest" or "ArchiveGuestRequest") return GuestConsultations.Manage(data, input, actor, now);
         if (input.Action is "PurchasePack" or "AuthorizePackUse" or "ExtendPack" or "SetPackValidity" or "WithdrawPackSessions" or "SettlePack" or "ReversePackUse") return SessionPacks.Apply(data, input, actor, now, encrypt);
-        if (input.Action is "SaveEvent" or "CancelEvent" or "PerformEvent" or "ReleaseEventBlock" or "JoinEvent" or "CancelParticipation" or "ReleaseEventSeat" or "ConfirmParticipation" or "CloseParticipation" or "SettleParticipation" or "LinkEventGuest" or "RejectEventGuest" or "DecideRetreatReturn" or "ReturnRetreatPayment")
+        if (input.Action is "SaveEvent" or "CancelEvent" or "PerformEvent" or "ReleaseEventBlock" or "JoinEvent" or "CancelParticipation" or "ReleaseEventSeat" or "ConfirmParticipation" or "CloseParticipation" or "DefineParticipationContribution" or "SettleParticipation" or "UseParticipationCreditForAdvance" or "ProposeParticipationCredit" or "DeclineParticipationCredit" or "LinkEventGuest" or "RejectEventGuest" or "DecideRetreatReturn" or "ReturnRetreatPayment" or "ArchiveParticipation")
         { var result = GroupEvents.Apply(data, input, actor, now, encrypt); GroupEvents.Advance(data, now); return result; }
         if (input.Action == "PublishAvailability")
             return AgendaRules.Publish(data, input.Publication ?? throw new IdentityProblem(400, "Indica a publicação da agenda."), actor, input.OperationId, now);
@@ -235,6 +257,15 @@ public static class ConsultationRules
             {
                 c = Find(data, input, actor);
                 Require(c.PersonId == input.PersonId, "O recebimento não pertence a este cliente.", 409);
+                Require(CanReceiveForConsultation(c, data), "Esta consulta não tem um recebimento pendente. Não registes novamente o mesmo pagamento.", 409);
+            }
+            if (input.Origin == "EventService" && data.Participations.SingleOrDefault(p => p.Id == input.OriginReference) is { } participation)
+            {
+                var group = data.Events.Single(e => e.Id == participation.EventId);
+                Require(participation.PersonId == input.PersonId, "O recebimento não pertence a este participante.", 409);
+                if (group.Service.ServiceKind == "Group") Require(GroupPaymentConditions.CanReceive(data, group, participation),
+                    "Esta participação não tem um recebimento pendente. Não registes novamente o mesmo pagamento.", 409);
+                else Require(RetreatFinance.CanReceive(data, participation), "Esta inscrição não tem um recebimento pendente.", 409);
             }
             var entry = new CreditEntry(Id(), input.PersonId!, c?.Id, "Receipt", input.Amount!.Value, actor.AccountId, now, null, input.Method, null,
                 input.StartsAt, input.Origin, input.OriginReference, Sequence: CreditLedger.NextSequence(data));
@@ -244,7 +275,6 @@ public static class ConsultationRules
                 var received = c.ReceivedAmount + input.Amount.Value;
                 Save(data, c with { ReceivedAmount = received, Version = c.Version + 1 });
                 ClosePaymentNotices(data, c.Id, now, actor.AccountId, "ReceiptConfirmed");
-                Notice(data, c, "Receipt:" + entry.Id, c.PersonId, now);
             }
             SatisfyAdvances(data, now);
             SyncBalanceNotices(data, now);
@@ -269,45 +299,76 @@ public static class ConsultationRules
         }
         if (input.Action is "Refund" or "ReverseReceipt" or "ReverseRefund")
             return CorrectCredit(data, input, actor, now, encrypt);
-        if (input.Action == "ReadNotice")
+        if (input.Action is "ReadNotice" or "ReadMessageNotice")
         {
+            if (input.Action == "ReadMessageNotice") Manager(actor);
             var index = data.Notices.FindIndex(n => n.Id == input.Id && (actor.IsManager ? n.PersonId is null : n.PersonId == actor.PersonId));
             Require(index >= 0, "Aviso não encontrado.", 404);
             var n = data.Notices[index];
-            Require(!IsPaymentNotice(n), "Usa Confirmar recebimento ou Ignorar alerta para tratar esta comunicação.", 409);
+            Require(input.Action != "ReadMessageNotice" || n.Kind.StartsWith("FollowupMessage:", StringComparison.Ordinal), "Este aviso não corresponde a mensagens de acompanhamento.");
+            if (input.Action == "ReadMessageNotice") _ = ConsultationConversation.Authorized(data, n.ConsultationId, actor);
+            Require(!IsPaymentNotice(n), "Confirma o recebimento ou marca a comunicação como verificada.", 409);
             Require(n.Kind != "AvailabilityDecision", "Decide primeiro se o horário deve ficar livre ou bloqueado.", 409);
             Require(n.Kind != "Request" || data.Consultations.Single(c => c.Id == n.ConsultationId).State != "Requested", "O pedido continua por decidir.", 409);
             data.Notices[index] = n with { ReadAt = n.ReadAt ?? now };
+            if (n.Kind.StartsWith("FollowupMessage:", StringComparison.Ordinal))
+            {
+                var sequences = data.Messages.Where(m => m.ConsultationId == n.ConsultationId).ToDictionary(m => "FollowupMessage:" + m.Id, m => m.Sequence);
+                var through = sequences.GetValueOrDefault(n.Kind);
+                if (input.Action == "ReadMessageNotice")
+                {
+                    foreach (var message in data.Messages.Where(m => m.ConsultationId == n.ConsultationId && m.Sequence <= through && ConsultationConversation.Unread(data, m, actor)))
+                        data.MessageReads.Add(new(Id(), message.Id, actor.AccountId, now));
+                }
+                for (var i = 0; i < data.Notices.Count; i++)
+                    if (data.Notices[i] is var related && related.ConsultationId == n.ConsultationId && related.PersonId == n.PersonId
+                        && sequences.TryGetValue(related.Kind, out var sequence) && sequence <= through)
+                        data.Notices[i] = related with { ReadAt = related.ReadAt ?? now };
+            }
             return new(n.Id, "Aviso consultado.");
         }
-        var current = Find(data, input, actor); var next = current;
+        var current = ProcessLifecycle.At(Find(data, input, actor), now); var next = current;
         switch (input.Action)
         {
             case "Approve":
                 Manager(actor); next = Approve(data, current, input.Choice ?? current.Service.PaymentMode, actor, now); break;
+            case "UseCreditForAdvance":
+                Manager(actor);
+                Require(current.State == "Confirmed" && current.ExpectationOpen && current.AdvanceSatisfiedAt is null && Money(current.Service.ReferencePrice)
+                    && data.Balance(current.PersonId) >= current.Service.ReferencePrice, "Não existe crédito suficiente ou antecipação por satisfazer.", 409);
+                next = current with { ExpectationOpen = false, AdvanceSatisfiedAt = now, AdvanceSatisfiedBalance = data.Balance(current.PersonId),
+                    CreditProposals = FinancialProposals.Resolve(current.CreditProposals, null, actor, now, "AdvanceAccepted") }; break;
             case "Reject":
-                Require(State(current, now) == "Requested", "Só é possível recusar ou desistir de um pedido ainda válido.", 409);
+                Require(ProcessLifecycle.Substate(current, now) == "Requested", "Só é possível recusar ou desistir de um pedido ainda válido.", 409);
                 next = current with { State = "Rejected", CancellationOrigin = actor.IsManager ? "Management" : "Client", CancelledBy = actor.AccountId, CancelledAt = now }; break;
             case "Accept":
-                Require(State(current, now) == "Confirmed" && current.ExpectationOpen, "Não existem condições de pré-pagamento por aceitar antes do início.", 409);
-                Require(input.ConditionsAccepted && input.TermsVersion == TermsVersion, "Confirma que leste e aceitas as condições apresentadas.");
+                Require(ProcessLifecycle.Substate(current, now) == "Confirmed", "Não existem condições de uma consulta aprovada por aceitar antes do início.", 409);
+                Require(input.Amount is null || !actor.IsManager && current.FinancialChoice == "Prepayment" && current.AcceptedAt is null, "A proposta de crédito exige aceitação de condições de pré-pagamento pelo cliente.");
+                Require(input.ConditionsAccepted && input.TermsVersion == ConsultationConditions.Version(current), "Confirma que leste e aceitas as condições apresentadas.");
                 Require(!actor.IsManager || !string.IsNullOrWhiteSpace(input.Reason) && input.Reason.Length <= 2000, "Indica como o cliente comunicou a aceitação, até 2000 caracteres.");
                 if (current.AcceptedAt is null)
                 {
-                    next = current with { AcceptedAt = now, AcceptedTermsVersion = TermsVersion, AcceptedBy = actor.AccountId,
+                    next = current with { AcceptedAt = now, AcceptedTermsVersion = ConsultationConditions.Version(current), AcceptedBy = actor.AccountId,
                         AcceptanceReasonCiphertext = actor.IsManager ? encrypt(current.Id, "acceptance", input.Reason!) : null };
+                    if (input.Amount is not null)
+                    {
+                        next = next with { CreditProposals = FinancialProposals.Create(current.CreditProposals, input, actor, now, data.Balance(current.PersonId), current.Service.ReferencePrice ?? 0) };
+                        Notice(data, current, "CreditProposal:" + input.OperationId, null, now);
+                    }
                     Notice(data, current, "Accepted", null, now);
-                    foreach (var hours in new[] { 8, 12 }) foreach (var recipient in new string?[] { null, current.PersonId })
-                        Notice(data, current, "Wait" + hours, recipient, now.AddHours(hours));
+                    if (current.ExpectationOpen && current.FinancialChoice == "Prepayment")
+                        foreach (var hours in new[] { 8, 12 }) foreach (var recipient in new string?[] { null, current.PersonId })
+                            Notice(data, current, "Wait" + hours, recipient, now.AddHours(hours));
                 }
                 break;
             case "Cancel":
-                Require(State(current, now) == "Confirmed", "O cancelamento normal só é permitido antes do início de uma marcação confirmada.", 409);
+                Require(ProcessLifecycle.Substate(current, now) == "Confirmed", "O cancelamento normal só é permitido antes do início de uma marcação confirmada.", 409);
                 var financial = actor.IsManager && input.Choice == "FinancialWait";
                 Require(!financial || current.ExpectationOpen && current.AcceptedAt is { } accepted && now >= accepted.AddHours(8), "Este cancelamento não pertence ao percurso de espera financeira.", 409);
                 var origin = !actor.IsManager || input.Choice == "Client" ? "Client" : "Management";
                 Require(!actor.IsManager || input.AvailabilityChoice is "Release" or "Keep", "Escolhe se o horário fica livre ou bloqueado.");
                 next = current with { State = origin == "Client" ? "CancelledClient" : "CancelledManager", CancellationOrigin = origin,
+                    CreditProposals = FinancialProposals.End(current.CreditProposals, actor.AccountId, now),
                     CancelledBy = actor.AccountId, CancelledAt = now, ExpectationOpen = false, NoDebtReason = "Cancellation", FinalAmount = 0, KeepBlocked = !actor.IsManager || input.AvailabilityChoice == "Keep",
                     AvailabilityDecidedAt = actor.IsManager ? now : null, AvailabilityDecidedBy = actor.IsManager ? actor.AccountId : null };
                 if (!actor.IsManager) Notice(data, next, "AvailabilityDecision", null, now);
@@ -317,12 +378,13 @@ public static class ConsultationRules
                 Manager(actor); Require(current.State is "CancelledClient" or "CancelledManager" && (current.KeepBlocked || current.AvailabilityDecidedAt is null), "Não existe um cancelamento com disponibilidade por decidir.", 409);
                 next = current with { KeepBlocked = input.Action == "Keep", AvailabilityDecidedAt = now, AvailabilityDecidedBy = actor.AccountId }; break;
             case "Close":
-                Manager(actor); Require(State(current, now) == "AwaitingClosure", "Só é possível fechar uma marcação confirmada cujo início já foi atingido.", 409);
+                Manager(actor); Require(ProcessLifecycle.Substate(current, now) == "AwaitingClosure", "Só é possível fechar uma marcação confirmada cujo início já foi atingido.", 409);
                 Require(input.Choice is "Performed" or "NoShow" or "CancelledManager", "Escolhe o resultado real.");
                 var performed = input.Choice == "Performed";
                 Require(input.Choice != "CancelledManager" || input.AvailabilityChoice is "Release" or "Keep", "Escolhe se o horário cancelado fica livre ou bloqueado.");
                 Require(!performed || input.StartsAt > DateTimeOffset.UnixEpoch && input.EndsAt > input.StartsAt && input.EndsAt <= now, "Indica o início e fim efetivos já ocorridos.");
                 Require(!performed || input.Method is "Unpaid" or "Settle" or "Gift" or "Free" or "Undefined" or "Pack", "Escolhe o tratamento financeiro.");
+                Require(input.SettlementAmount is null || performed && input.Method == "Settle", "Só uma consulta realizada com liquidação monetária pode utilizar crédito.");
                 Require(performed || input.PackId is null && input.Method != "Pack", "Uma falta ou cancelamento nunca consome sessões de pack.");
                 Require(!performed || input.Method != "Undefined" || current.Service.PaymentMode == "Contribution", "Só a contribuição livre pode ficar por definir.");
                 Require(!performed || input.Method != "Free" || current.Service.PaymentMode == "Free", "Gratuitidade exige serviço gratuito; para oferecer utiliza Oferta.");
@@ -351,7 +413,12 @@ public static class ConsultationRules
                     SessionPacks.Consume(data, input.PackId!, current.PersonId, current.Id, current.Service.Id, "Consultation", input.StartsAt, actor, now);
                     next = next with { FinancialChoice = "Pack" };
                 }
-                if (performed && input.Method == "Settle" && noDebt is null) next = Settle(data, next, actor, now);
+                if (performed && input.Method == "Settle" && noDebt is null)
+                {
+                    next = Settle(data, next, actor, now, input.SettlementAmount);
+                    next = next with { CreditProposals = FinancialProposals.Resolve(next.CreditProposals, null, actor, now, "Applied", input.SettlementAmount ?? next.FinalAmount) };
+                }
+                if (noDebt is not null) next = next with { CreditProposals = FinancialProposals.Resolve(next.CreditProposals, null, actor, now, "NotUsed") };
                 if (performed) Notice(data, next, "Closed", next.PersonId, now);
                 break;
             case "DefineContribution":
@@ -367,10 +434,18 @@ public static class ConsultationRules
                     string.IsNullOrWhiteSpace(input.Reason) ? null : encrypt(current.Id, "collection", input.Reason))] }; break;
             case "IgnorePaymentAlert":
                 Manager(actor); Require(data.Notices.Any(n => n.ConsultationId == current.Id && PaymentNoticeActive(n)), "O alerta já foi tratado.", 409);
-                ClosePaymentNotices(data, current.Id, now, actor.AccountId, "Ignored"); break;
+                ClosePaymentNotices(data, current.Id, now, actor.AccountId, "Verified"); break;
             case "Settle":
-                Require(input.Amount is null || input.Amount == current.FinalAmount, "Não são permitidas liquidações parciais.", 409);
-                next = Settle(data, current, actor, now); break;
+                var resolved = FinancialProposals.Resolve(current.CreditProposals, input.RelatedId, actor, now, "Applied", input.Amount ?? Remaining(current));
+                next = Settle(data, current, actor, now, input.Amount);
+                next = next with { CreditProposals = resolved }; break;
+            case "ProposeCredit":
+                Require(!actor.IsManager && !current.CollectionClosed && HasDebt(current) && current.FinalAmount is not null, "Só podes propor crédito para uma consulta realizada com dívida definida.", 409);
+                next = current with { CreditProposals = FinancialProposals.Create(current.CreditProposals, input, actor, now, data.Balance(current.PersonId), Remaining(current)) };
+                Notice(data, current, "CreditProposal:" + input.OperationId, null, now); break;
+            case "DeclineCreditProposal":
+                Manager(actor);
+                next = current with { CreditProposals = FinancialProposals.Resolve(current.CreditProposals, input.RelatedId, actor, now, "Declined") }; break;
             case "DeclarePayment":
                 Require(!actor.IsManager && !current.CollectionClosed && (HasDebt(current) || current.ExpectationOpen), "Não é possível comunicar pagamento nesta consulta. Contacta a terapeuta.", 409);
                 next = current with { PaymentDeclaredAt = now, PaymentCommunications = [..current.PaymentCommunications, new(input.OperationId, actor.AccountId, now)] };
@@ -379,7 +454,7 @@ public static class ConsultationRules
                 else data.Notices[active] = data.Notices[active] with { DueAt = now };
                 break;
             case "Archive":
-                Require(!actor.IsManager && current.State is "Performed" or "NoShow" && ClientSection(current, now) == "Closed", "Só podes arquivar uma consulta fechada sem pendência financeira.", 409);
+                Require(!actor.IsManager && CanArchive(current, now), "Só podes arquivar um processo terminado sem pendência financeira.", 409);
                 Require(input.PublicContentVersion == current.PublicContentVersion, "A informação partilhada mudou. Consulta a versão atual antes de a marcar como vista.", 409);
                 next = current with { ArchivedAt = now, ArchivedBy = actor.AccountId, ArchivedContentVersion = current.PublicContentVersion,
                     ReadHistory = current.ReadHistory.Any(r => r.AccountId == actor.AccountId && r.PublicContentVersion == current.PublicContentVersion) ? current.ReadHistory : [..current.ReadHistory, new(actor.AccountId, current.PublicContentVersion, now)] };
@@ -390,33 +465,22 @@ public static class ConsultationRules
                         data.Notices[i] = notice with { ReadAt = notice.ReadAt ?? now, ClosedBy = actor.AccountId, ClosureReason = "ReportRead" };
                 }
                 break;
-            case "UpdateSharedReport":
-            case "UpdatePrivateNote":
-                Manager(actor); var shared = input.Action == "UpdateSharedReport";
-                Require(shared ? current.State == "Performed" : current.ClosedAt is not null, "Esta consulta ainda não permite atualizar as notas.", 409);
-                var text = shared ? input.SharedNote : input.PrivateNote;
-                Require(text is not null && text.Length <= 8000, "Preenche a nota até 8000 caracteres.");
-                var cipher = string.IsNullOrWhiteSpace(text) ? null : encrypt(current.Id, shared ? "shared" : "private", text!);
-                var noteVersion = current.PublicContentVersion + (shared ? 1 : 0);
-                next = current with { SharedNoteCiphertext = shared ? cipher : current.SharedNoteCiphertext, PrivateNoteCiphertext = shared ? current.PrivateNoteCiphertext : cipher,
-                    PublicContentVersion = noteVersion, ArchivedAt = shared ? null : current.ArchivedAt,
-                    NoteHistory = [..current.NoteHistory,
-                        new(current.PublicContentVersion, shared ? "PreviousShared" : "PreviousPrivate", actor.AccountId, now, shared ? current.SharedNoteCiphertext : current.PrivateNoteCiphertext),
-                        new(noteVersion, shared ? "Shared" : "Private", actor.AccountId, now, cipher)] };
-                if (shared) Notice(data, next, "SharedReport:" + noteVersion, next.PersonId, now);
-                break;
             default: throw new IdentityProblem(400, "Ação desconhecida.");
         }
         Save(data, next with { Version = current.Version + 1 });
         SatisfyAdvances(data, now);
         SyncBalanceNotices(data, now);
-        return new(current.Id, "Operação concluída.");
+        return new(current.Id, input.Action == "Accept" ? "Condições aceites." : "Operação concluída.");
     }
     public static void SyncBalanceNotices(ConsultationData data, DateTimeOffset now)
     {
         foreach (var person in data.Entries.Select(e => e.PersonId).Concat(data.BalanceNotices.Select(n => n.PersonId)).Distinct())
         {
             var debt = Math.Max(0, -data.Balance(person));
+            var duplicates = data.BalanceNotices.Where(n => n.PersonId == person && n.ClosedAt is null)
+                .OrderBy(n => n.CreatedAt).ThenBy(n => n.Id).Skip(1).Select(n => n.Id).ToHashSet();
+            for (var i = 0; i < data.BalanceNotices.Count; i++)
+                if (duplicates.Contains(data.BalanceNotices[i].Id)) data.BalanceNotices[i] = data.BalanceNotices[i] with { ClosedAt = now, UpdatedAt = now };
             var active = data.BalanceNotices.FindIndex(n => n.PersonId == person && n.ClosedAt is null);
             if (debt > 0 && active < 0) data.BalanceNotices.Add(new(Id(), person, debt, now, now));
             else if (active >= 0)
@@ -467,12 +531,14 @@ public static class ConsultationRules
     }
     internal static Consultation Approve(ConsultationData data, Consultation c, string choice, ConsultationActor actor, DateTimeOffset now)
     {
-        Require(State(c, now) == "Requested", "O pedido não está disponível para aprovação.", 409);
+        Require(ProcessLifecycle.Substate(c, now) == "Requested", "O pedido não está disponível para aprovação.", 409);
         AgendaRules.ValidateOccupation(data, c.StartsAt, c.EndsAt, now, c.Id);
         ValidateFinancialChoice(data, c.Service, c.PersonId, choice);
-        c = c with { State = "Confirmed", ApprovedAt = now, ApprovedBy = actor.AccountId, FinancialChoice = choice, ExpectationOpen = choice == "Prepayment" };
-        if (c.ExpectationOpen && data.Balance(c.PersonId) >= c.Service.ReferencePrice)
-            c = c with { ExpectationOpen = false, AdvanceSatisfiedAt = now, AdvanceSatisfiedBalance = data.Balance(c.PersonId) };
+        c = c with { State = "Confirmed", Stage = ProcessStage.Booking,
+            StageHistory = [..c.StageHistory, new(c.Stage, ProcessStage.Booking, now, actor.AccountId)],
+            ApprovedAt = now, ApprovedBy = actor.AccountId, FinancialChoice = choice, ExpectationOpen = choice == "Prepayment" };
+        if (choice == "Credit")
+            c = c with { AdvanceSatisfiedAt = now, AdvanceSatisfiedBalance = data.Balance(c.PersonId) };
         Notice(data, c, "Approved", c.PersonId, now);
         var due26 = c.StartsAt.AddHours(-26);
         if (now <= due26 && due26 - c.CreatedAt > TimeSpan.FromHours(96)) Notice(data, c, "Reminder26", c.PersonId, due26, c.StartsAt.AddHours(-24));
@@ -487,15 +553,18 @@ public static class ConsultationRules
         Require(choice != "Prepayment" || Money(service.ReferencePrice), "O pré-pagamento exige valor definido.");
         Require(choice != "Credit" || Money(service.ReferencePrice) && data.Balance(personId) >= service.ReferencePrice, "Crédito insuficiente para dispensar novo recebimento.", 409);
     }
-    private static Consultation Settle(ConsultationData data, Consultation c, ConsultationActor actor, DateTimeOffset now)
+    private static Consultation Settle(ConsultationData data, Consultation c, ConsultationActor actor, DateTimeOffset now, decimal? requestedAmount = null)
     {
+        Manager(actor);
         Require(!c.CollectionClosed, "A cobrança está encerrada. A terapeuta deve reabri-la antes de regularizar.", 409);
         Require(HasDebt(c) && Money(c.FinalAmount), "A liquidação exige uma consulta realizada e fechada com valor final definido e dívida.", 409);
-        Require(data.Balance(c.PersonId) >= c.FinalAmount, "Crédito insuficiente. Não foi descontado qualquer valor parcial.", 409);
-        var allocations = CreditLedger.Allocate(data, c.PersonId, c.FinalAmount!.Value);
-        var id = Id(); data.Entries.Add(new(id, c.PersonId, c.Id, "Settlement", -c.FinalAmount.Value, actor.AccountId, now, null, null, null,
-            Origin: "Consultation", Allocations: allocations, Sequence: CreditLedger.NextSequence(data)));
-        return c with { SettlementId = id };
+        var remaining = Remaining(c); var amount = requestedAmount ?? remaining;
+        Require(Money(amount) && amount <= remaining, "Indica um valor positivo até à dívida ainda existente.", 409);
+        var allocations = CreditLedger.Allocate(data, c.PersonId, amount);
+        var id = Id(); data.Entries.Add(new(id, c.PersonId, c.Id, "Settlement", -amount, actor.AccountId, now, null, "Credit", null,
+            Origin: "Consultation", OriginReference: c.Id, Allocations: allocations, Sequence: CreditLedger.NextSequence(data)));
+        return c with { SettledAmount = c.SettledAmount + amount, SettlementId = amount == remaining ? id : null,
+            ExpectationOpen = amount != remaining && c.ExpectationOpen };
     }
     private static void ClosePaymentNotices(ConsultationData data, string id, DateTimeOffset now, string authorId, string reason)
     {

@@ -1,3 +1,4 @@
+import AdaptiveSelect from './AdaptiveSelect'
 import { useRef, useState } from 'react'
 import { apiRequest } from './identityApi'
 import InformationCard from './InformationCard'
@@ -5,7 +6,6 @@ import { addDays, agendaDate, instant } from './agendaTime'
 import styles from './AgendaPublication.module.css'
 
 const empty = () => ({ start: '', end: '', wholeDays: false, rows: [] })
-const stateNames = { Requested: 'Pedido por validar', Confirmed: 'Confirmada', AwaitingClosure: 'Por fechar', CancelledClient: 'Cancelada pelo cliente', CancelledManager: 'Cancelada pela terapeuta' }
 function publicationPayload(draft, revision) {
   const startsAt = instant(draft.start), endsAt = instant(draft.end)
   if (endsAt <= startsAt) throw new Error('O fim do período tem de ser posterior ao início.')
@@ -94,14 +94,14 @@ export default function AgendaPublication({ setup, disabled, publish, refresh })
         <details className={styles.pattern}><summary>Repetir horários por dias da semana</summary>
           <div className={styles.weekdays}>{[[1, 'Segunda'], [2, 'Terça'], [3, 'Quarta'], [4, 'Quinta'], [5, 'Sexta'], [6, 'Sábado'], [0, 'Domingo']].map(([day, label]) => <label className="checkbox" key={day}><input type="checkbox" checked={pattern.weekdays.includes(day)} onChange={e => setPattern({ ...pattern, weekdays: e.target.checked ? [...pattern.weekdays, day] : pattern.weekdays.filter(x => x !== day) })} />{label}</label>)}</div>
           <div className={styles.range}><label>Hora inicial a repetir<input type="time" value={pattern.start} onChange={e => setPattern({ ...pattern, start: e.target.value })} /></label><label>Hora final a repetir<input type="time" value={pattern.end} onChange={e => setPattern({ ...pattern, end: e.target.value })} /></label></div>
-          <label>Estado a repetir<select value={String(pattern.available)} onChange={e => setPattern({ ...pattern, available: e.target.value === 'true' })}><option value="true">Disponível</option><option value="false">Bloqueado</option></select></label>
+          <label>Estado a repetir<AdaptiveSelect value={String(pattern.available)} onChange={e => setPattern({ ...pattern, available: e.target.value === 'true' })}><option value="true">Disponível</option><option value="false">Bloqueado</option></AdaptiveSelect></label>
           <p className="field-help">Uma hora final igual ou anterior à inicial termina no dia seguinte. Só são adicionados intervalos inteiramente contidos no período.</p>
           <button type="button" className="secondary" onClick={addPattern}>Adicionar horários aos dias selecionados</button>
         </details>
         <h3>Horários a publicar</h3>
         {draft.rows.map((row, index) => <fieldset key={row.id} className={styles.row}><legend>Intervalo {index + 1}</legend>
           <div className={styles.range}><label>Início do intervalo {index + 1}<input type="datetime-local" required value={row.start} onChange={e => rowChanged(row.id, { start: e.target.value })} /></label><label>Fim do intervalo {index + 1}<input type="datetime-local" required value={row.end} onChange={e => rowChanged(row.id, { end: e.target.value })} /></label></div>
-          <label>Estado do intervalo {index + 1}<select value={String(row.available)} onChange={e => rowChanged(row.id, { available: e.target.value === 'true' })}><option value="true">Disponível</option><option value="false">Bloqueado</option></select></label>
+          <label>Estado do intervalo {index + 1}<AdaptiveSelect value={String(row.available)} onChange={e => rowChanged(row.id, { available: e.target.value === 'true' })}><option value="true">Disponível</option><option value="false">Bloqueado</option></AdaptiveSelect></label>
           <button type="button" className="secondary" onClick={() => changed({ ...draft, rows: draft.rows.filter(x => x.id !== row.id) })}>Retirar intervalo {index + 1}</button>
         </fieldset>)}
         <button type="button" className="secondary" disabled={draft.rows.length >= 512} onClick={() => changed({ ...draft, rows: [...draft.rows, { id: crypto.randomUUID(), start: '', end: '', available: true }] })}>Adicionar intervalo</button>
@@ -114,7 +114,7 @@ export default function AgendaPublication({ setup, disabled, publish, refresh })
       <p>{agendaDate(review.result.startsAt)} — {agendaDate(review.result.endsAt)} (fim exclusivo)</p>
       <p>{review.publication.windows.length} novos intervalos · {review.result.replacedWindows} intervalos substituídos · {review.result.preservedParts} partes exteriores conservadas</p>
       <ul>{review.publication.windows.map(window => <li key={window.startsAt}>{agendaDate(window.startsAt)} — {agendaDate(window.endsAt)} · {window.available ? 'Disponível' : 'Bloqueado'}</li>)}</ul>
-      {review.result.conflicts.length > 0 && <><h4>Marcações a manter</h4><ul>{review.result.conflicts.map(item => <li key={item.id}>{agendaDate(item.startsAt)} — {agendaDate(item.endsAt)} · {stateNames[item.state] || item.state}</li>)}</ul><label className="checkbox"><input type="checkbox" checked={confirmConflicts} disabled={disabled} onChange={e => setConfirmConflicts(e.target.checked)} />Revi os horários e confirmo que estas marcações se mantêm.</label></>}
+      {review.result.conflicts.length > 0 && <><h4>Marcações a manter</h4><ul>{review.result.conflicts.map(item => <li key={item.id}>{agendaDate(item.startsAt)} — {agendaDate(item.endsAt)} · {item.process.processLabel}</li>)}</ul><label className="checkbox"><input type="checkbox" checked={confirmConflicts} disabled={disabled} onChange={e => setConfirmConflicts(e.target.checked)} />Revi os horários e confirmo que estas marcações se mantêm.</label></>}
       {!review.publication.windows.length && <label className="checkbox"><input type="checkbox" checked={confirmEmpty} disabled={disabled} onChange={e => setConfirmEmpty(e.target.checked)} />Confirmo a retirada dos horários publicados neste período.</label>}
       <button type="button" disabled={disabled || (!!review.result.conflicts.length && !confirmConflicts) || (!review.publication.windows.length && !confirmEmpty)} onClick={confirm}>Publicar horários revistos</button>
     </section>}

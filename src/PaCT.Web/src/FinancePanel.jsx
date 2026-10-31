@@ -1,24 +1,29 @@
+import AdaptiveSelect from './AdaptiveSelect'
 import { useCallback, useEffect, useState } from 'react'
 import { apiRequest } from './identityApi'
 import useLiveResource from './useLiveResource'
 import useClientOptions from './useClientOptions'
 import InformationCard from './InformationCard'
 import CardGrid from './CardGrid'
+import SummaryCard from './SummaryCard'
 import styles from './FinancePanel.module.css'
+import { observeResource } from './liveUpdates'
+import { localDate } from './agendaTime'
 
-const currency = value => new Intl.NumberFormat('pt-PT', { style: 'currency', currency: 'EUR' }).format(value ?? 0)
+const currency = value => value == null ? 'Por definir' : new Intl.NumberFormat('pt-PT', { style: 'currency', currency: 'EUR' }).format(value)
 const names = { Receipt: 'Recebimento', Refund: 'Devolução', Settlement: 'Liquidação', Restitution: 'Reposição de valor do retiro', Reversal: 'Anulação / movimento compensatório', Adjustment: 'Correção financeira', AdjustmentReversal: 'Anulação de correção' }
 const origins = { GeneralCredit: 'Crédito geral', Consultation: 'Consulta/pedido', Sale: 'Venda', EventService: 'Evento/serviço', Pack: 'Compra de pack' }
 const measures = { received: 'Total recebido (dinheiro confirmado)', corrections: 'Correções e compensações (valor assinado)', globalNegativeDebt: 'Dívida global por saldo negativo', refunded: 'Total devolvido (registos de dinheiro)', settled: 'Crédito utilizado em liquidações', availableBalance: 'Crédito disponível (saldos positivos)', netBalance: 'Saldo global líquido', activeCollectionAmount: 'Cobranças ativas', closedCollectionAmount: 'Cobranças encerradas sem pagamento', totalUnpaid: 'Total conhecido ainda não pago' }
 const counts = { paidConsultations: 'Consultas pagas', unpaidConsultations: 'Consultas por pagar', pendingContributions: 'Contribuições pendentes', undefinedContributions: 'Contribuições sem montante definido', noDebtConsultations: 'Consultas sem dívida', freeConsultations: 'Consultas gratuitas', giftConsultations: 'Consultas oferecidas', packConsultations: 'Consultas cobertas por pack' }
 
-export function FinancialEntryForm({ people, personId = '', consultation = null, refund = false, disabled, submit, instant }) {
-  const [person, setPerson] = useState(consultation?.personId || personId)
-  const [origin, setOrigin] = useState(consultation ? 'Consultation' : 'GeneralCredit')
+export function FinancialEntryForm({ people, personId = '', consultation = null, participation = null, refund = false, disabled, submit, instant }) {
+  const [openedAt] = useState(() => localDate(new Date()))
+  const [person, setPerson] = useState(consultation?.personId || participation?.personId || personId)
+  const [origin, setOrigin] = useState(consultation ? 'Consultation' : participation ? 'EventService' : 'GeneralCredit')
   const [options, setOptions] = useState([])
   const [loadError, setLoadError] = useState('')
   useEffect(() => {
-    if (consultation || !person || !['Consultation', 'Pack'].includes(origin)) return
+    if (consultation || participation || !person || !['Consultation', 'Pack'].includes(origin)) return
     let active = true
     async function load() {
       try {
@@ -27,25 +32,27 @@ export function FinancialEntryForm({ people, personId = '', consultation = null,
         if (active) { setOptions(all); setLoadError('') }
       } catch { if (active) setLoadError(origin === 'Pack' ? 'Não foi possível carregar as compras de packs. Volta a selecionar o cliente.' : 'Não foi possível carregar as consultas. Volta a selecionar o cliente.') }
     }
-    load(); return () => { active = false }
-  }, [person, origin, consultation])
+    const stop = observeResource('finance', load); return () => { active = false; stop() }
+  }, [person, origin, consultation, participation])
   return <form data-protect-draft onSubmit={e => submit(e, f => {
+    const effective = instant(f.get('effective'))
+    if (Date.parse(effective) > Date.now()) throw new Error(`A data ${refund ? 'da devolução' : 'do recebimento'} não pode ser futura. Confirma a data e a hora indicadas.`)
     const linked = consultation || options.find(c => c.id === f.get('consultation'))
     return { action: refund ? 'Refund' : 'Receipt', personId: person, id: origin === 'Consultation' && !refund ? linked?.id : undefined,
-      version: linked?.version, origin: refund ? undefined : origin, originReference: f.get('reference'), amount: Number(f.get('amount')), startsAt: instant(f.get('effective')), method: f.get('method'), reason: f.get('reason') }
+      version: linked?.version, origin: refund ? undefined : origin, originReference: participation?.id || f.get('reference'), amount: Number(f.get('amount')), startsAt: effective, method: f.get('method'), reason: f.get('reason') }
   })}>
     <h3>{refund ? 'Registar devolução efetuada' : 'Registar recebimento confirmado'}</h3>
-    <label>Cliente<select aria-label="Cliente" required disabled={!!consultation} value={person} onChange={e => { setPerson(e.target.value); setOptions([]) }}><option value="">Seleciona o cliente</option>{people.map(p => <option key={p.id} value={p.id}>{[p.data.firstName, p.data.lastName].filter(Boolean).join(' ')}</option>)}</select></label>
-    {!refund && <><label>Origem<select value={origin} disabled={!!consultation} onChange={e => setOrigin(e.target.value)}>{Object.entries(origins).map(([key, text]) => <option key={key} value={key}>{text}</option>)}</select></label>
-      {origin === 'Consultation' && !consultation && <label>Consulta/pedido<select name="consultation" required><option value="">Seleciona a origem</option>{options.map(c => <option key={c.id} value={c.id}>{c.serviceTitle} · {new Date(c.startsAt).toLocaleString('pt-PT', { timeZone: 'Europe/Lisbon' })}</option>)}</select></label>}
-      {['Sale', 'EventService'].includes(origin) && <label>Referência da origem<input name="reference" required maxLength="120" /></label>}</>}
-    {!refund && origin === 'Pack' && <label>Compra de pack<select name="reference" required defaultValue=""><option value="">Seleciona a compra</option>{options.map(p => <option key={p.id} value={p.id}>{p.title} · {currency(p.amount)}</option>)}</select></label>}
+    <label>Cliente<AdaptiveSelect aria-label="Cliente" required disabled={!!consultation || !!participation} value={person} onChange={e => { setPerson(e.target.value); setOptions([]) }}><option value="">Seleciona o cliente</option>{people.map(p => <option key={p.id} value={p.id}>{[p.data.firstName, p.data.lastName].filter(Boolean).join(' ')}</option>)}</AdaptiveSelect></label>
+    {!refund && <><label>Origem<AdaptiveSelect value={origin} disabled={!!consultation || !!participation} onChange={e => setOrigin(e.target.value)}>{Object.entries(origins).map(([key, text]) => <option key={key} value={key}>{text}</option>)}</AdaptiveSelect></label>
+      {origin === 'Consultation' && !consultation && <label>Consulta/pedido<AdaptiveSelect name="consultation" required><option value="">Seleciona a origem</option>{options.map(c => <option key={c.id} value={c.id}>{c.serviceTitle} · {new Date(c.startsAt).toLocaleString('pt-PT', { timeZone: 'Europe/Lisbon' })}</option>)}</AdaptiveSelect></label>}
+      {['Sale', 'EventService'].includes(origin) && !participation && <label>Referência da origem<input name="reference" required maxLength="120" /></label>}</>}
+    {!refund && origin === 'Pack' && <label>Compra de pack<AdaptiveSelect name="reference" required defaultValue=""><option value="">Seleciona a compra</option>{options.map(p => <option key={p.id} value={p.id}>{p.title} · {currency(p.amount)}</option>)}</AdaptiveSelect></label>}
     {loadError && <p role="alert">{loadError}</p>}
-    <label>Valor efetivo<input name="amount" type="number" required min="0.01" step="0.01" defaultValue={consultation?.finalAmount ?? consultation?.referencePrice ?? ''} /></label>
-    <label>Data e hora efetivas (Lisboa)<input name="effective" type="datetime-local" required /></label>
-    <label>Método<select name="method"><option value="Transfer">Transferência bancária</option><option value="Cash">Dinheiro</option><option value="MbWay">MB WAY</option><option value="Card">Cartão / Multibanco</option><option value="Other">Outro</option></select></label>
+    <label>Valor efetivo<input name="amount" type="number" required min="0.01" step="0.01" defaultValue={consultation?.amountDue > 0 ? consultation.amountDue : participation?.remaining > 0 ? participation.remaining : consultation?.finalAmount ?? consultation?.referencePrice ?? participation?.finalAmount ?? participation?.agreedTotal ?? participation?.referencePrice ?? ''} /></label>
+    <label>Data e hora efetivas (Lisboa)<input name="effective" type="datetime-local" defaultValue={openedAt} required /></label>
+    <label>Método<AdaptiveSelect name="method"><option value="Transfer">Transferência bancária</option><option value="Cash">Dinheiro</option><option value="MbWay">MB WAY</option><option value="Card">Cartão / Multibanco</option><option value="Other">Outro</option></AdaptiveSelect></label>
     {refund && <label>Motivo<input name="reason" required maxLength="2000" /></label>}
-    <p>{refund ? 'Pode ser devolvida uma parte do saldo. O montante não pode exceder o crédito disponível.' : origin === 'Pack' ? 'Este registo acrescenta crédito. O pagamento da compra é confirmado em separado.' : 'Este registo acrescenta crédito. Não paga automaticamente uma consulta.'}</p>
+    {(refund || origin === 'Pack') && <p>{refund ? 'Pode ser devolvida uma parte do saldo. O montante não pode exceder o crédito disponível.' : 'Este registo acrescenta crédito. O pagamento da compra é confirmado em separado.'}</p>}
     <button disabled={disabled || !!loadError}>{refund ? 'Confirmar devolução efetuada' : 'Confirmar recebimento em crédito'}</button>
   </form>
 }
@@ -66,6 +73,11 @@ export default function FinancePanel({ guard, disabled, submit, open, instant, o
   }, [section, person, page, filters])
   const resource = useLiveResource('finance', key, read, !['Receipt', 'Refund'].includes(section))
   const result = resource.data
+  useEffect(() => {
+    if (!result || resource.error || !['Pending', 'Balances', 'Corrections'].includes(section) || page <= Math.max(1, Math.ceil(result.total / 8))) return
+    const correction = window.setTimeout(() => setPage(Math.max(1, Math.ceil(result.total / 8))), 0)
+    return () => window.clearTimeout(correction)
+  }, [result, resource.error, section, page])
   function change(next, nextPerson) { guard(() => { if (nextPerson !== undefined) setPerson(nextPerson); setSection(next); setPage(1); setCorrection(null) }) }
   return <>
     {customers.error && <InformationCard cardId="finance-customer-options" error={customers.error} onRetry={customers.refresh} />}
@@ -79,11 +91,12 @@ export default function FinancePanel({ guard, disabled, submit, open, instant, o
       if (f.get('to')) q.set('to', instant(f.get('to')))
       setFilters('&' + q.toString()); setPage(1); setPerson(f.get('person'))
     }}><h2>{section === 'Reports' ? 'Relatórios financeiros' : 'Pesquisa financeira'}</h2>
-      <label>Cliente<select name="person" value={person} onChange={e => { setPerson(e.target.value); setPage(1) }}><option value="">Todos os clientes</option>{people.map(p => <option key={p.id} value={p.id}>{[p.data.firstName, p.data.lastName].join(' ')}</option>)}</select></label>
+      <label>Cliente<AdaptiveSelect name="person" value={person} onChange={e => { setPerson(e.target.value); setPage(1) }}><option value="">Todos os clientes</option>{people.map(p => <option key={p.id} value={p.id}>{[p.data.firstName, p.data.lastName].join(' ')}</option>)}</AdaptiveSelect></label>
       <label>Nome do cliente<input name="term" /></label><label>Desde (Lisboa)<input name="from" type="datetime-local" /></label><label>Até, exclusivo (Lisboa)<input name="to" type="datetime-local" /></label>
-      {section === 'Reports' ? <><label>Origem dos movimentos<select name="origin"><option value="">Todas</option>{Object.entries(origins).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></label><label>Tipo de movimento<select name="kind"><option value="">Todos</option>{Object.entries(names).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></label></> : <><label>Ordenação<select name="sort"><option value="">Prioridade inicial</option><option value="Oldest">Mais antigas primeiro</option><option value="Newest">Mais recentes primeiro</option>{section === 'Balances' && !person && <option value="NameDescending">Clientes Z–A</option>}</select></label></>}
+      {section === 'Reports' ? <><label>Origem dos movimentos<AdaptiveSelect name="origin"><option value="">Todas</option>{Object.entries(origins).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</AdaptiveSelect></label><label>Tipo de movimento<AdaptiveSelect name="kind"><option value="">Todos</option>{Object.entries(names).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</AdaptiveSelect></label></> : <><label>Ordenação<AdaptiveSelect name="sort"><option value="">Prioridade inicial</option><option value="Oldest">Mais antigas primeiro</option><option value="Newest">Mais recentes primeiro</option>{section === 'Balances' && !person && <option value="NameDescending">Clientes Z–A</option>}</AdaptiveSelect></label></>}
       <button>Pesquisar</button>
     </form></details>}
+    {result && ['Pending', 'Balances', 'Corrections'].includes(section) && <SummaryCard cardId="finance-count" label={section === 'Pending' ? 'Pendências financeiras' : section === 'Corrections' ? 'Correções financeiras' : person ? 'Movimentos' : 'Saldos de clientes'} value={result.total} unit="registos" icon="wallet" />}
     {['Receipt', 'Refund'].includes(section) && <div className="record-panel"><FinancialEntryForm key={`${section}:${person}`} people={people} personId={person} refund={section === 'Refund'} disabled={disabled} submit={submit} instant={instant} /></div>}
     {result && section === 'Pending' && <CardGrid>{(result.globalDebts || []).map(d => <InformationCard as="article" cardId={'global-debt-' + d.personId} key={d.personId}><h2>Saldo negativo por correção</h2><p>{d.name} · {currency(d.amount)}</p><p>Dívida global, separada das consultas.</p>{['Failed', 'Uncertain'].includes(d.pushState) && <form onSubmit={e => { if (!window.confirm('O envio anterior pode ter sido entregue. Autorizar outra tentativa pode repetir a notificação. Continuar?')) { e.preventDefault(); return } submit(e, () => ({ action: 'RetryBalancePush', id: d.noticeId })) }}><p>Notificação do dispositivo: {d.pushState === 'Uncertain' ? 'resultado por confirmar' : 'não submetida'}.</p><button className="secondary" disabled={disabled}>Autorizar nova tentativa de notificação</button></form>}<button onClick={() => change('Balances', d.personId)}>Consultar saldo e movimentos</button></InformationCard>)}{result.obligations.map(c => <InformationCard as="article" cardId={'obligation-' + c.id} key={c.id}><h2>{c.serviceTitle}</h2><p>{c.collectionClosed ? 'Por pagar — Cobrança encerrada' : c.finalAmount === null && c.state === 'Performed' ? 'Contribuição pendente — Por definir' : c.state === 'Performed' ? 'Por pagar' : 'A aguardar recebimento'}</p><p>{new Date(c.startsAt).toLocaleString('pt-PT', { timeZone: 'Europe/Lisbon' })}</p>{c.paymentAlert && <p role="status">Comunicação de pagamento do cliente</p>}<button onClick={() => open(c.id)}>Abrir operação financeira</button></InformationCard>)}</CardGrid>}
     {section === 'Pending' && result?.additionalObligations?.map(item => <InformationCard as="article" cardId={'domain-obligation-' + item.id} key={item.id} title={item.title}><p>{item.kind === 'Pack' ? 'Compra de pack por pagar' : 'Participação por pagar'} · {currency(item.amount)}</p><button disabled={disabled} onClick={() => onOpenDomain(item.kind, item.resourceId)}>Abrir pagamento</button></InformationCard>)}
@@ -93,7 +106,7 @@ export default function FinancePanel({ guard, disabled, submit, open, instant, o
     {result && section === 'Balances' && <div className="record-panel">{!person ? result.customers.map(c => <p key={c.id}><button className="text-button" onClick={() => { setPerson(c.id); setPage(1) }}>{c.name}</button> · {currency(c.balance)}</p>) : <><h2>Saldo disponível: {currency(result.balance)}</h2><div className="consultation-tabs"><button onClick={() => change('Receipt')}>Registar recebimento</button><button className="secondary" onClick={() => change('Refund')}>Registar devolução</button></div>{result.entries.map(e => <InformationCard as="article" cardId={'movement-' + e.id} key={e.id}><p>{names[e.kind]} · {currency(e.amount)} · Saldo após movimento: {currency(e.resultingBalance)}</p><p>Efetivo: {new Date(e.effectiveAt).toLocaleString('pt-PT', { timeZone: 'Europe/Lisbon' })} · Registado: {new Date(e.createdAt).toLocaleString('pt-PT', { timeZone: 'Europe/Lisbon' })}</p><p>Origem: {origins[e.origin] || (e.origin === 'Correction' ? 'Correção excecional' : 'Registo anterior')} {e.originReference}</p>{e.consultationId && <button className="text-button" onClick={() => open(e.consultationId)}>Ver consulta</button>}{e.canReverse && <button className="secondary" onClick={() => setCorrection(e)}>Anular movimento integralmente</button>}</InformationCard>)}
       {correction && <form data-protect-draft onSubmit={e => submit(e, f => ({ action: correction.kind === 'Receipt' ? 'ReverseReceipt' : 'ReverseRefund', id: correction.id, reason: f.get('reason') }))}><h3>Anular {names[correction.kind]} · {currency(correction.amount)}</h3><label>Motivo<input name="reason" required maxLength="2000" /></label><button disabled={disabled}>Confirmar anulação integral</button><button type="button" className="secondary" onClick={() => setCorrection(null)}>Voltar</button></form>}</>}</div>}
     {result && section === 'Reports' && <div className="record-panel"><p>{result.description}</p><p>Apuramento: {new Date(result.asOf).toLocaleString('pt-PT', { timeZone: 'Europe/Lisbon' })}</p>{Object.entries(measures).map(([k, text]) => <p key={k}>{text}: <strong>{currency(result[k])}</strong></p>)}{Object.entries(counts).map(([k, text]) => <p key={k}>{text}: <strong>{result[k]}</strong></p>)}{result.legacyReceiptDates > 0 && <p>Existem recebimentos anteriores sem distinção entre data efetiva e data de validação. Não foi inventada uma data histórica.</p>}</div>}
-    {['Pending', 'Balances', 'Corrections'].includes(section) && result && <div className="consultation-tabs"><p>{result.total} registos · Página {page}</p><button disabled={page <= 1} onClick={() => setPage(p => p - 1)}>Anterior</button><button disabled={page * 8 >= result.total} onClick={() => setPage(p => p + 1)}>Seguinte</button></div>}
+    {['Pending', 'Balances', 'Corrections'].includes(section) && result?.total > 8 && <nav className="consultation-tabs" aria-label="Páginas dos registos financeiros"><span>Página {page}</span><button disabled={page <= 1} onClick={() => setPage(p => p - 1)}>Anterior</button><button disabled={page * 8 >= result.total} onClick={() => setPage(p => p + 1)}>Seguinte</button></nav>}
   </>
 }
 
@@ -115,9 +128,9 @@ function AdjustmentForm({ people, personId, disabled, submit }) {
   }, [person])
   return <form data-protect-draft onSubmit={e => submit(e, f => ({ action: 'Adjustment', personId: person, amount: Number(f.get('amount')), id: f.get('original') || null, reason: f.get('reason') }))}>
     <h2>Registar correção excecional</h2>
-    <label>Cliente<select name="person" aria-label="Cliente da correção" required value={person} onChange={e => { setPerson(e.target.value); setMovements([]) }}><option value="">Seleciona o cliente</option>{people.map(p => <option key={p.id} value={p.id}>{[p.data.firstName, p.data.lastName].join(' ')}</option>)}</select></label>
+    <label>Cliente<AdaptiveSelect name="person" aria-label="Cliente da correção" required value={person} onChange={e => { setPerson(e.target.value); setMovements([]) }}><option value="">Seleciona o cliente</option>{people.map(p => <option key={p.id} value={p.id}>{[p.data.firstName, p.data.lastName].join(' ')}</option>)}</AdaptiveSelect></label>
     <label>Valor da correção (com sinal)<input name="amount" type="number" step="0.01" min="-1000000" max="1000000" required /></label>
-    <label>Movimento de origem (opcional)<select name="original" aria-label="Movimento de origem"><option value="">Sem ligação a outro movimento</option>{movements.map(e => <option key={e.id} value={e.id}>{names[e.kind] || 'Movimento'} · {currency(e.amount)} · {new Date(e.createdAt).toLocaleString('pt-PT', { timeZone: 'Europe/Lisbon' })}</option>)}</select></label>
+    <label>Movimento de origem (opcional)<AdaptiveSelect name="original" aria-label="Movimento de origem"><option value="">Sem ligação a outro movimento</option>{movements.map(e => <option key={e.id} value={e.id}>{names[e.kind] || 'Movimento'} · {currency(e.amount)} · {new Date(e.createdAt).toLocaleString('pt-PT', { timeZone: 'Europe/Lisbon' })}</option>)}</AdaptiveSelect></label>
     {error && <p role="status">{error}</p>}
     <label>Justificação privada<textarea name="reason" required maxLength="2000" /></label>
     <p>Um valor negativo reduz o saldo e pode criar dívida global. Não altera consultas já pagas ou sem dívida.</p>

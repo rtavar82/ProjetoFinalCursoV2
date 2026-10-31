@@ -12,8 +12,9 @@ public static class ConsultationSchema
     public static readonly string[] Tables = ["consultation_services", "availability_windows", "consultations", "credit_entries", "consultation_notices", "consultation_commands"];
     public static readonly string[] FinanceTables = ["balance_notices", "push_subscriptions"];
     public static readonly string[] AgendaTables = ["guest_consultation_requests", "session_packs", "pack_uses", "pack_notices", "group_events", "event_participations", "event_cash_entries", "event_notices", "consultation_messages", "consultation_message_reads"];
-    internal static string CreateSql(string table) => table switch
+    internal static string CreateSql(string table)
     {
+        var sql = table switch {
         "consultation_services" or "availability_windows" => $"CREATE TABLE `{table}` (id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin PRIMARY KEY, data JSON NOT NULL) ENGINE=InnoDB",
         "consultations" => """
             CREATE TABLE consultations (
@@ -184,7 +185,9 @@ public static class ConsultationSchema
             ) ENGINE=InnoDB
             """,
         _ => throw new InvalidOperationException("Unknown schema table.")
-    };
+        };
+        return ProcessStagePreparation.WithStructure(table, sql);
+    }
     public static async Task PrepareAsync(DatabaseConnectionSettings settings, InstallationPaths paths, IDataProtectionProvider provider, CancellationToken ct)
     {
         await using var connection = InitialIdentitySchema.CreatePreparationConnection(settings); await connection.OpenAsync(ct);

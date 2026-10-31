@@ -46,7 +46,14 @@ public sealed class BalancePushKeys(InstallationPaths paths, IDataProtectionProv
     }
 }
 
-public sealed class BrowserPushStore(DatabaseConnectionSettings settings, IdentitySecurity security)
+public interface IBrowserPushStore
+{
+    Task Save(string account, BrowserPush value, CancellationToken ct);
+    Task Remove(string id, string? account, CancellationToken ct);
+    Task RemoveEndpoint(string account, string endpoint, CancellationToken ct);
+    Task<List<(string Id, BrowserPush Subscription)>> ForPerson(string? person, CancellationToken ct);
+}
+public sealed class BrowserPushStore(DatabaseConnectionSettings settings, IdentitySecurity security) : IBrowserPushStore
 {
     internal static bool Valid(BrowserPush value)
     {
@@ -80,12 +87,12 @@ public sealed class BrowserPushStore(DatabaseConnectionSettings settings, Identi
         await command.ExecuteNonQueryAsync(ct);
     }
     public Task RemoveEndpoint(string account, string endpoint, CancellationToken ct) => Remove(Key(endpoint), account, ct);
-    public async Task<List<(string Id, BrowserPush Subscription)>> ForPerson(string person, CancellationToken ct)
+    public async Task<List<(string Id, BrowserPush Subscription)>> ForPerson(string? person, CancellationToken ct)
     {
         var result = new List<(string, BrowserPush)>();
         await using var connection = settings.CreateConnection(); await connection.OpenAsync(ct);
-        await using var command = new MySqlCommand("SELECT s.id,s.payload FROM push_subscriptions s JOIN accounts a ON a.id=s.account_id JOIN people p ON p.id=a.origin_person_id WHERE a.origin_person_id=@person AND a.role='Client' AND a.closed_at IS NULL AND p.is_active=1 ORDER BY s.id LIMIT 20", connection);
-        command.Parameters.AddWithValue("@person", person);
+        await using var command = new MySqlCommand("SELECT s.id,s.payload FROM push_subscriptions s JOIN accounts a ON a.id=s.account_id JOIN people p ON p.id=a.origin_person_id WHERE ((@person IS NOT NULL AND a.origin_person_id=@person AND a.role='Client') OR (@person IS NULL AND a.role IN ('TechnicalManager','TherapistManager'))) AND a.closed_at IS NULL AND p.is_active=1 AND a.link_status='Verified' AND a.email_confirmed_at IS NOT NULL ORDER BY s.id LIMIT 20", connection);
+        command.Parameters.AddWithValue("@person", (object?)person ?? DBNull.Value);
         await using var reader = await command.ExecuteReaderAsync(ct);
         while (await reader.ReadAsync(ct))
         {
@@ -97,8 +104,8 @@ public sealed class BrowserPushStore(DatabaseConnectionSettings settings, Identi
     }
 }
 
-[ApiController, Route("api/push"), Authorize(Roles = Roles.Client), ResponseCache(NoStore = true)]
-public sealed class BrowserPushController(BrowserPushStore store, BalancePushKeys keys) : ControllerBase
+[ApiController, Route("api/push"), Authorize(Roles = Roles.ManagersAndClient), ResponseCache(NoStore = true)]
+public sealed class BrowserPushController(IBrowserPushStore store, BalancePushKeys keys) : ControllerBase
 {
     [HttpGet("key")]
     public object Key() => new { publicKey = keys.Read().PublicKey };
@@ -118,24 +125,28 @@ public sealed class BrowserPushController(BrowserPushStore store, BalancePushKey
     }
 }
 
-public interface IBalancePushTransport
+public interface IBrowserPushTransport
 {
-    Task<bool> Send(BrowserPush subscription, string noticeId, CancellationToken ct);
+    Task<bool> Send(BrowserPush subscription, string noticeId, CancellationToken ct, string kind = "Balance");
 }
-public sealed class BalancePushTransport(BalancePushKeys keys) : IBalancePushTransport
+public sealed class BrowserPushTransport(BalancePushKeys keys) : IBrowserPushTransport
 {
-    public async Task<bool> Send(BrowserPush subscription, string noticeId, CancellationToken ct)
+    public async Task<bool> Send(BrowserPush subscription, string noticeId, CancellationToken ct, string kind = "Balance")
     {
         using var handler = new HttpClientHandler { AllowAutoRedirect = false };
         using var http = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(20) };
         using var client = new WebPushClient(http);
         // Lock-screen payload contains no name, amount or private reason. Details require authentication.
-        var payload = JsonSerializer.Serialize(new { title = "PaCT", body = "Existe uma atualização no teu saldo. Consulta os pagamentos na aplicação.", tag = "balance-" + noticeId, url = "/?view=payments" });
+        var balance = kind == "Balance";
+        var waiting = kind is "Wait8" or "Wait12" or "EventWait8" or "EventWait12";
+        var payload = JsonSerializer.Serialize(new { title = "PaCT", body = balance ? "Existe uma atualização no teu saldo. Consulta os pagamentos na aplicação."
+            : waiting ? "Existe um pagamento por confirmar. Consulta os detalhes na PaCT." : "Tens uma atualização na PaCT. Abre a aplicação para consultar.",
+            tag = (balance ? "balance-" : "consultation-") + noticeId, url = balance ? "/?view=payments" : "/#agenda" });
         try { await client.SendNotificationAsync(new PushSubscription(subscription.Endpoint, subscription.Keys["p256dh"], subscription.Keys["auth"]), payload, keys.Details(), cancellationToken: ct); return true; }
         catch (WebPushException error) when (error.StatusCode is HttpStatusCode.Gone or HttpStatusCode.NotFound) { return false; }
     }
 }
-public sealed class BalancePushWorker(IConsultationStore consultations, BrowserPushStore subscriptions, IBalancePushTransport transport,
+public sealed class BalancePushWorker(IConsultationStore consultations, IBrowserPushStore subscriptions, IBrowserPushTransport transport,
     ILogger<BalancePushWorker> logger) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)

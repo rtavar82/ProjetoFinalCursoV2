@@ -21,14 +21,14 @@ public sealed class ClientsController(ClientService clients) : ControllerBase
         if (IdentityValidation.MissingNameMessage(input.Data.FirstName, input.Data.LastName) is { } missingName)
             return Problem(statusCode: 400, title: missingName);
         if (!ClientValidation.HasContact(input.Data)) return Problem(statusCode: 400, title: ClientValidation.ContactRequiredMessage);
-        return Ok(await clients.SaveAsync(id, input, Author, true, ct));
+        return Ok(await clients.SaveAsync(id, input, Author, true, ct, ClientCommands.Key(Request)));
     }
     [HttpGet("reviews")] public async Task<IActionResult> Reviews(CancellationToken ct) => Ok(await clients.ReviewsAsync(null, true, ct));
     [HttpGet("reviews/summary")] public async Task<IActionResult> ReviewSummary(CancellationToken ct) => Ok(await clients.ReviewSummaryAsync(ct));
-    [HttpPost("reviews/{id:guid}")] public async Task<IActionResult> Decide(string id, ReviewDecision input, CancellationToken ct) => Ok(await clients.DecideAsync(id, input, Author, ct));
+    [HttpPost("reviews/{id:guid}")] public async Task<IActionResult> Decide(string id, ReviewDecision input, CancellationToken ct) => Ok(await clients.DecideAsync(id, input, Author, ct, ClientCommands.Key(Request)));
     [Authorize(Roles = Roles.Managers), HttpGet("{id:guid}/notes")] public async Task<IActionResult> Notes(string id, int page = 1, CancellationToken ct = default) => Ok(await clients.NotesAsync(id, page, ct));
-    [Authorize(Roles = Roles.Managers), HttpPost("{id:guid}/notes")] public async Task<IActionResult> AddNote(string id, NoteChange input, CancellationToken ct) => Ok(new { saved = await clients.SaveNoteAsync(id, null, input, Author, ct) });
-    [Authorize(Roles = Roles.Managers), HttpPost("{id:guid}/notes/{noteId:guid}")] public async Task<IActionResult> EditNote(string id, string noteId, NoteChange input, CancellationToken ct) => Ok(new { saved = await clients.SaveNoteAsync(id, noteId, input, Author, ct) });
+    [Authorize(Roles = Roles.Managers), HttpPost("{id:guid}/notes")] public async Task<IActionResult> AddNote(string id, NoteChange input, CancellationToken ct) => Ok(new { saved = await clients.SaveNoteAsync(id, null, input, Author, ct, ClientCommands.Key(Request)) });
+    [Authorize(Roles = Roles.Managers), HttpPost("{id:guid}/notes/{noteId:guid}")] public async Task<IActionResult> EditNote(string id, string noteId, NoteChange input, CancellationToken ct) => Ok(new { saved = await clients.SaveNoteAsync(id, noteId, input, Author, ct, ClientCommands.Key(Request)) });
 }
 
 [ApiController, Route("api/profile"), Authorize(Roles = Roles.Client)]
@@ -44,7 +44,7 @@ public sealed class ClientProfileController(ClientService clients, IIdentityStor
             return Problem(statusCode: 400, title: missingName);
         if (!ClientValidation.HasContact(input.Data)) return Problem(statusCode: 400, title: ClientValidation.ContactRequiredMessage);
         if (input.Data.BirthDate is null) return Problem(statusCode: 400, title: ClientValidation.BirthDateRequiredMessage);
-        return Ok(await clients.SaveAsync(await Person(ct), input, Author, false, ct));
+        return Ok(await clients.SaveAsync(await Person(ct), input, Author, false, ct, ClientCommands.Key(Request)));
     }
     [HttpGet("reviews")] public async Task<IActionResult> Reviews(CancellationToken ct) => Ok(await clients.ReviewsAsync(await Person(ct), false, ct));
 }

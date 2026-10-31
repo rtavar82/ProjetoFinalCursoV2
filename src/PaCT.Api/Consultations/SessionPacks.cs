@@ -27,12 +27,14 @@ public static class SessionPacks
         - (data.Packs.Single(p => p.Id == id).History ?? []).Where(h => h.Action == "WithdrawPackSessions").Sum(h => h.Quantity ?? 0);
     public static bool CanUse(ConsultationData data, SessionPack pack, string serviceId, DateTimeOffset at) =>
         pack.ServiceIds.Contains(serviceId) && pack.SettlementId is not null
-        && !ActivityCatalogue.Complete(data.Services).Any(s => s.Id == serviceId && s.ServiceKind == "Retreat")
+        && !ActivityCatalogue.Complete(data.Services).Any(s => s.Id == serviceId && (s.ServiceKind == "Retreat" || GroupEvents.IsFree(s)))
         && at >= pack.PurchasedAt && Remaining(data, pack.Id) > 0;
     public static void Consume(ConsultationData data, string packId, string personId, string activityId, string serviceId,
         string activityKind, DateTimeOffset activityAt, ConsultationActor actor, DateTimeOffset now)
     {
         Require(actor.IsManager, "Esta ação exige a gestora-terapeuta.", 403);
+        Require(!data.Entries.Any(e => e.Kind == "Settlement" && (e.ConsultationId == activityId || e.Origin == "EventService" && e.OriginReference == activityId)),
+            "Esta consulta já tem liquidações monetárias. Não é permitido combiná-las com uma sessão de pack.", 409);
         var pack = data.Packs.SingleOrDefault(p => p.Id == packId && p.PersonId == personId) ?? throw new IdentityProblem(409, "Seleciona um pack desta pessoa.");
         Require(!data.PackUses.Any(u => u.ActivityId == activityId && u.ReversesId is null && !data.PackUses.Any(r => r.ReversesId == u.Id)), "Esta atividade já consumiu uma sessão.", 409);
         Require(CanUse(data, pack, serviceId, activityAt), "O pack não pode cobrir esta atividade. Verifica compatibilidade, validade, sessões e autorização.", 409);

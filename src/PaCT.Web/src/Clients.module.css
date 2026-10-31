@@ -12,7 +12,7 @@
 .page :global(.review-card) fieldset { min-width: 0; display: grid; gap: 12px; border: 1px solid var(--line); border-radius: 12px; padding: 18px; }
 .page :global(.review-card) :global(.checkbox) { overflow-wrap: anywhere; }
 .page :global(.comparison-links) { display: grid; gap: 8px; margin-top: 16px; }
-.page :global(.comparison-links) :global(.text-button) { text-align: left; padding: 8px 0; margin: 0; text-decoration: underline; }
+.page :global(.comparison-links) :global(.text-button) { text-align: left; padding: 8px 0; margin: 0; text-decoration-line: underline; }
 .page :global(.client-comparison) { width: min(640px, calc(100% - 24px)); max-height: calc(100dvh - 24px); padding: 20px; border: 1px solid var(--line); border-radius: 18px; color: var(--ink); background: #fff; overflow: auto; }
 .page :global(.client-comparison)::backdrop { background: #183b3080; }
 .page :global(.client-comparison) p { font-size: 14px; }

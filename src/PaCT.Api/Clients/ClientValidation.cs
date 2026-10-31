@@ -46,9 +46,9 @@ public static class ClientValidation
         if (input.Gender is not (null or "" or "Male" or "Female")) throw new IdentityProblem(400, "Seleciona um género válido.");
         if (input.ChildrenCount is < 0 or > 65535) throw new IdentityProblem(400, "O número de filhos deve ser um inteiro não negativo.");
         if (input.RelationshipStatus is not (null or "" or "Married" or "Separated" or "Partnered" or "Unpartnered" or "Widowed"))
-            throw new IdentityProblem(400, "Seleciona uma situação pessoal válida.");
+            throw new IdentityProblem(400, "Seleciona um estado civil válido.");
         return input with { FirstName = first, LastName = last, Locality = locality, Email = email, Phone = phone, DialCode = dial,
-            Gender = Field(input.Gender, 9, "o género"), RelationshipStatus = Field(input.RelationshipStatus, 20, "a situação pessoal"),
+            Gender = Field(input.Gender, 9, "o género"), RelationshipStatus = Field(input.RelationshipStatus, 20, "o estado civil"),
             Address = Field(input.Address, 1000, "a morada"), PostalCode = Field(input.PostalCode, 30, "o código postal"), DisplayName = Field(input.DisplayName, 201, "o nome público") };
     }
     public static ClientProfile Select(ClientProfile current, ClientProfile source, string[] fields)

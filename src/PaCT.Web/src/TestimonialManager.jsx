@@ -1,14 +1,14 @@
 import { useEffect, useRef, useState } from 'react'
 import useLiveResource from './useLiveResource'
-import useClosureDraft from './useClosureDraft'
+import useEditorState from './useEditorState'
 import { readManagedTestimonials, saveTestimonial } from './testimonialData'
 import { TestimonialViewer } from './PublicTestimonials'
 import styles from './Testimonials.module.css'
 
-export default function TestimonialManager({ guard, initialEntry, onPublic }) {
+export default function TestimonialManager({ guard, onPublic }) {
   const resource = useLiveResource('testimonials', 'testimonial-management', readManagedTestimonials)
-  const [editingId, edit] = useState(initialEntry?.id || null)
-  const [newItem, setNew] = useState(initialEntry?.id ? { id: initialEntry.id, version: 0, text: '', imageUrl: null, published: false } : null)
+  const [editingId, edit] = useState(null)
+  const [newItem, setNew] = useState(null)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const pending = useRef(false)
@@ -46,7 +46,7 @@ export default function TestimonialManager({ guard, initialEntry, onPublic }) {
 }
 
 function TestimonialEditor({ item, onSaved, onCancel }) {
-  const draft = useClosureDraft({ ...item, serviceTitle: 'Testemunho' }, { scope: `testimonial:${item.id}`, kind: 'Testimonial', initialFields: { text: item.text, removeImage: false, operationId: crypto.randomUUID() } })
+  const editor = useEditorState({ text: item.text, removeImage: false, operationId: crypto.randomUUID() }, item.version)
   const [imageUrl, setImageUrl] = useState(null)
   const [preview, setPreview] = useState(false)
   const [error, setError] = useState('')
@@ -55,58 +55,53 @@ function TestimonialEditor({ item, onSaved, onCancel }) {
   const [imageBusy, setImageBusy] = useState(false)
   const pending = useRef(false)
   const form = useRef(null)
-  const file = draft.files[0]
+  const file = editor.files[0]
   useEffect(() => {
     if (!file) return
     const url = URL.createObjectURL(file); let active = true
     queueMicrotask(() => { if (active) setImageUrl(url) })
     return () => { active = false; URL.revokeObjectURL(url) }
   }, [file])
-  const currentImage = file ? imageUrl : draft.fields?.removeImage ? null : item.imageUrl
-  const savedAlready = confirmed || !!item.operationId && item.operationId === draft.fields?.operationId
-  function change(name, value) { draft.change(name, value); draft.change('operationId', crypto.randomUUID()) }
-  async function cleanUp() {
-    try { await draft.clear(); form.current?.reset(); onSaved() }
-    catch (failure) { setError('A publicação já foi guardada no servidor. Falta limpar o rascunho deste aparelho: ' + failure.message) }
-  }
+  const currentImage = file ? imageUrl : editor.fields?.removeImage ? null : item.imageUrl
+  const savedAlready = confirmed || !!item.operationId && item.operationId === editor.fields?.operationId
+  function change(name, value) { editor.change(name, value); editor.change('operationId', crypto.randomUUID()) }
+  function cleanUp() { form.current?.reset(); onSaved() }
   async function submit(event) {
     event.preventDefault()
     if (pending.current || savedAlready) return
     pending.current = true; setBusy(true); setError('')
     const publish = event.nativeEvent.submitter?.value === 'publish' || item.published
     try {
-      await draft.flush()
-      await saveTestimonial(item, draft.fields, file, publish)
+      await editor.ready()
+      await saveTestimonial(item, editor.fields, file, publish)
       setConfirmed(true); await cleanUp()
     } catch (failure) { setError(failure.message) }
     finally { pending.current = false; setBusy(false) }
   }
-  if (!draft.available || !draft.fields) return <p role="status">{draft.error || draft.status}</p>
   return <form ref={form} className={styles.editor} data-protect-draft data-pending-command={busy || imageBusy || undefined} onSubmit={submit}>
     <h2>{item.version ? 'Editar publicação' : 'Nova publicação'}</h2>
-    <p role="status">{draft.status}</p>
-    {(error || draft.error) && <p className="notice error" role="alert">{error || draft.error}</p>}
-    {savedAlready && <p className="notice success" role="status">Publicação guardada no servidor.<button type="button" className="secondary" onClick={cleanUp}>Concluir limpeza do rascunho</button></p>}
-    {draft.conflict && !savedAlready && <div className="notice error"><p>A publicação mudou. O texto e a imagem do teu rascunho foram conservados.</p><button type="button" className="secondary" onClick={() => { draft.acceptCurrentVersion(); draft.change('operationId', crypto.randomUUID()) }}>Revi a publicação atual; manter este rascunho</button></div>}
-    <fieldset disabled={busy || imageBusy || savedAlready || draft.conflict}>
-      <label>Texto<textarea name="text" maxLength="10000" value={draft.fields.text} onChange={event => change('text', event.target.value)} /></label>
+    {error && <p className="notice error" role="alert">{error}</p>}
+    {savedAlready && <p className="notice success" role="status">Publicação guardada no servidor.<button type="button" className="secondary" onClick={cleanUp}>Concluir</button></p>}
+    {editor.conflict && !savedAlready && <div className="notice error"><p>A publicação mudou. O texto e a imagem em edição foram mantidos.</p><button type="button" className="secondary" onClick={() => { editor.acceptCurrentVersion(); editor.change('operationId', crypto.randomUUID()) }}>Revi a publicação atual; manter o preenchimento</button></div>}
+    <fieldset disabled={busy || imageBusy || savedAlready || editor.conflict}>
+      <label>Texto<textarea name="text" maxLength="10000" value={editor.fields.text} onChange={event => change('text', event.target.value)} /></label>
       <label>Imagem<input type="file" name="image" accept="image/jpeg,image/png" onChange={async event => {
         const selected = event.target.files[0]; event.target.value = ''; if (!selected || imageBusy) return
         setImageBusy(true)
         try {
-          const replacing = draft.files.length > 0
-          await draft.addPhotos([selected]); if (replacing) draft.removePhoto(0)
+          const replacing = editor.files.length > 0
+          await editor.addPhotos([selected]); if (replacing) editor.removePhoto(0)
           change('removeImage', false); setError('')
         } catch (failure) { setError(failure.message) }
         finally { setImageBusy(false) }
       }} /></label>
       <p className="field-help">Uma imagem JPEG ou PNG, até 4 MB. Podes usar só texto, só imagem ou ambos.</p>
-      {currentImage && <div className={styles.preview}><img src={currentImage} alt="Imagem selecionada para a publicação" /><button type="button" className="secondary" onClick={() => { if (draft.files.length) draft.removePhoto(0); change('removeImage', true) }}>Retirar imagem</button></div>}
-      <div className={styles.editorActions}><button type="button" className="secondary" disabled={!draft.fields.text.trim() && !currentImage} onClick={() => setPreview(true)}>Pré-visualizar</button>
+      {currentImage && <div className={styles.preview}><img src={currentImage} alt="Imagem selecionada para a publicação" /><button type="button" className="secondary" onClick={() => { if (editor.files.length) editor.removePhoto(0); change('removeImage', true) }}>Retirar imagem</button></div>}
+      <div className={styles.editorActions}><button type="button" className="secondary" disabled={!editor.fields.text.trim() && !currentImage} onClick={() => setPreview(true)}>Pré-visualizar</button>
         <button type="submit" value="save">{item.published ? 'Guardar alterações' : 'Guardar rascunho'}</button>
         {!item.published && <button type="submit" value="publish">Publicar</button>}
         <button type="button" className="secondary" onClick={onCancel}>Fechar editor</button></div>
     </fieldset>
-    {preview && <TestimonialViewer item={{ text: draft.fields.text, imageUrl: currentImage }} onClose={() => setPreview(false)} />}
+    {preview && <TestimonialViewer item={{ text: editor.fields.text, imageUrl: currentImage }} onClose={() => setPreview(false)} />}
   </form>
 }

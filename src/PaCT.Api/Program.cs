@@ -14,6 +14,10 @@ public partial class Program
     public static async Task Main(string[] args)
     {
         const string prepareOption = "--prepare-installation";
+        const string auditFinanceOption = "--audit-financial-rules";
+        const string prepareFinanceOption = "--prepare-financial-rules";
+        var auditFinance = args.Contains(auditFinanceOption, StringComparer.Ordinal);
+        var prepareFinance = args.Contains(prepareFinanceOption, StringComparer.Ordinal);
         const string showCodeOption = "--show-installation-code";
         const string prepareInvitationsOption = "--prepare-therapist-invitations";
         const string prepareClientsOption = "--prepare-clients";
@@ -23,6 +27,12 @@ public partial class Program
         const string prepareAccountLoginOption = "--prepare-account-login";
         const string configureCatalogueOption = "--configure-approved-catalogue";
         const string prepareTestimonialsOption = "--prepare-testimonials";
+        const string auditProcessStagesOption = "--audit-process-states";
+        const string prepareProcessStagesOption = "--prepare-process-states";
+        const string prepareRequestRecoveryOption = "--prepare-request-recovery";
+        var prepareRequestRecovery = args.Contains(prepareRequestRecoveryOption, StringComparer.Ordinal);
+        var auditProcessStages = args.Contains(auditProcessStagesOption, StringComparer.Ordinal);
+        var prepareProcessStages = args.Contains(prepareProcessStagesOption, StringComparer.Ordinal);
         var prepareTestimonials = args.Contains(prepareTestimonialsOption, StringComparer.Ordinal);
         var configureCatalogue = args.Contains(configureCatalogueOption, StringComparer.Ordinal);
         var prepareAccountLogin = args.Contains(prepareAccountLoginOption, StringComparer.Ordinal);
@@ -36,7 +46,7 @@ public partial class Program
         var prepareInvitations = args.Contains(prepareInvitationsOption, StringComparer.Ordinal);
         var prepareClients = args.Contains(prepareClientsOption, StringComparer.Ordinal);
         var builder = WebApplication.CreateBuilder(args
-            .Where(argument => argument != prepareOption && argument != showCodeOption && argument != prepareInvitationsOption && argument != prepareClientsOption && argument != prepareConsultationsOption && argument != preparePasskeysOption && argument != resetManagerFactorsOption && argument != prepareClientAccessOption && argument != prepareAccountLoginOption && argument != configureCatalogueOption && argument != prepareTestimonialsOption)
+            .Where(argument => argument != auditFinanceOption && argument != prepareFinanceOption && argument != prepareOption && argument != showCodeOption && argument != prepareInvitationsOption && argument != prepareClientsOption && argument != prepareConsultationsOption && argument != preparePasskeysOption && argument != resetManagerFactorsOption && argument != prepareClientAccessOption && argument != prepareAccountLoginOption && argument != configureCatalogueOption && argument != prepareTestimonialsOption && argument != auditProcessStagesOption && argument != prepareProcessStagesOption && argument != prepareRequestRecoveryOption)
             .ToArray());
 
         builder.Services.AddSingleton(services =>
@@ -52,19 +62,31 @@ public partial class Program
         builder.Services.AddSingleton<PaCT.Api.Testimonials.TestimonialImageStore>();
         builder.Services.AddHostedService<PaCT.Api.Consultations.ConsultationClockWorker>();
         builder.Services.AddSingleton<PaCT.Api.Consultations.BalancePushKeys>();
-        builder.Services.AddSingleton<PaCT.Api.Consultations.BrowserPushStore>();
-        builder.Services.AddSingleton<PaCT.Api.Consultations.IBalancePushTransport, PaCT.Api.Consultations.BalancePushTransport>();
+        builder.Services.AddSingleton<PaCT.Api.Consultations.IBrowserPushStore, PaCT.Api.Consultations.BrowserPushStore>();
+        builder.Services.AddSingleton<PaCT.Api.Consultations.IBrowserPushTransport, PaCT.Api.Consultations.BrowserPushTransport>();
         builder.Services.AddHostedService<PaCT.Api.Consultations.BalancePushWorker>();
+        builder.Services.AddHostedService<PaCT.Api.Consultations.ConsultationPushWorker>();
         var app = builder.Build();
         var database = app.Services.GetRequiredService<DatabaseConnectionSettings>();
 
-        if (prepare || showCode || prepareInvitations || prepareClients || prepareConsultations || preparePasskeys || resetManagerFactors || prepareClientAccess || prepareAccountLogin || configureCatalogue || prepareTestimonials)
+        if (auditFinance || prepareFinance || prepare || showCode || prepareInvitations || prepareClients || prepareConsultations || preparePasskeys || resetManagerFactors || prepareClientAccess || prepareAccountLogin || configureCatalogue || prepareTestimonials || auditProcessStages || prepareProcessStages || prepareRequestRecovery)
         {
             try
             {
-                if (new[] { prepare, showCode, prepareInvitations, prepareClients, prepareConsultations, preparePasskeys, resetManagerFactors, prepareClientAccess, prepareAccountLogin, configureCatalogue, prepareTestimonials }.Count(value => value) != 1) throw new InvalidOperationException("Use one installation command at a time.");
+                if (new[] { auditFinance, prepareFinance, prepare, showCode, prepareInvitations, prepareClients, prepareConsultations, preparePasskeys, resetManagerFactors, prepareClientAccess, prepareAccountLogin, configureCatalogue, prepareTestimonials, auditProcessStages, prepareProcessStages, prepareRequestRecovery }.Count(value => value) != 1) throw new InvalidOperationException("Use one installation command at a time.");
                 var secrets = app.Services.GetRequiredService<InstallationSecrets>();
-                if (prepare)
+                if (auditFinance || prepareFinance)
+                    Console.WriteLine(JsonSerializer.Serialize(await FinancialPreparation.RunAsync(database, prepareFinance, app.Services.GetRequiredService<InstallationPaths>(), app.Services.GetRequiredService<IDataProtectionProvider>(), CancellationToken.None)));
+                else if (prepareRequestRecovery)
+                {
+                    await ClientCommandSchema.PrepareAsync(database, app.Services.GetRequiredService<InstallationPaths>(), app.Services.GetRequiredService<IDataProtectionProvider>(), CancellationToken.None);
+                    Console.WriteLine(JsonSerializer.Serialize(new { status = "prepared", module = "request-recovery", existingDataPreserved = true, sentEmails = 0 }));
+                }
+                else if (auditProcessStages)
+                    Console.WriteLine(JsonSerializer.Serialize(await ProcessStagePreparation.AuditAsync(database, CancellationToken.None)));
+                else if (prepareProcessStages)
+                    Console.WriteLine(JsonSerializer.Serialize(await ProcessStagePreparation.PrepareAsync(database, app.Services.GetRequiredService<InstallationPaths>(), app.Services.GetRequiredService<IDataProtectionProvider>(), CancellationToken.None)));
+                else if (prepare)
                 {
                     var tables = await EnglishIdentityUpgrade.PrepareAsync(database, app.Services.GetRequiredService<InstallationPaths>(), CancellationToken.None);
                     if (!secrets.IsPrepared && tables.Any(table => table.RowCount != 0))

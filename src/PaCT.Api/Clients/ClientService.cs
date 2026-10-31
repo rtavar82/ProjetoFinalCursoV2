@@ -10,6 +10,8 @@ public sealed class ClientService(IClientStore store, IdentitySecurity security,
     private DateOnly Today => DateOnly.FromDateTime(TimeZoneInfo.ConvertTimeFromUtc(Now, TimeZoneInfo.FindSystemTimeZoneById("Europe/Lisbon")));
     private const string ConflictMessage = "Não foi possível concluir com os dados indicados. A situação será analisada pela gestão.";
     private static IdentityProblem Changed() => new(409, "Os dados foram alterados entretanto. Reabre a ficha e revê as alterações antes de guardar.");
+    private Task<T> Write<T>(string? operationId, string? author, string kind, object input, Func<IClientSession, Task<T>> apply, CancellationToken ct) =>
+        store.ExecuteAsync(session => ClientCommands.Execute(session, security, operationId, author, kind, input, Now, () => apply(session)), true, ct);
 
     public Task<object> SearchAsync(string field, string? term, int page, CancellationToken ct) => store.ExecuteAsync<object>(async session =>
     {
@@ -47,7 +49,7 @@ public sealed class ClientService(IClientStore store, IdentitySecurity security,
     public Task<object> ReviewSummaryAsync(CancellationToken ct) => store.ExecuteAsync<object>(async session =>
         new { pendingReviewCount = await session.OpenReviewCountAsync() }, false, ct);
 
-    public Task<ClientSaveResult> SaveAsync(string? id, ProfileChange input, string authorId, bool manager, CancellationToken ct) => store.ExecuteAsync(async session =>
+    public Task<ClientSaveResult> SaveAsync(string? id, ProfileChange input, string authorId, bool manager, CancellationToken ct, string? operationId = null) => Write(operationId, authorId, "SaveClient", new { id, input, manager }, async session =>
     {
         var all = await session.ClientsAsync();
         var previous = id is null ? null : Find(all, id);
@@ -77,14 +79,14 @@ public sealed class ClientService(IClientStore store, IdentitySecurity security,
         var row = Protect(id ?? Guid.NewGuid().ToString(), data, previous);
         await session.SaveClientAsync(row, previous is null);
         return new ClientSaveResult(true, false, "Dados guardados.", View(row) with { IdentityReviewStatus = previous?.IdentityReviewStatus });
-    }, true, ct);
+    }, ct);
 
-    public Task<ClientSaveResult> RegisterAsync(ClientProfile input, CancellationToken ct)
+    public Task<ClientSaveResult> RegisterAsync(ClientProfile input, CancellationToken ct, string? operationId = null)
     {
         var data = ClientValidation.ValidateRegistration(input, Today);
         var email = data.Email!;
         transport.CheckConfiguration();
-        return store.ExecuteAsync(async session =>
+        return Write(operationId, null, "RegisterClient", input, async session =>
         {
             var candidates = Matches(await session.ClientsAsync(), data, null);
             // Manager accounts never appear in the client directory, but still reserve their login email.
@@ -115,7 +117,7 @@ public sealed class ClientService(IClientStore store, IdentitySecurity security,
             }
             await CreateRegistrationAsync(session, data);
             return new ClientSaveResult(true, false, "Pedido recebido. Abre o email para confirmar o endereço e, depois, definir a palavra-passe. A submissão ao serviço não garante a entrega.");
-        }, true, ct);
+        }, ct);
     }
 
     private async Task<StoredClient> CreateRegistrationAsync(IClientSession session, ClientProfile data)
@@ -161,11 +163,12 @@ public sealed class ClientService(IClientStore store, IdentitySecurity security,
         return (await session.ReviewsAsync()).Where(r => manager ? r.Status == "Open" || NeedsConsolidation(r, all) : r.PersonId == personId)
             .OrderByDescending(r => r.CreatedAt).ThenBy(r => r.Id, StringComparer.Ordinal).Select(r => manager ? (object)new {
                 r.Id, r.Kind, r.PersonId, r.CreatedAt, r.Version, needsConsolidation = NeedsConsolidation(r, all), proposal = JsonSerializer.Deserialize<ReviewProposal>(security.Decrypt(r.Id, "review", r.Proposal))!.Data,
+                origin = JsonSerializer.Deserialize<ReviewProposal>(security.Decrypt(r.Id, "review", r.Proposal))!.Origin,
                 candidates = all.Where(p => p.IsActive && r.Candidates.Contains(p.Id)).Select(View).ToArray(), source = all.Where(p => p.IsActive && p.Id == r.PersonId).Select(View).FirstOrDefault()
             } : new { r.Id, r.CreatedAt, r.Status, message = r.Status == "Rejected" ? (r.Kind == "Registration" ? "A gestão decidiu manter as fichas separadas. A tua conta continua disponível, sem acesso a dados anteriores." : "Não foi possível guardar os dados propostos.") : r.Status == "Accepted" ? "A gestão concluiu a revisão dos dados." : "Os teus dados aguardam verificação pela gestão. Podes continuar a usar a tua conta." }).ToArray();
     }, false, ct);
 
-    public Task<ClientSaveResult> DecideAsync(string id, ReviewDecision decision, string authorId, CancellationToken ct) => store.ExecuteAsync(async session =>
+    public Task<ClientSaveResult> DecideAsync(string id, ReviewDecision decision, string authorId, CancellationToken ct, string? operationId = null) => Write(operationId, authorId, "DecideReview", new { id, decision }, async session =>
     {
         var review = (await session.ReviewsAsync()).SingleOrDefault(r => r.Id == id) ?? throw new IdentityProblem(404, "Ocorrência não encontrada.");
         var all = await session.ClientsAsync();
@@ -211,9 +214,10 @@ public sealed class ClientService(IClientStore store, IdentitySecurity security,
         }
         var saved = Protect(primary.Id, selected, primary);
         await session.SaveClientAsync(saved, false);
+        ClientAggregationItem[]? aggregation = null;
         if (absorbed is not null)
         {
-            await session.ConsolidateAsync(saved, absorbed, Now, authorId);
+            aggregation = await session.ConsolidateAsync(saved, absorbed, Now, authorId);
             foreach (var pending in (await session.ReviewsAsync()).Where(r => r.Id != review.Id && r.Status == "Open"
                 && (r.PersonId == absorbed.Id || r.Candidates.Contains(absorbed.Id))))
             {
@@ -233,11 +237,13 @@ public sealed class ClientService(IClientStore store, IdentitySecurity security,
                 [absorbed!.Id], "Open", authorId, Now, saved.Version);
             await session.SaveReviewAsync(review, true);
         }
+        var reviewedProposal = JsonSerializer.Deserialize<ReviewProposal>(security.Decrypt(review.Id, "review", review.Proposal))!;
         await session.SaveReviewAsync(review with { Status = "Accepted", DecidedBy = authorId, DecidedAt = Now,
+            Proposal = security.Encrypt(review.Id, "review", JsonSerializer.Serialize(reviewedProposal with { Aggregation = aggregation })),
             PersonId = saved.Id, AssociatedPersonId = absorbed?.Id, SelectedFields = fields, Version = review.Version + 1 }, false);
         var refreshed = Find(await session.ClientsAsync(), saved.Id);
-        return new ClientSaveResult(true, false, "Perfis consolidados numa única ficha ativa. Os conteúdos e movimentos anteriores conservam a sua origem e não foram transferidos.", View(refreshed));
-    }, true, ct);
+        return new ClientSaveResult(true, false, "Dados e histórico reunidos na ficha escolhida. Foi mantida uma única ficha ativa, sem duplicar consultas ou movimentos.", View(refreshed));
+    }, ct);
 
     public Task<object> NotesAsync(string id, int page, CancellationToken ct) => store.ExecuteAsync<object>(async session =>
     {
@@ -249,7 +255,7 @@ public sealed class ClientService(IClientStore store, IdentitySecurity security,
         }).ToArray() };
     }, false, ct);
 
-    public Task<bool> SaveNoteAsync(string personId, string? id, NoteChange input, string authorId, CancellationToken ct) => store.ExecuteAsync(async session =>
+    public Task<bool> SaveNoteAsync(string personId, string? id, NoteChange input, string authorId, CancellationToken ct, string? operationId = null) => Write(operationId, authorId, "SaveNote", new { personId, id, input }, async session =>
     {
         _ = Find(await session.ClientsAsync(), personId);
         var title = IdentityValidation.Required(input.Title, 200, "o título da nota");
@@ -260,7 +266,7 @@ public sealed class ClientService(IClientStore store, IdentitySecurity security,
         await session.SaveNoteAsync(new(id, personId, security.Encrypt(id, "private-note", JsonSerializer.Serialize(new NoteChange(title, text))),
             previous?.CreatedBy ?? authorId, authorId, previous?.CreatedAt ?? Now, Now, (previous?.Version ?? 0) + 1), previous is null);
         return true;
-    }, true, ct);
+    }, ct);
 
     private static bool NeedsConsolidation(ClientReview review, IReadOnlyList<StoredClient> all) => review.Status == "Accepted"
         && review.PersonId != review.AssociatedPersonId && all.Any(row => row.Id == review.PersonId && row.IsActive)

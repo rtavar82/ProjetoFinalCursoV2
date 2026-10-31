@@ -1,3 +1,4 @@
+import AdaptiveSelect from './AdaptiveSelect'
 import { useCallback, useMemo, useState } from 'react'
 import { apiRequest } from './identityApi'
 import useLiveResource from './useLiveResource'
@@ -52,10 +53,10 @@ export default function AgendaCalendar({ manager = false, visitor = false, enabl
   function chooseService(value) { setServiceId(value); setOptionId('') }
   return <section className={styles.page} aria-label="Calendário da agenda">
     <AgendaFilters active={!!(serviceId || location || modality || optionId)} summary={[services.find(item => item.id === serviceId)?.title, location, modality === 'Remote' ? 'Online' : modality === 'InPerson' ? 'Presencial' : ''].filter(Boolean).join(' · ')} onReset={resetFilters}>
-      <label>Tipo de consulta<select aria-label="Tipo de consulta" value={serviceId} onChange={e => chooseService(e.target.value)}><option value="">Todas as consultas</option>{services.map(s => <option value={s.id} key={s.id}>{s.title}</option>)}</select></label>
-      <label>Local<select aria-label="Local" value={location} onChange={e => { setLocation(e.target.value); setOptionId('') }}><option value="">Todos os locais</option>{[...new Set([...variants.map(s => s.publicLocation), ...(data?.events || []).map(event => event.publicLocation)].filter(Boolean))].map(x => <option key={x}>{x}</option>)}</select></label>
-      <label>Modalidade<select aria-label="Modalidade" value={modality} onChange={e => { setModality(e.target.value); setOptionId('') }}><option value="">Todas</option><option value="InPerson">Presencial</option><option value="Remote">Online</option></select></label>
-      {options.length > 1 && <label>Modalidade e local<select aria-label="Modalidade e local" value={optionId} onChange={e => setOptionId(e.target.value)}><option value="">Escolhe a modalidade e o local</option>{options.map(o => <option value={o.optionId} key={o.optionId}>{o.modality === 'Remote' ? 'Online' : o.publicLocation} · {servicePrice(o)}</option>)}</select></label>}
+      <label>Tipo de consulta<AdaptiveSelect aria-label="Tipo de consulta" value={serviceId} onChange={e => chooseService(e.target.value)}><option value="">Todas as consultas</option>{services.map(s => <option value={s.id} key={s.id}>{s.title}</option>)}</AdaptiveSelect></label>
+      <label>Local<AdaptiveSelect aria-label="Local" value={location} onChange={e => { setLocation(e.target.value); setOptionId('') }}><option value="">Todos os locais</option>{[...new Set([...variants.map(s => s.publicLocation), ...(data?.events || []).map(event => event.publicLocation)].filter(Boolean))].map(x => <option key={x}>{x}</option>)}</AdaptiveSelect></label>
+      <label>Modalidade<AdaptiveSelect aria-label="Modalidade" value={modality} onChange={e => { setModality(e.target.value); setOptionId('') }}><option value="">Todas</option><option value="InPerson">Presencial</option><option value="Remote">Online</option></AdaptiveSelect></label>
+      {options.length > 1 && <label>Modalidade e local<AdaptiveSelect aria-label="Modalidade e local" value={optionId} onChange={e => setOptionId(e.target.value)}><option value="">Escolhe a modalidade e o local</option>{options.map(o => <option value={o.optionId} key={o.optionId}>{o.modality === 'Remote' ? 'Online' : o.publicLocation} · {servicePrice(o)}</option>)}</AdaptiveSelect></label>}
     </AgendaFilters>
     {calendar.error && <InformationCard cardId="calendar-error" error={calendar.error} onRetry={calendar.refresh} />}
     {calendar.loading && <p role="status">A consultar a agenda…</p>}

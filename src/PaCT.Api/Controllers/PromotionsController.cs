@@ -17,6 +17,6 @@ public sealed class PromotionsController(IConsultationStore store, TimeProvider 
             .OrderBy(e => e.Definition.StartsAt).Select(e => new { e.Id, serviceId = e.Service.Id, e.Service.Title,
                 text = e.Definition.PromotionText, e.Definition.Program, e.Definition.StartsAt, e.Definition.EndsAt, e.Definition.PublicLocation,
                 price = e.Service.ServiceKind == "Retreat" ? RetreatFinance.Price(e) : e.Service.ReferencePrice,
-                e.Service.PaymentMode, isFree = SharingWorkshop.Matches(e.Service.Title) || e.Service.PaymentMode == "Free" }).ToArray()
+                e.Service.PaymentMode, isFree = GroupEvents.IsFree(e.Service) }).ToArray()
     }, ct));
 }

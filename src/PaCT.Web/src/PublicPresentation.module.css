@@ -20,8 +20,8 @@
 .actions > .primary { display: inline-flex; gap: .5rem; justify-content: center; align-items: center; min-height: 48px; padding: .8rem 1rem; background: var(--accent); color: var(--surface); border-radius: 12px; text-decoration: none; font-weight: 600; }
 .actions > .primary:hover { background: #244d3c; }
 .actions .text-button { padding: .6rem 0; }
-.actionLink { display: inline-flex; align-items: center; gap: .4rem; min-height: 44px; padding: .6rem 0; margin: 0; border: 0; background: transparent; color: var(--accent); font: inherit; font-size: 14px; font-weight: 500; line-height: 1.45; text-decoration: none; }
-.actionLink:hover:not(:disabled) { background: transparent; text-decoration: underline; }
+.actionLink { display: inline-flex; align-items: center; gap: .4rem; min-height: 44px; padding: .6rem 0; margin: 0; border: 0; background: transparent; color: var(--accent); font: inherit; font-size: 14px; font-weight: 500; line-height: 1.45; text-decoration-line: underline; }
+.actionLink:hover:not(:disabled) { background: transparent; text-decoration-line: underline; }
 .companion { padding-block: 2.5rem; border-top: 1px solid var(--line); }
 .companionHeading { display: flex; align-items: center; justify-content: space-between; gap: 1rem; min-height: 44px; padding: 0; text-decoration: none; list-style: none; }
 .companionHeading::-webkit-details-marker { display: none; }
@@ -60,7 +60,7 @@
 .locations p { color: var(--muted); font-size: .9rem; margin: 0; }
 .contact, .social { padding: 1.5rem; margin-top: 1.5rem; background: var(--tint); border-radius: var(--card-radius); }
 .contact p { max-width: 52rem; }
-.contact .actionLink { text-decoration: underline; }
+.contact .actionLink { text-decoration-line: underline; }
 .contactLinks { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem 1.5rem; }
 .contactLinks > * { width: auto; text-align: left; margin: 0; }
 .experiences { margin-block: 1rem 2.5rem; padding: 1.5rem; background: var(--tint); border-radius: var(--card-radius); }
@@ -73,7 +73,7 @@
 .page .testimonialsLink { color: var(--ink); }
 .testimonialsHeading { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
 .testimonialsEntry h2 { margin-bottom: 0; }
-.testimonialsLink:hover h2 { text-decoration: underline; }
+.testimonialsLink h2 { color: var(--accent); text-decoration-line: underline; text-decoration-thickness: 1px; text-underline-offset: .18em; }
 .testimonialsViewport { overflow: hidden; margin-top: 1.2rem; }
 .testimonialsTrack { display: flex; align-items: stretch; gap: 1.2rem; }
 .testimonialsPreview { flex: 0 0 100%; min-width: 0; padding: 1.1rem; border-radius: 12px; background: var(--tint); display: flex; flex-direction: column; justify-content: center; gap: 1rem; }

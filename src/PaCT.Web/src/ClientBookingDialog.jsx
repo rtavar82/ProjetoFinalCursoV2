@@ -1,14 +1,15 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import AdaptiveSelect from './AdaptiveSelect'
+import { useEffect, useRef, useState } from 'react'
 import ConsultationDialog from './ConsultationDialog'
-import useClosureDraft from './useClosureDraft'
-import useLiveResource from './useLiveResource'
+import useEditorState from './useEditorState'
+import useBookingSlot from './useBookingSlot'
 import { apiRequest } from './identityApi'
-import { agendaDate, agendaClock, servicePrice } from './agendaTime'
-import { bookingVariants, variantKey, validBookingCatalogue } from './clientBookingOptions'
+import { agendaClock, servicePrice } from './agendaTime'
+import { variantKey } from './clientBookingOptions'
+import { individualRequestNotice } from './bookingRequestNotice'
 import styles from './ClientAgenda.module.css'
 
 const bookingDate = value => new Intl.DateTimeFormat('pt-PT', { timeZone: 'Europe/Lisbon', dateStyle: 'long' }).format(new Date(value))
-const bookingNotice = paymentMode => 'Enviar o pedido não confirma a marcação: o horário precisa de ser validado pela terapeuta. ' + (paymentMode === 'Prepayment' ? 'Após validação, recebes o pedido de pagamento antecipado e as condições para aceitar ou cancelar.' : paymentMode === 'Contribution' ? 'Escolhes a tua contribuição e pagas depois da consulta.' : paymentMode === 'Free' ? 'Esta consulta é gratuita.' : 'O pagamento é feito depois da consulta.')
 
 function RequestDetails({ value, startsAt }) {
   const end = value.endsAt || new Date(Date.parse(startsAt) + value.durationMinutes * 60000).toISOString()
@@ -22,20 +23,16 @@ function RequestDetails({ value, startsAt }) {
   </dl>
 }
 
-export default function ClientBookingDialog({ seed, send, disabled, guard, onClose, onConfirmed, onBrowseService }) {
-  const draft = useClosureDraft({ id: seed.id, version: 1, serviceTitle: 'Pedido de marcação' }, {
-    scope: seed.scope, kind: 'ClientBooking', resourceId: seed.id,
-    initialFields: { startsAt: seed.startsAt, selected: seed.choices?.[0] || null, review: null, pending: null },
-  })
-  const [error, setError] = useState(''), [checking, setChecking] = useState(false), [confirmed, setConfirmed] = useState(null)
-  const read = useCallback(async signal => { const value = await apiRequest('consultations/availability', undefined, { signal }); if (!validBookingCatalogue(value)) throw new Error('Não foi possível ler as opções. Tenta novamente.'); return value }, [])
-  const catalogue = useLiveResource('agenda', 'client-booking-options', read)
-  const fields = draft.fields, selected = fields?.selected
-  const variants = bookingVariants(catalogue.data?.services)
+export default function ClientBookingDialog({ seed, send, disabled, guard, onClose, onConfirmed }) {
+  const editor = useEditorState({ startsAt: seed.startsAt, selected: seed.choices?.[0] || null, review: null, pending: null }, 1)
+  const [error, setError] = useState(''), [checking, setChecking] = useState(false)
+  const catalogue = useBookingSlot(seed.startsAt)
+  const fields = editor.fields, selected = fields?.selected
+  const variants = catalogue.slot?.choices || seed.choices || []
   const latest = variants.find(v => variantKey(v) === variantKey(selected))
   const changed = !!selected && !!catalogue.data && (!latest || latest.version !== selected.version)
-  const currentModes = [...new Set(variants.filter(v => v.title === selected?.title).map(v => v.modality))]
-  const alternatives = variants.filter(v => v.title === selected?.title && v.modality === selected?.modality)
+  const currentModes = [...new Set(variants.filter(v => v.id === selected?.id).map(v => v.modality))]
+  const alternatives = variants.filter(v => v.id === selected?.id && v.modality === selected?.modality)
   const pending = !!fields?.pending
   const reviewing = !!fields?.review || pending
   const heading = useRef(null)
@@ -43,61 +40,54 @@ export default function ClientBookingDialog({ seed, send, disabled, guard, onClo
     heading.current?.focus()
     heading.current?.closest('dialog')?.scrollTo({ top: 0 })
   }, [reviewing])
-  function choose(value) { draft.change('selected', value); draft.change('review', null); setError('') }
+  function choose(value) { editor.change('selected', value); editor.change('review', null); setError('') }
   async function preview(event) {
     event.preventDefault(); if (!selected || disabled || pending) return
     setChecking(true); setError('')
     try {
-      await draft.flush()
       const review = await apiRequest('consultations/booking-preview', { serviceId: selected.id, serviceVersion: selected.version, deliveryOptionId: selected.optionId, startsAt: fields.startsAt })
       if (review.serviceId !== selected.id || review.serviceVersion !== selected.version || Date.parse(review.startsAt) !== Date.parse(fields.startsAt)) throw new Error('Não foi possível confirmar o resumo. Revê o pedido.')
-      draft.change('review', review); await draft.flush()
+      editor.change('review', review)
     } catch (failure) { setError(failure.message); if (failure.status === 409) catalogue.refresh() }
     finally { setChecking(false) }
   }
   async function confirm(retry = false) {
-    if (disabled || checking || !navigator.onLine) { if (!navigator.onLine) setError('Sem ligação. O pedido permanece guardado neste aparelho.'); return }
+    if (disabled || checking || !navigator.onLine) { if (!navigator.onLine) setError('Sem ligação. O preenchimento permanece apenas neste formulário aberto.'); return }
     if (!retry && (pending || !fields.review || changed)) return
     const command = retry ? fields.pending : { action: 'Request', operationId: crypto.randomUUID(), serviceId: selected.id, serviceVersion: selected.version, deliveryOptionId: selected.optionId, startsAt: fields.startsAt }
     if (!command) return
-    setError(''); draft.change('pending', command)
-    try { await draft.flush() } catch (failure) { setError(failure.message); return }
+    setError(''); editor.change('pending', command)
     try {
       const result = await send(command)
-      setConfirmed(result)
-      try { await draft.clear(); onConfirmed(result) }
-      catch { setError('Pedido enviado. Não foi possível remover a cópia temporária deste aparelho.') }
+      onConfirmed(result)
     } catch (failure) {
       setError(failure.message)
-      if (failure.status && failure.status < 500) { draft.change('pending', null); draft.change('review', null); await draft.flush().catch(() => {}); catalogue.refresh() }
+      if (failure.status && failure.status < 500) { editor.change('pending', null); editor.change('review', null); catalogue.refresh() }
     }
   }
-  async function finishCleanup() { try { await draft.clear(); onConfirmed(confirmed) } catch (failure) { setError(failure.message) } }
-  return <ConsultationDialog compact label="O teu pedido" disabled={disabled || checking || pending && !confirmed} onClose={() => guard(onClose)}>
-    <section data-pending-command={disabled || pending && !confirmed ? 'true' : undefined}><h2 ref={heading} tabIndex="-1">{reviewing ? 'Resumo do pedido' : 'O teu pedido'}</h2>
-      {(error || draft.error || catalogue.error) && <p role="alert" className="notice error">{error || draft.error || catalogue.error}</p>}
-      {!fields || !draft.available ? <p role="status">{draft.error || draft.status}</p> : <>
-        {!reviewing && !confirmed && <><p>{bookingDate(fields.startsAt)}</p><p className={styles.muted} role="status">{/^Rascunho (recuperado|guardado)/.test(draft.status) ? 'Pedido guardado neste aparelho.' : draft.status}</p></>}
-        {changed && !pending && <div className="notice"><p>As opções desta consulta mudaram. A tua seleção foi conservada.</p>{latest && !reviewing && <button type="button" disabled={disabled} onClick={() => choose(latest)}>Rever opções atuais</button>}</div>}
-        {!reviewing && !confirmed && <form data-protect-draft onSubmit={preview}><fieldset className={styles.formFields} disabled={disabled || checking}>
-          <label>Tipo de consulta<select aria-label="Tipo de consulta do pedido" value={selected?.title || ''} required onChange={event => { const service = catalogue.data?.services.find(s => s.title === event.target.value); if (service?.serviceKind) guard(() => onBrowseService?.(service.id)); else choose(variants.find(v => v.title === event.target.value)) }}><option value="">Escolhe a consulta</option>{[...new Set([...(catalogue.data?.services || []).map(v => v.title), selected?.title].filter(Boolean))].map(title => <option key={title}>{title}</option>)}</select></label>
-          <label>Modalidade<select aria-label="Modalidade do pedido" value={selected?.modality || ''} required onChange={event => choose(variants.find(v => v.title === selected.title && v.modality === event.target.value))}><option value="">Escolhe a modalidade</option>{[...new Set([...currentModes, selected?.modality].filter(Boolean))].map(mode => <option value={mode} key={mode}>{mode === 'Remote' ? 'Remota' : 'Presencial'}</option>)}</select></label>
-          {selected && (selected.modality === 'InPerson' || alternatives.length > 1) && <label>{selected.modality === 'InPerson' ? 'Local' : 'Opção'}<select aria-label={selected.modality === 'InPerson' ? 'Local do pedido' : 'Opção do pedido'} value={variantKey(selected)} required onChange={event => choose(alternatives.find(v => variantKey(v) === event.target.value))}>{!latest && <option value={variantKey(selected)}>{selected.publicLocation || 'Opção anterior'}</option>}{alternatives.map(v => <option key={variantKey(v)} value={variantKey(v)}>{v.publicLocation || 'Remota'} · {v.durationMinutes} min · {servicePrice(v)}</option>)}</select></label>}
-          {selected?.modality === 'InPerson' && <p className={styles.muted}>A morada completa fica disponível após a confirmação e, quando exigido, o pagamento antecipado.</p>}
+  return <ConsultationDialog compact label="O teu pedido" disabled={disabled || checking || pending} onClose={() => guard(onClose)}>
+    <section data-pending-command={disabled || pending ? 'true' : undefined}><h2 ref={heading} tabIndex="-1">{reviewing ? 'Resumo do pedido' : 'O teu pedido'}</h2>
+      {(error || catalogue.error) && <p role="alert" className="notice error">{error || catalogue.error}</p>}
+      <>
+        {!reviewing && <p>{bookingDate(fields.startsAt)}</p>}
+        {changed && !pending && <div className="notice"><p>As opções desta consulta mudaram. A tua seleção foi conservada.</p>{variants.length > 0 && !reviewing && <button type="button" disabled={disabled} onClick={() => choose(latest || variants[0])}>Rever opções atuais</button>}</div>}
+        {!reviewing && <form data-protect-draft onSubmit={preview}><fieldset className={styles.formFields} disabled={disabled || checking}>
+          <label>Tipo de consulta<AdaptiveSelect aria-label="Tipo de consulta do pedido" value={selected?.title || ''} required disabled={new Set(variants.map(v => v.id)).size <= 1} onChange={event => choose(variants.find(v => v.title === event.target.value))}>{[...new Set([...variants.map(v => v.title), !selected?.serviceKind && selected?.title].filter(Boolean))].map(title => <option key={title}>{title}</option>)}</AdaptiveSelect></label>
+          <label>Modalidade<AdaptiveSelect aria-label="Modalidade do pedido" value={selected?.modality || ''} required disabled={currentModes.length <= 1} onChange={event => choose(variants.find(v => v.id === selected.id && v.modality === event.target.value))}>{[...new Set([...currentModes, selected?.modality].filter(Boolean))].map(mode => <option value={mode} key={mode}>{mode === 'Remote' ? 'Remota' : 'Presencial'}</option>)}</AdaptiveSelect></label>
+          {selected && (selected.modality === 'InPerson' || alternatives.length > 1) && <label>{selected.modality === 'InPerson' ? 'Local' : 'Opção'}<AdaptiveSelect aria-label={selected.modality === 'InPerson' ? 'Local do pedido' : 'Opção do pedido'} value={variantKey(selected)} required disabled={alternatives.length <= 1} onChange={event => choose(alternatives.find(v => variantKey(v) === event.target.value))}>{!latest && <option value={variantKey(selected)}>{selected.publicLocation || 'Opção anterior'}</option>}{alternatives.map(v => <option key={variantKey(v)} value={variantKey(v)}>{v.publicLocation || 'Remota'} · {v.durationMinutes} min · {servicePrice(v)}</option>)}</AdaptiveSelect></label>}
+          {selected?.modality === 'InPerson' && <p className={styles.muted}>{selected.paymentMode === 'Prepayment' ? 'A morada completa fica disponível após a confirmação do pagamento antecipado pago.' : 'A morada completa fica disponível após a confirmação.'}</p>}
           {selected && <div className={styles.requestSummary}><p>Início previsto: <strong>{agendaClock(fields.startsAt)}</strong></p><p>Fim previsto: <strong>{agendaClock(new Date(Date.parse(fields.startsAt) + selected.durationMinutes * 60000))}</strong></p><p>Duração prevista: <strong>{selected.durationMinutes} min</strong></p><p>{servicePrice(selected)}</p></div>}
           <div className={styles.accountNote}><strong>Pedido associado à tua conta</strong><p>A tua identificação e contacto seguem junto com o pedido.</p></div>
-          <p className="notice">{bookingNotice(selected?.paymentMode)}</p>
+          <p className="notice" role="note" aria-label="O que acontece a seguir">{individualRequestNotice(selected?.paymentMode)}</p>
           <button disabled={!selected || changed}>{checking ? 'A verificar o horário…' : 'Ver resumo do pedido'}</button>
         </fieldset></form>}
-        {reviewing && !confirmed && <section aria-label="Resumo do pedido">
+        {reviewing && <section aria-label="Resumo do pedido">
           <RequestDetails value={fields.review || selected} startsAt={fields.review?.startsAt || fields.startsAt} />
-          <p className="notice">{bookingNotice((fields.review || selected)?.paymentMode)}</p>
-          {!pending && <div className={styles.bookingActions}><button disabled={disabled || checking || changed} onClick={() => void confirm()}>Enviar pedido</button><button className="secondary" disabled={disabled || checking} onClick={() => draft.change('review', null)}>voltar a trás</button></div>}
+          <p className="notice" role="note" aria-label="O que acontece a seguir">{individualRequestNotice((fields.review || selected)?.paymentMode)}</p>
+          {!pending && <div className={styles.bookingActions}><button disabled={disabled || checking || changed} onClick={() => void confirm()}>Enviar pedido</button><button className="secondary" disabled={disabled || checking} onClick={() => editor.change('review', null)}>voltar a trás</button></div>}
         </section>}
-        {pending && !confirmed && <button disabled={disabled || checking} onClick={() => void confirm(true)}>Verificar envio do pedido</button>}
-        {confirmed && <button disabled={disabled} onClick={() => void finishCleanup()}>Remover cópia temporária</button>}
-        {draft.error && <div><button type="button" className="secondary" onClick={draft.compareSaved}>Comparar rascunho guardado</button>{draft.comparison && <><p>{draft.comparison.fields?.selected?.title || 'Pedido guardado'}</p><p>{draft.comparison.fields?.startsAt ? agendaDate(draft.comparison.fields.startsAt) : 'Sem horário guardado'}</p><p>{draft.comparison.fields?.selected?.modality === 'Remote' ? 'Remota' : draft.comparison.fields?.selected?.publicLocation}</p><button type="button" onClick={draft.replaceCompared}>Manter esta edição após comparação</button></>}</div>}
-      </>}
+        {pending && <button disabled={disabled || checking} onClick={() => void confirm(true)}>Verificar envio do pedido</button>}
+      </>
     </section>
   </ConsultationDialog>
 }

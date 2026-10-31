@@ -16,7 +16,7 @@
 .modality { color: var(--muted); font-size: .85rem; }
 .methods p { font-size: .9rem; }
 .bankCode { user-select: text; overflow-wrap: anywhere; }
-.copyLink { width: auto; min-height: 44px; margin: 0; padding: .5rem 0; background: transparent; color: var(--accent); border: 0; text-decoration: underline; text-align: left; font-weight: 500; }
+.copyLink { width: auto; min-height: 44px; margin: 0; padding: .5rem 0; background: transparent; color: var(--accent); border: 0; text-decoration-line: underline; text-align: left; font-weight: 500; }
 .copyLink:hover:not(:disabled) { background: transparent; }
 .contact { border-top: 1px solid var(--line); padding-top: 1rem; margin-top: 1rem; font-size: .9rem; }
 .contact a { display: flex; align-items: center; gap: .6rem; width: fit-content; min-height: 44px; color: var(--accent); }

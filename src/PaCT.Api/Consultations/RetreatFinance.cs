@@ -10,26 +10,27 @@ public static class RetreatFinance
     public static decimal Applied(ConsultationData data, EventParticipation p) => -data.Entries.Where(e => e.Origin == "EventService" && e.OriginReference == p.Id && e.Kind == "Settlement").Sum(e => e.Amount);
     public static decimal Remaining(ConsultationData data, EventParticipation p) => p.State != "Confirmed" ? 0 : Math.Max(0, (p.AgreedTotal ?? p.FinalAmount ?? 0) - Applied(data, p));
     public static decimal Returned(EventParticipation p) => (p.Returns ?? []).Sum(r => r.Amount);
+    public static bool CanReceive(ConsultationData data, EventParticipation p) => p.State == "Confirmed" && p.PersonId is not null
+        && Remaining(data, p) > 0 && data.Entries.Where(e => e.PersonId == p.PersonId && e.Kind == "Receipt" && e.Origin == "EventService" && e.OriginReference == p.Id).Sum(e => e.Amount) < (p.AgreedTotal ?? p.FinalAmount ?? 0);
     public static void ValidateDefinition(EventInput input, ConsultationService service)
     {
         Require(Money(input.TotalPrice ?? service.ReferencePrice ?? 0), "Indica o preço único do retiro.", 400);
         IdentityValidation.Required(input.Program, 8000, "o programa completo do retiro");
         IdentityValidation.Required(input.CancellationConditions, 8000, "as condições de cancelamento do retiro");
-        var plan = input.PaymentPlan ?? "Full";
-        Require(plan is "Full" or "Phased", "Escolhe pagamento integral ou faseado.", 400);
-        var parts = input.Installments ?? [];
-        Require(plan == "Full" ? parts.Length == 0 : parts.Length is >= 2 and <= 24 && parts.All(p => Money(p.Amount) && p.DueAt > DateTimeOffset.UnixEpoch)
-            && parts.Sum(p => p.Amount) == (input.TotalPrice ?? service.ReferencePrice), "O sinal e as prestações devem somar o preço total do retiro.", 400);
     }
     public static EventParticipation Settle(ConsultationData data, EventParticipation p, ConsultationCommand input, ConsultationActor actor, DateTimeOffset now)
     {
         Require(actor.IsManager, "A aplicação de saldo ao retiro exige um gestor.", 403);
         var remaining = Remaining(data, p); var amount = input.Amount ?? remaining;
         Require(p.PersonId is not null && remaining > 0 && Money(amount) && amount <= remaining, "Indica um valor até ao montante ainda por liquidar.");
+        var observedBalance = data.Balance(p.PersonId!);
         var allocations = CreditLedger.Allocate(data, p.PersonId!, amount); var id = Guid.NewGuid().ToString();
         data.Entries.Add(new(id, p.PersonId!, null, "Settlement", -amount, actor.AccountId, now, null, "Credit", null,
             Origin: "EventService", OriginReference: p.Id, Allocations: allocations, Sequence: CreditLedger.NextSequence(data)));
-        return p with { SettlementId = amount == remaining ? id : null };
+        return p with { SettledAmount = p.SettledAmount + amount, SettlementId = amount == remaining ? id : null,
+            ExpectationOpen = amount != remaining && p.ExpectationOpen,
+            AdvanceSatisfiedAt = p.AdvanceSatisfiedAt ?? (amount == remaining ? now : null),
+            AdvanceSatisfiedBalance = p.AdvanceSatisfiedBalance ?? (amount == remaining ? observedBalance : null) };
     }
     public static EventParticipation Return(ConsultationData data, GroupEvent ev, EventParticipation p, ConsultationCommand input, ConsultationActor actor, DateTimeOffset now, Func<string, string, string, string> encrypt)
     {

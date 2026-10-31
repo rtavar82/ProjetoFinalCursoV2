@@ -19,12 +19,18 @@ public static class PublicPresentationContent
         "Após validação do recebimento, recebes a confirmação final com os detalhes da consulta.",
         "O recebimento fica em crédito;"
     ];
-    public static readonly string[] PrepaymentCancellations =
+    public static readonly string[] OtherCancellations =
     [
         "Podes cancelar antes do início da consulta, sem perda de crédito. O saldo existente mantém-se disponível na tua conta; não é feita uma devolução do dinheiro. Uma nova data exige um novo pedido de agendamento.",
         "A falta à consulta é gerida sem perda de crédito e não consome saldo nem sessões de pack. Uma nova data exige um novo pedido de agendamento."
     ];
-    public const string PrepaymentMethods = "Podes pagar por transferência bancária, MB WAY ou dinheiro pessoalmente (esta última forma terá de ser combinada antes da consulta).";
+    public static readonly string[] PrepaymentCancellations =
+    [
+        "Podes cancelar antes do início da consulta sem perda de crédito nem consumo de saldo ou sessões de pack. Os valores existentes mantêm-se disponíveis na tua conta, sem devolução automática do dinheiro. Para escolher uma nova data, é necessário efetuar um novo pedido de agendamento.",
+        "A falta à consulta é gerida financeiramente da mesma forma que os cancelamento."
+    ];
+    public const string ContributionDescription = "Escolhes o valor da tua contribuição de forma livre e consciente. É uma forma de reconhecer o acompanhamento recebido e apoiar a continuidade deste trabalho.";
+    public const string ContributionTiming = "A contribuição livre é paga depois da consulta.";
 
     public static readonly object PaymentInformation = new
     {
@@ -33,13 +39,13 @@ public static class PublicPresentationContent
         mbWayNote = "Confirma os dados antes de enviar.",
         cashNote = "Pessoalmente, em momento combinado com a terapeuta.",
         advanceCashNote = "Pessoalmente, combinado com a terapeuta antes da consulta.",
-        contributionText = "Escolhes o valor da tua contribuição de forma livre e consciente. É uma forma de reconhecer o acompanhamento recebido e apoiar a continuidade deste trabalho.",
-        contributionTiming = "A contribuição livre é paga depois da consulta.",
+        contributionText = ContributionDescription,
+        contributionTiming = ContributionTiming,
         contactNote = "Em caso de dúvidas contacta a Terapeuta diretamente para analisar o teu caso.",
         prepayment = new
         {
             termsVersion = ConsultationRules.TermsVersion,
-            payments = PrepaymentConditions, cancellations = PrepaymentCancellations, methodsText = PrepaymentMethods,
+            payments = PrepaymentConditions, cancellations = PrepaymentCancellations,
             // Keep the previous response fields readable by an older, still-open PWA; no obsolete public wording.
             terms = string.Join("\n", PrepaymentConditions), waitNote = "", cancellation = string.Join("\n", PrepaymentCancellations)
         }

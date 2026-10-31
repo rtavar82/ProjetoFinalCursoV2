@@ -16,10 +16,4 @@ public static class SharingWorkshop
             || service.ReferencePrice is not (null or 0)))
             throw new IdentityProblem(400, "A oficina de dons e talento é um encontro gratuito de partilha e experiências. Não tem preço nem contribuição livre.");
     }
-
-    public static void ValidateNoCharge(ConsultationService service, ConsultationCommand input)
-    {
-        if (Matches(service.Title) && (input.Method != "NoCharge" || input.Amount is not (null or 0) || !string.IsNullOrEmpty(input.PackId)))
-            throw new IdentityProblem(400, "A participação nesta oficina é gratuita. Não permite cobrança, recebimento ou utilização de sessões de pack.");
-    }
 }

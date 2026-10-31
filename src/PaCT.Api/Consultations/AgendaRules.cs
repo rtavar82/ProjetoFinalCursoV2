@@ -56,6 +56,8 @@ public static class AgendaRules
             && !(r.Modality == "Remote" && r.PublicLocation is not null), "Revê a visibilidade, modalidade e local.");
         var services = data.Services.Where(s => s.Active && s.ServiceKind is null && (r.ServiceId is null || s.Id == r.ServiceId)).ToArray();
         Require(r.ServiceId is null || services.Length == 1, "Seleciona uma consulta individual ativa.");
+        Require(r.ServiceId is null || r.Modality is not null && (r.Modality == "Remote" || r.PublicLocation is not null) || r.ClientChoicesConfirmed,
+            "Este bloco tem modalidade ou local livres. Confirma que pretendes deixar essas escolhas ao cliente.");
         if (r.Modality is not null || r.PublicLocation is not null)
             Require(services.SelectMany(s => ClientBooking.Options(s).Select(o => ClientBooking.Snapshot(s, o)))
                 .Any(s => (r.Modality is null || s.Modality == r.Modality) && (r.PublicLocation is null || s.PublicLocation == r.PublicLocation)),
@@ -106,14 +108,18 @@ public static class AgendaRules
         }
         var ranges = ReplacementRanges(publication, start, end, now);
         bool Touches(DateTimeOffset first, DateTimeOffset last) => ranges.Any(r => Overlaps(r.StartsAt, r.EndsAt, first, last));
-        var affected = ActiveWindows(data).Where(w => Touches(w.StartsAt, w.EndsAt)).ToArray();
         var conflicts = data.Consultations.Where(c => ConsultationRules.Occupies(c, now) && Touches(c.StartsAt, c.EndsAt.AddMinutes(30)))
-            .Select(c => new AgendaConflict(c.Id, c.StartsAt, c.EndsAt, ConsultationRules.State(c, now)))
+            .Select(c => new AgendaConflict(c.Id, c.StartsAt, c.EndsAt, ProcessLifecycle.Substate(c, now), ProcessLifecycle.Status(c, now)))
             .Concat(data.GuestRequests.Where(g => GuestConsultations.Occupies(g, now) && Touches(g.StartsAt, g.EndsAt.AddMinutes(30)))
-                .Select(g => new AgendaConflict(g.Id, g.StartsAt, g.EndsAt, "GuestRequest")))
+                .Select(g => new AgendaConflict(g.Id, g.StartsAt, g.EndsAt, "GuestRequest", ProcessLifecycle.Status(g, now))))
             .Concat(data.Events.Where(e => GroupEvents.Occupies(e) && Touches(e.Definition.StartsAt, e.Definition.EndsAt.AddMinutes(30)))
-                .Select(e => new AgendaConflict(e.Id, e.Definition.StartsAt, e.Definition.EndsAt, "Event")))
+                .Select(e => new AgendaConflict(e.Id, e.Definition.StartsAt, e.Definition.EndsAt, "Event", ProcessLifecycle.Status(e, now))))
             .OrderBy(c => c.StartsAt).ThenBy(c => c.Id).ToArray();
+        // An occupied interval (including recovery) is excluded from the change itself,
+        // not merely kept as an appointment on top of a replaced availability window.
+        var protectedRanges = conflicts.Select(c => new AvailabilityRange(c.StartsAt, c.EndsAt.AddMinutes(30))).ToArray();
+        ranges = ranges.SelectMany(range => Remainders(range, protectedRanges)).ToArray();
+        var affected = ActiveWindows(data).Where(w => ranges.Any(r => Overlaps(r.StartsAt, r.EndsAt, w.StartsAt, w.EndsAt))).ToArray();
         return new(publication.Revision, start, end, affected.Length,
             affected.Sum(w => Remainders(w, ranges).Count()), conflicts, ranges);
     }
@@ -131,6 +137,9 @@ public static class AgendaRules
             : new AvailabilityRange(p.Windows.Single(w => LocalDate(w.StartsAt) == d).StartsAt, p.Windows.Single(w => LocalDate(w.StartsAt) == d).EndsAt)).ToArray();
     }
     private static IEnumerable<AvailabilityRange> Remainders(AvailabilityWindow window, AvailabilityRange[] ranges)
+        => Remainders(new AvailabilityRange(window.StartsAt, window.EndsAt), ranges);
+
+    private static IEnumerable<AvailabilityRange> Remainders(AvailabilityRange window, AvailabilityRange[] ranges)
     {
         var cursor = window.StartsAt;
         foreach (var range in ranges.Where(r => Overlaps(r.StartsAt, r.EndsAt, window.StartsAt, window.EndsAt)).OrderBy(r => r.StartsAt))
@@ -146,7 +155,7 @@ public static class AgendaRules
         Require(actor.IsManager, "Esta ação exige a gestora-terapeuta.", 403);
         var preview = Preview(data, publication, now);
         Require(preview.Conflicts.Length == 0 || publication.ConfirmConflicts,
-            "O período inclui marcações existentes. Revê os conflitos e confirma que as marcações serão mantidas.", 409);
+            "Há horários com marcações. Revê-os e confirma a alteração apenas dos restantes horários.", 409);
         // Validate everything before changing the aggregate. The store commits the entire publication once.
         var ranges = preview.Ranges!;
         foreach (var old in ActiveWindows(data).Where(w => ranges.Any(r => Overlaps(r.StartsAt, r.EndsAt, w.StartsAt, w.EndsAt))).ToArray())
@@ -155,14 +164,24 @@ public static class AgendaRules
             data.Windows[index] = old with { RetiredAt = now, Version = old.Version + 1, ChangedBy = actor.AccountId, PublicationId = operationId };
             foreach (var rest in Remainders(old, ranges))
             {
-                var rules = old.Rules is null ? null : old.Rules with { LastStartAt = old.Rules.LastStartAt < rest.EndsAt ? old.Rules.LastStartAt : rest.EndsAt.AddMinutes(-1) };
-                if (rules is not null && rules.LastStartAt < rest.StartsAt) continue;
-                Add(rest.StartsAt, rest.EndsAt, old.Available, old.Id, rules);
+                AddPart(rest, old.Available, old.Id, old.Rules, old.StartsAt);
             }
         }
-        foreach (var slice in publication.Windows) Add(slice.StartsAt.ToUniversalTime(), slice.EndsAt.ToUniversalTime(), slice.Available, null,
-            slice.Rules is null ? null : slice.Rules with { FirstStartAt = slice.StartsAt.ToUniversalTime() });
-        return new(operationId, "Agenda publicada. As marcações existentes foram mantidas.");
+        foreach (var slice in publication.Windows)
+            foreach (var range in ranges.Where(r => Overlaps(r.StartsAt, r.EndsAt, slice.StartsAt, slice.EndsAt)))
+                AddPart(new(slice.StartsAt > range.StartsAt ? slice.StartsAt : range.StartsAt,
+                    slice.EndsAt < range.EndsAt ? slice.EndsAt : range.EndsAt), slice.Available, null, slice.Rules, slice.StartsAt);
+        return new(operationId, ranges.Length == 0 ? "Não havia horários sem marcações para alterar. A agenda mantém-se." : "Agenda publicada. As marcações existentes foram mantidas.");
+        void AddPart(AvailabilityRange part, bool available, string? source, AvailabilityConstraints? originalRules, DateTimeOffset originalStart)
+        {
+            var rules = originalRules is null ? null : originalRules with
+            {
+                FirstStartAt = originalRules.FirstStartAt ?? originalStart.ToUniversalTime(),
+                LastStartAt = originalRules.LastStartAt < part.EndsAt ? originalRules.LastStartAt : part.EndsAt.AddTicks(-1)
+            };
+            if (rules is not null && rules.LastStartAt < part.StartsAt) return;
+            Add(part.StartsAt.ToUniversalTime(), part.EndsAt.ToUniversalTime(), available, source, rules);
+        }
         void Add(DateTimeOffset start, DateTimeOffset end, bool available, string? source, AvailabilityConstraints? rules) => data.Windows.Add(new(
             Guid.NewGuid().ToString(), start, end, available, ChangedBy: actor.AccountId, PublicationId: operationId, SourceWindowId: source, Rules: rules));
     }

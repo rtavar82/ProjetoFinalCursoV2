@@ -1,19 +1,13 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useRef } from 'react'
 import { apiRequest } from './identityApi'
 import PasswordField from './PasswordField'
+import useLiveResource from './useLiveResource'
 import styles from './ClientAccessSettings.module.css'
 
 export default function ClientAccessSettings({ client, busy, perform, notify }) {
-  const [status, setStatus] = useState(null)
-  const [error, setError] = useState('')
-  const [revision, setRevision] = useState(0)
   const path = `clients/${client.id}/access`
-  useEffect(() => {
-    let current = true
-    apiRequest(path).then(data => { if (current) { setStatus(data); setError('') } })
-      .catch(failure => { if (current) setError(failure.message) })
-    return () => { current = false }
-  }, [path, revision])
+  const read = useCallback(() => apiRequest(path), [path])
+  const { data: status, error } = useLiveResource('clientAccess', path, read)
   function submit(form, kind, operationId, confirmed) {
     const data = new FormData(form)
     const input = { operationId, version: status.version, password: data.get('password'), confirmIdentity: data.has('confirmIdentity') }
@@ -21,14 +15,12 @@ export default function ClientAccessSettings({ client, busy, perform, notify }) 
     perform(async () => {
       const result = await apiRequest(`${path}/${kind}`, input)
       form.reset(); confirmed(); notify(result.message)
-      setRevision(value => value + 1)
     })
   }
   return <section className={styles.section} aria-labelledby="client-access-title">
     <h3 id="client-access-title">Acesso e segurança</h3>
     {error && <p className="notice error" role="alert">{error}</p>}
     {!status && !error && <p role="status">A carregar a segurança da conta…</p>}
-    <button type="button" className="secondary" disabled={busy} onClick={() => setRevision(value => value + 1)}>Atualizar segurança da conta</button>
     {status && <>
       <p>Passkeys registadas: {status.passkeyCount}</p>
       {status.pendingEmailChange && <p className="notice" role="status">A aguardar confirmação de <strong>{status.pendingEmailChange.email}</strong>. O email atual mantém-se até à confirmação.</p>}
@@ -49,7 +41,7 @@ function AccessAction({ kind, busy, onSubmit }) {
       {email && <label>Novo email de acesso<input name="newEmail" type="email" autoComplete="off" required maxLength="256" onChange={() => { operationId.current = crypto.randomUUID() }} /></label>}
       <PasswordField label="A tua palavra-passe de gestão" name="password" required maxLength="128" autoComplete="current-password" />
       <label className="checkbox"><input name="confirmIdentity" type="checkbox" required />Verifiquei a identidade do cliente e confirmo esta alteração.</label>
-      <button disabled={busy || !navigator.onLine}>{email ? 'Enviar confirmação para o novo email' : 'Confirmar reposição das Passkeys'}</button>
+      <button disabled={busy}>{email ? 'Enviar confirmação para o novo email' : 'Confirmar reposição das Passkeys'}</button>
     </form>
   </details>
 }

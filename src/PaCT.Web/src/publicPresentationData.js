@@ -27,7 +27,7 @@ export async function readPublicPresentation(signal) {
     || !['transferNote', 'mbWayNote', 'cashNote', 'advanceCashNote', 'contributionText', 'contributionTiming', 'contactNote'].every(key => typeof payment[key] === 'string')
     || !payment.prepayment || !['termsVersion', 'terms', 'waitNote', 'cancellation'].every(key => typeof payment.prepayment[key] === 'string')
     || !Array.isArray(payment.prepayment.payments) || payment.prepayment.payments.some(text => typeof text !== 'string')
-    || !Array.isArray(payment.prepayment.cancellations) || payment.prepayment.cancellations.some(text => typeof text !== 'string') || typeof payment.prepayment.methodsText !== 'string'
+    || !Array.isArray(payment.prepayment.cancellations) || payment.prepayment.cancellations.some(text => typeof text !== 'string')
     || data.packPolicy?.validityMonths !== 12) throw new Error('Não foi possível ler a apresentação. Tenta novamente.')
   return data
 }

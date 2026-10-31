@@ -24,7 +24,7 @@ public sealed class IdentityController(IIdentityStore store, IInstallationSecret
     });
 
     [HttpGet("csrf")]
-    public IActionResult Csrf([FromServices] IAntiforgery antiforgery) => Ok(new { token = antiforgery.GetAndStoreTokens(HttpContext).RequestToken });
+    public IActionResult Csrf([FromServices] IAntiforgery antiforgery) => Ok(new { token = antiforgery.GetAndStoreTokens(HttpContext).RequestToken, clientWriteRecovery = true });
 
     [HttpPost("technical-manager"), EnableRateLimiting("email")]
     public async Task<IActionResult> Register(ManagerRegistration input, CancellationToken ct)
@@ -90,7 +90,7 @@ public sealed class IdentityController(IIdentityStore store, IInstallationSecret
         if (User.Identity?.IsAuthenticated == true) return Conflict(new ProblemDetails { Status = 409, Title = "Termina a sessão atual para iniciar um registo pessoal." });
         if (ClientValidation.MissingRegistrationMessage(input) is { } missingField) return Problem(statusCode: 400, title: missingField);
         if (!await store.HasTechnicalManagerAsync(ct)) return StatusCode(503, new ProblemDetails { Status = 503, Title = "A instalação ainda não está disponível para registos de clientes." });
-        return Ok(await clients.RegisterAsync(input, ct));
+        return Ok(await clients.RegisterAsync(input, ct, ClientCommands.Key(Request)));
     }
 
     [HttpPost("first-password"), EnableRateLimiting("account")]
@@ -173,7 +173,7 @@ public sealed class IdentityController(IIdentityStore store, IInstallationSecret
     }
 
     [Authorize, HttpPost("sign-out")]
-    public async Task<IActionResult> SignOutAccount([FromServices] PaCT.Api.Consultations.BrowserPushStore push,
+    public async Task<IActionResult> SignOutAccount([FromServices] PaCT.Api.Consultations.IBrowserPushStore push,
         [FromServices] PaCT.Api.Consultations.BalancePushKeys pushKeys, CancellationToken ct)
     {
         var account = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
