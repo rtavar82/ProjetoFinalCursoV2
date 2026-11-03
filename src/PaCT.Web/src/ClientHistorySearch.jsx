@@ -1,3 +1,4 @@
+import DateRangeFields from './DateRangeFields'
 import AdaptiveSelect from './AdaptiveSelect'
 import { useState } from 'react'
 import AppIcon from './AppIcon'
@@ -25,8 +26,7 @@ export default function ClientHistorySearch({ services = [], onSearch }) {
     <form aria-label="Pesquisa no histórico" onSubmit={submit}>
     <label>Tipo de consulta<AdaptiveSelect name="serviceId" value={values.serviceId} onChange={change}><option value="">Todos os tipos</option>{services.map(service => <option key={service.id} value={service.id}>{service.title}</option>)}</AdaptiveSelect></label>
     <div className={styles.historyDates}>
-      <label>Desde<input name="from" type="date" value={values.from} onChange={change} /></label>
-      <label>Até<input name="to" type="date" value={values.to} onChange={change} /></label>
+      <DateRangeFields type="date" startName="from" endName="to" startLabel="Desde" endLabel="Até" value={{ start: values.from, end: values.to }} onChange={next => { setValues(current => ({ ...current, from: next.start, to: next.end })); setError('') }} />
     </div>
     {error && <p role="alert">{error}</p>}
     <div className={styles.tabs}><button type="submit">Pesquisar</button><button type="button" className="secondary" onClick={() => { setValues(empty); setError(''); onSearch('') }}>Limpar pesquisa</button></div>

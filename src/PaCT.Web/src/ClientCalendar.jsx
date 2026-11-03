@@ -1,26 +1,18 @@
 import AdaptiveSelect from './AdaptiveSelect'
-import { useCallback, useMemo, useState } from 'react'
-import { apiRequest } from './identityApi'
-import useLiveResource from './useLiveResource'
+import { useMemo, useState } from 'react'
+import useAgendaCalendar from './useAgendaCalendar'
 import AppIcon from './AppIcon'
 import AgendaFilters from './AgendaFilters'
 import { agendaClock, agendaDate, agendaDay, dayKey, monthDays, shiftMonth, addDays, instant } from './agendaTime'
-import { bookingVariants, bookableSlots, publishedSlotDetails, validBookingCatalogue } from './clientBookingOptions'
+import { bookingVariants, bookableSlots, publishedSlotDetails } from './clientBookingOptions'
 import { searchPublishedAgenda } from './publishedAgendaSearch'
 import styles from './ClientAgenda.module.css'
 import publicStyles from './VisitorAgenda.module.css'
 
 export default function ClientCalendar({ onChoose, onEvent, enabled = true, visitor = false, publicOnly = false, initialServiceId = '' }) {
-  const [selection, setSelection] = useState(() => { const day = dayKey(new Date()); return { month: day.slice(0, 7), day } })
+  const { selection, setSelection, calendar } = useAgendaCalendar({ enabled, publicOnly })
   const [chosenType, setType] = useState(null), [place, setPlace] = useState(''), [modality, setModality] = useState('')
-  const read = useCallback(async signal => {
-    const value = await apiRequest('consultations/calendar?month=' + selection.month, undefined, { signal, publicOnly })
-    if (!validBookingCatalogue(value) || value.timeZone !== 'Europe/Lisbon' || !Array.isArray(value.intervals)
-      || ![value.serverTime, value.startsAt, value.endsAt, value.horizonEndExclusive].every(v => Number.isFinite(Date.parse(v)))
-      || value.events != null && (!Array.isArray(value.events) || value.events.some(e => !Number.isFinite(Date.parse(e.startsAt)) || !Number.isFinite(Date.parse(e.endsAt))))) throw new Error('Não foi possível ler a agenda. Tenta novamente.')
-    return value
-  }, [selection.month, publicOnly])
-  const calendar = useLiveResource('agenda', (publicOnly ? 'visitor-calendar:' : 'calendar:') + selection.month, read, enabled), data = calendar.data
+  const data = calendar.data
   const services = data?.services || []
   const type = chosenType ?? (services.find(service => service.id === initialServiceId)?.title || '')
   const hasFilters = !!(type || place || modality)
@@ -55,7 +47,7 @@ export default function ClientCalendar({ onChoose, onEvent, enabled = true, visi
       <div className={styles.monthTools}><button type="button" className="text-button" aria-label="Mês anterior" disabled={selection.month <= firstDay.slice(0, 7)} onClick={() => month(shiftMonth(selection.month, -1))}>‹</button><label className={styles.monthTitle}>{title}<input className={styles.monthInput} aria-label="Mês da agenda" type="month" value={selection.month} min={firstDay.slice(0, 7)} max={lastDay?.slice(0, 7)} onChange={e => month(e.target.value)} /></label><button type="button" className="text-button" aria-label="Mês seguinte" disabled={!lastDay || selection.month >= lastDay.slice(0, 7)} onClick={() => month(shiftMonth(selection.month, 1))}>›</button></div>
       <div className={styles.week} aria-hidden="true">{['seg.', 'ter.', 'qua.', 'qui.', 'sex.', 'sáb.', 'dom.'].map(day => <span key={day}>{day}</span>)}</div>
       <div className={styles.days}>{Array.from({ length: offset }, (_, index) => <span key={'blank-' + index} />)}{days.map(day => {
-        const available = slotsByDay[day]?.length > 0 || eventsForDay(day).some(e => e.state === 'Scheduled' && e.remaining > 0 && Date.parse(e.startsAt) > Date.parse(data.serverTime))
+        const available = slotsByDay[day]?.length > 0 || eventsForDay(day).some(e => e.state === 'Waiting' && Date.parse(e.startsAt) > Date.parse(data.serverTime))
         return <button type="button" key={day} aria-label={agendaDay(day) + (available ? ' · Com disponibilidade' : '')} aria-pressed={selection.day === day} data-available={available} className={styles.day} disabled={!data || day < firstDay || day > lastDay} onClick={() => setSelection({ ...selection, day })}><span>{Number(day.slice(-2))}</span><span className={styles.dot} aria-hidden="true">{available ? '•' : ''}</span></button>
       })}</div><p className={styles.legend}>● Dias com disponibilidade</p>
     </div>

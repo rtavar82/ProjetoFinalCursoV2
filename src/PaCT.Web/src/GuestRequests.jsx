@@ -2,15 +2,16 @@ import AdaptiveSelect from './AdaptiveSelect'
 import { useCallback, useEffect, useState } from 'react'
 import { apiRequest } from './identityApi'
 import useLiveResource from './useLiveResource'
-import BookingClientSearch from './BookingClientSearch'
+import ClientSearch from './ClientSearch'
+import { canBookForClient } from './clientBookingOptions'
 import InformationCard from './InformationCard'
+import AppointmentSummary from './AppointmentSummary'
+import CreditAuthorizationCard from './CreditAuthorizationCard'
 import ConsultationDialog from './ConsultationDialog'
 import { agendaDate } from './agendaTime'
 import styles from './GuestRequests.module.css'
 
-export default function GuestRequests({ send, disabled, guard, onCreateClient, feedback, initialId }) {
-  const [page, setPage] = useState(1)
-  const [history, setHistory] = useState(false)
+export default function GuestRequests({ send, disabled, guard, onCreateClient, feedback, initialId, onClose }) {
   const [openedDetail, setDetail] = useState(null)
   const detailId = openedDetail?.id
   const readDetail = useCallback(() => apiRequest('consultations/guests/' + detailId), [detailId])
@@ -24,25 +25,16 @@ export default function GuestRequests({ send, disabled, guard, onCreateClient, f
     apiRequest('consultations/guests/' + initialId).then(value => { if (active) setDetail(value) }).catch(failure => { if (active) setError(failure.message) })
     return () => { active = false }
   }, [initialId])
-  const read = useCallback(signal => apiRequest(`consultations/guests?page=${page}&history=${history}`, undefined, { signal }), [page, history])
-  const list = useLiveResource('guestRequests', `${page}:${history}`, read)
+  function dismiss() { setDetail(null); onClose?.() }
   async function decide(action, values = {}) {
     const result = await send({ action, id: detail.id, version: detail.version, ...values })
-    if (result) setDetail(null)
+    if (result) dismiss()
   }
-  async function open(id) { try { setDetail(await apiRequest('consultations/guests/' + id)); setError('') } catch (failure) { setError(failure.message) } }
-  return <section className={styles.page} aria-label="Pedidos sem conta">
-    {!detail && feedback}
-    <nav className="section-tabs"><button className={!history ? '' : 'secondary'} disabled={disabled} onClick={() => { setPage(1); setHistory(false) }}>Por analisar</button><button className={history ? '' : 'secondary'} disabled={disabled} onClick={() => { setPage(1); setHistory(true) }}>Histórico</button></nav>
-    {error && <p role="alert" className="notice error">{error}</p>}
-    <InformationCard title="Pedidos sem conta" cardId="guest-requests" loading={list.loading} error={list.error} onRetry={list.refresh}>
-      {list.data?.items.map(request => <article className={styles.request} key={request.id}><div><h3>{request.contact.firstName} {request.contact.lastName}</h3><p>{request.serviceTitle} · {agendaDate(request.startsAt)}</p><p>{request.process.processLabel}</p></div><button className="secondary" disabled={disabled} onClick={() => open(request.id)}>Analisar pedido</button></article>)}
-      {list.data?.total === 0 && <p>Não existem pedidos neste separador.</p>}
-      {list.data?.total > 8 && <nav className="pager" aria-label="Páginas dos pedidos"><button disabled={disabled || page === 1} onClick={() => setPage(p => p - 1)}>Anterior</button><span>Página {page}</span><button disabled={disabled || page * 8 >= list.data.total} onClick={() => setPage(p => p + 1)}>Seguinte</button></nav>}
-    </InformationCard>
-    {detail && <ConsultationDialog label="Pedido de consulta" disabled={disabled} onClose={() => guard(() => setDetail(null))}>
+  return <>
+    {!detail && <ConsultationDialog title="Pedido sem conta" label="Pedido de consulta" disabled={disabled} onClose={() => guard(dismiss)}><InformationCard cardId="guest-detail-loading" loading={!error} error={error} /></ConsultationDialog>}
+    {detail && <ConsultationDialog title={detail.serviceTitle} label="Pedido de consulta" disabled={disabled} onClose={() => guard(dismiss)}>
+      <AppointmentSummary consultation={detail} showTitle={false} stateLabel={detail.process.processLabel} typeLabel="Pedido sem conta" clientName={`${detail.contact.firstName} ${detail.contact.lastName}`} />
       {feedback}
-      <h2>{detail.contact.firstName} {detail.contact.lastName}</h2><p>{detail.serviceTitle} · {agendaDate(detail.startsAt)}</p><p>{detail.process.processLabel}</p>
       <p>+{detail.contact.dialCode} {detail.contact.phone}</p>{detail.contact.email && <p>{detail.contact.email}</p>}
       {detail.contact.locality && <p>Localidade: {detail.contact.locality}</p>}
       {['Requested', 'InTreatment'].includes(detail.state) && <>
@@ -53,7 +45,7 @@ export default function GuestRequests({ send, disabled, guard, onCreateClient, f
       </>}
       {detail.history.length > 0 && <details><summary>Histórico do pedido</summary>{detail.history.map((entry, index) => <p key={`${entry.at}:${index}`}>{agendaDate(entry.at)} · {({ StartGuestTreatment: 'Em tratamento', LinkGuestRequest: 'Ficha associada', RejectGuestRequest: 'Recusado' })[entry.action]}</p>)}</details>}
     </ConsultationDialog>}
-  </section>
+  </>
 }
 
 function GuestApproval({ detail, disabled, decide, onCreateClient }) {
@@ -67,20 +59,21 @@ function GuestApproval({ detail, disabled, decide, onCreateClient }) {
   function choose(person) { setSelected(person); setVerified(false); setKeepSeparate(false) }
   function approve(event) {
     event.preventDefault()
-    decide('LinkGuestRequest', { personId: selected?.id || personId, choice,
+    decide('LinkGuestRequest', { personId: selected?.id || personId, choice, ...(new FormData(event.currentTarget).has('allowClientCredit') && { allowClientCredit: true }),
       conditionsAccepted: coincident && (keepSeparate || verified),
       ...(identity && { guestIdentity: { sourceVersion: identity.sourceVersion, reviewVersion: identity.reviewVersion,
         targetVersion: selected?.version ?? null, keepSeparate } }) })
   }
   return <form data-protect-draft onSubmit={approve} className={styles.approval}>
-    <label>Método de pagamento para este cliente pagar a consulta<AdaptiveSelect name="choice" value={choice} disabled={disabled} onChange={event => setChoice(event.target.value)}>
-      {[...new Set([detail.paymentMode || 'Postpayment', 'Postpayment', 'Gift', 'Credit'])].map(value => <option key={value} value={value}>{({ Prepayment: 'Pré-pagamento', Postpayment: 'Pagamento posterior', Contribution: 'Contribuição livre', Free: 'Gratuita', Gift: 'Oferta de pagamento', Credit: 'Usar crédito (sem desconto antecipado)' })[value]}</option>)}
+    <label>Método de pagamento para este cliente pagar a consulta<AdaptiveSelect name="choice" disabled={disabled || !!detail.acceptedAt} value={choice} onChange={event => setChoice(event.target.value)}>
+      {[...new Set([detail.paymentMode || 'Postpayment', 'Postpayment', 'Gift'])].map(value => <option key={value} value={value}>{({ Prepayment: 'Pré-pagamento', Postpayment: 'Pagamento posterior', Contribution: 'Contribuição livre', Free: 'Gratuita', Gift: 'Oferta de pagamento' })[value]}</option>)}
     </AdaptiveSelect></label>
+    {choice === 'Prepayment' && <CreditAuthorizationCard key={selected?.id || personId} personId={selected?.id || personId} amount={detail.referencePrice} disabled={disabled} />}
     {coincident && <section className={styles.identity} aria-label="Contactos coincidentes">
       <p className="notice" role="status">Existem contactos coincidentes com outras fichas. Esta ocorrência também está em Clientes.</p>
       <h3>Pretendes unir estes dados registados pelo visitante a um cliente que já tenha registo?</h3>
       <details className={styles.search}><summary>Pesquisar cliente para associar</summary>
-        <BookingClientSearch selected={selected} onSelect={choose} disabled={disabled || keepSeparate} unavailableIds={[personId]} />
+        <ClientSearch canSelect={canBookForClient} selected={selected} onSelect={choose} disabled={disabled || keepSeparate} unavailableIds={[personId]} />
       </details>
       {selected && <><p>Ao aprovar, o pedido fica associado à ficha escolhida. Os dados dessa ficha são mantidos e a ficha criada para este pedido deixa de estar ativa.</p>
         <label className="checkbox"><input type="checkbox" checked={verified} required={!keepSeparate} disabled={disabled} onChange={event => setVerified(event.target.checked)} />Verifiquei que é a mesma pessoa e confirmo a ficha selecionada.</label></>}

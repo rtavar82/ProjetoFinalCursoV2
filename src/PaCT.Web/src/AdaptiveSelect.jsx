@@ -1,5 +1,6 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import DialogHeader from './DialogHeader'
 import styles from './AdaptiveSelect.module.css'
 
 const minimumFont = 12
@@ -94,10 +95,10 @@ function SelectPicker({ id, select, onClose, onChoose }) {
       if (option) setActive(option.index)
     }
   }
-  return createPortal(<dialog ref={dialog} className={styles.picker} aria-labelledby={id + '-label'}
+  return createPortal(<dialog ref={dialog} className={`ui-dialog ${styles.picker}`} aria-labelledby={id + '-label'}
     onCancel={event => { event.preventDefault(); event.stopPropagation(); onClose() }}
     onClose={event => event.stopPropagation()} onClick={event => { event.stopPropagation(); if (event.target === dialog.current) onClose() }}>
-    <header className={styles.header}><h2 id={id + '-label'}>{label}</h2><button type="button" className={styles.close} aria-label="Fechar opções" onClick={onClose}>×</button></header>
+    <DialogHeader title={label} titleId={id + '-label'} className={styles.header} closeLabel="Fechar opções" onClose={onClose} />
     <div ref={list} id={id + '-list'} className={styles.list} role="listbox" tabIndex={0} aria-labelledby={id + '-label'}
       aria-activedescendant={options.some(option => option.index === active) ? id + '-' + active : undefined} onKeyDown={keydown}>
       {options.map(option => <div key={option.index} id={id + '-' + option.index} role="option" aria-selected={option.index === select.selectedIndex}

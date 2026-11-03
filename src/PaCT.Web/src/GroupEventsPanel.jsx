@@ -1,24 +1,30 @@
+import eventStatusLabel from './eventStatusLabel'
+import DateRangeFields from './DateRangeFields'
 import AdaptiveSelect from './AdaptiveSelect'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { apiRequest } from './identityApi'
 import useLiveResource from './useLiveResource'
-import useClientOptions from './useClientOptions'
+import ClientSearch from './ClientSearch'
+import RecordTable from './RecordTable'
+import EventCapacityConsent from './EventCapacityConsent'
+import ConsultationConversation from './ConsultationConversation'
+import ConsultationPaymentHistory from './ConsultationPaymentHistory'
 import useConsultationNames from './useConsultationNames'
 import InformationCard from './InformationCard'
-import CardGrid from './CardGrid'
+import AppointmentSummary from './AppointmentSummary'
+import Pagination from './Pagination'
 import ConsultationDialog from './ConsultationDialog'
-import ConsultationConditionsForm from './ConsultationConditionsForm'
+import ConsultationConditionsForm, { ConditionsContent } from './ConsultationConditionsForm'
+import ClientPaymentPanel from './ClientPaymentPanel'
 import { FinancialEntryForm } from './FinancePanel'
 import CreditSettlementForm from './CreditSettlementForm'
 import EventAttendanceForm from './EventAttendanceForm'
-import { RetreatDefinition, RetreatPayments } from './RetreatForms'
+import { RetreatDefinition } from './RetreatForms'
 import { agendaDate, agendaMoney, instant, localDate } from './agendaTime'
 import styles from './GroupEventsPanel.module.css'
 
 
-export default function GroupEventsPanel({ manager = false, visitor = false, send, disabled = false, guard = action => action(), feedback, onGuest, initialEntry }) {
-  const [page, setPage] = useState(1)
-  const [history, setHistory] = useState(false)
+export default function GroupEventsPanel({ manager = false, send, disabled = false, guard = action => action(), feedback, initialEntry, onClose }) {
   const [openedDetail, setDetail] = useState(null)
   const detailId = openedDetail?.summary.id
   const readDetail = useCallback(() => apiRequest('consultations/events/' + detailId), [detailId])
@@ -26,116 +32,105 @@ export default function GroupEventsPanel({ manager = false, visitor = false, sen
   const detail = detailId ? latestDetail.data || openedDetail : null
   const [editing, setEditing] = useState(null)
   const [error, setError] = useState('')
-  const serviceId = initialEntry?.serviceId || ''
-  const read = useCallback(signal => apiRequest(`consultations/events?page=${page}&history=${history}${serviceId ? '&serviceId=' + encodeURIComponent(serviceId) : ''}`, undefined, { signal }), [page, history, serviceId])
-  const list = useLiveResource('events', `${page}:${history}:${serviceId}`, read)
   const readSetup = useCallback(signal => apiRequest('consultations/setup', undefined, { signal }), [])
   const setup = useLiveResource('agenda', 'event-services', readSetup, manager && !!editing)
-  const people = useClientOptions(manager && (!!editing || !!detail))
   const open = useCallback(async id => { try { setDetail(await apiRequest('consultations/events/' + id)); setError('') } catch (failure) { setError(failure.message) } }, [])
   const initialEventId = initialEntry?.events ? initialEntry.id : null
   const initialRevision = initialEntry?.revision
   useEffect(() => { if (initialEventId) { let active = true; apiRequest('consultations/events/' + initialEventId).then(value => { if (active) setDetail(value) }).catch(failure => { if (active) setError(failure.message) }); return () => { active = false } } }, [initialEventId, initialRevision])
+  function dismiss() { setDetail(null); onClose?.() }
+  function close() { guard(dismiss) }
   async function command(input, retry = false, cleanup = null) {
     const result = await send(input, retry, cleanup)
-    if (result && detail) await open(detail.summary.id)
+    if (result && detail) { if (!manager && ['UseParticipationCredit', 'DeclareParticipationPayment', 'ArchiveParticipation', 'CancelParticipation'].includes(input.action)) dismiss(); else await open(detail.summary.id) }
     return result
   }
-  return <section className={styles.page} aria-label="Grupos e retiros">
-    {!detail && feedback}
-    <div className={styles.heading}><h2>Grupos e retiros</h2>{manager && <nav className="section-tabs"><button className="secondary" disabled={disabled} onClick={() => guard(() => setEditing({}))}>Criar evento</button><button className="secondary" disabled={disabled} onClick={() => { setHistory(value => !value); setPage(1) }}>{history ? 'Próximos eventos' : 'Ver histórico'}</button></nav>}</div>
-    {error && <p role="alert" className="notice error">{error}</p>}
-    {editing && manager && <EventEditor key={editing.id || 'new'} event={editing} setup={setup} people={people} disabled={disabled} send={async input => { const result = await command(input); if (result) setEditing(null); return result }} onBack={() => guard(() => setEditing(null))} />}
-    <InformationCard cardId="group-events" loading={list.loading} error={list.error} onRetry={list.refresh}>
-      <CardGrid>{list.data?.items.map(item => <InformationCard as="article" title={item.title} cardId={'event-' + item.id} key={item.id}>
-        <p>{item.kind === 'Retreat' ? 'Retiro' : 'Grupo'} · {item.process.processLabel}</p><p>{agendaDate(item.startsAt)} — {agendaDate(item.endsAt)}</p><p>{item.publicLocation}</p>
-        <p>{item.isFree ? 'Participação gratuita' : item.paymentMode === 'Contribution' ? 'Contribuição livre' : item.referencePrice === null ? 'Valor a combinar' : agendaMoney(item.totalPrice ?? item.referencePrice)}</p>
-        <p>{item.state !== 'Scheduled' ? 'Inscrições encerradas' : item.remaining > 0 ? `${item.remaining} vagas disponíveis` : 'Inscrições completas'}</p>
-        {item.program && <div className={styles.note}><h3>Programa</h3>{item.program}</div>}{item.cancellationConditions && <div className={styles.note}><h3>Cancelamento</h3>{item.cancellationConditions}</div>}{item.kind === 'Retreat' && <p>Pagamento integral.</p>}
-        {item.restricted && <p>Inscrição sujeita a autorização.</p>}
-        {visitor ? item.state === 'Scheduled' && <button className="secondary" disabled={item.remaining === 0 || item.restricted} onClick={() => onGuest?.({ eventId: item.id, serviceId: item.serviceId, startsAt: item.startsAt, service: { id: item.serviceId, title: item.title, referencePrice: item.totalPrice ?? item.referencePrice, paymentMode: item.paymentMode } })}>Pedir inscrição</button>
-          : <button className="secondary" disabled={disabled} onClick={() => open(item.id)}>{manager ? 'Gerir evento' : item.hasParticipation ? 'Ver a minha inscrição' : 'Ver evento'}</button>}
-      </InformationCard>)}</CardGrid>{list.data?.total === 0 && <p>Não existem eventos neste período.</p>}
-      {list.data?.total > 8 && <nav className="pager" aria-label="Páginas dos eventos"><button disabled={page === 1} onClick={() => setPage(p => p - 1)}>Anterior</button><span>Página {page}</span><button disabled={page * 8 >= list.data.total} onClick={() => setPage(p => p + 1)}>Seguinte</button></nav>}
-    </InformationCard>
-    {detail && <ConsultationDialog label="Detalhe do evento" disabled={disabled} onClose={() => guard(() => setDetail(null))}><h2>{detail.summary.title}</h2>{feedback}<p>{agendaDate(detail.summary.startsAt)} — {agendaDate(detail.summary.endsAt)}</p><p>{detail.summary.publicLocation} · {detail.summary.process.processLabel}</p>{detail.instructions && <p className={styles.note}>{detail.instructions}</p>}
-      {!manager && <>{!detail.summary.hasParticipation && detail.summary.state === 'Scheduled' && detail.summary.eligible && (detail.summary.kind === 'Group' && !detail.summary.isFree
-        ? <section aria-label="Inscrição na consulta de grupo"><h3>Inscrição na consulta de grupo</h3><p>{detail.paymentConditions?.label}</p><p>{detail.summary.referencePrice === null ? 'Contribuição livre' : agendaMoney(detail.summary.referencePrice)}</p>
-          <ConsultationConditionsForm consultation={{ paymentConditions: detail.paymentConditions, balance: detail.balance, referencePrice: detail.summary.referencePrice }} disabled={disabled || detail.summary.remaining === 0}
-            submitLabel={detail.paymentConditions?.mode === 'Prepayment' ? 'Confirmar inscrição. De seguida farei este pagamento.' : 'Aceitar condições e confirmar inscrição'}
-            onAccept={fields => command({ action: 'JoinEvent', id: detail.summary.id, version: detail.summary.version, ...fields })} /></section>
-        : <button disabled={disabled || detail.summary.remaining === 0} onClick={() => command({ action: 'JoinEvent', id: detail.summary.id, version: detail.summary.version })}>Confirmar inscrição</button>)}{detail.ownParticipations.map(p => <Participation key={p.id} participation={p} event={detail} disabled={disabled} send={command} />)}</>}
+  return <>
+    {editing && manager && <ConsultationDialog title="Editar evento" label="Edição do evento" disabled={disabled} onClose={close}>
+      <EventEditor key={editing.id} event={editing} setup={setup} disabled={disabled} send={async input => { const result = await command(input); if (result) { await open(editing.id); setEditing(null) } return result }} onBack={() => guard(async () => { await open(editing.id); setEditing(null) })} />
+    </ConsultationDialog>}
+    {!detail && !editing && <ConsultationDialog title="Grupo ou retiro" label="Detalhe do evento" disabled={disabled} onClose={close}>
+      <InformationCard cardId="event-detail-loading" loading={!error} error={error} />
+    </ConsultationDialog>}
+    {detail && <ConsultationDialog title={detail.summary.title} label="Detalhe do evento" disabled={disabled} onClose={close}>
+      <AppointmentSummary consultation={detail.summary} showTitle={false} stateLabel={eventStatusLabel(detail.summary, { manager, participations: manager ? [] : detail.ownParticipations })} typeLabel={detail.summary.kind === 'Retreat' ? 'Retiro' : 'Grupo'} />{feedback}{detail.instructions && <p className={styles.note}>{detail.instructions}</p>}
+      {!manager && <>{!detail.summary.hasParticipation && detail.summary.registrationOpen && detail.summary.eligible && (!detail.summary.isFree
+        ? <section aria-label="Inscrição na consulta de grupo"><h3>Inscrição na consulta de grupo</h3>{detail.summary.remaining === 0 && <p>O evento está lotado. O pedido entra na fila de desistências; o prazo de pagamento só começa quando a gestão confirmar a entrada.</p>}<p>{detail.paymentConditions?.label}</p><p>{detail.summary.referencePrice === null ? 'Contribuição livre' : agendaMoney(detail.summary.referencePrice)}</p>
+          <ConsultationConditionsForm consultation={{ paymentConditions: detail.paymentConditions, balance: detail.balance, referencePrice: detail.summary.referencePrice }} disabled={disabled}
+            submitLabel={detail.summary.remaining === 0 ? 'Aceitar condições e pedir entrada na fila de desistências' : detail.paymentConditions?.mode === 'Prepayment' ? 'Confirmar inscrição. De seguida farei este pagamento.' : 'Aceitar condições e confirmar inscrição'}
+            onAccept={fields => command({ action: 'JoinEvent', id: detail.summary.id, version: detail.summary.version, choice: detail.summary.remaining === 0 ? 'Waiting' : undefined, ...fields })} /></section>
+        : <button disabled={disabled} onClick={() => command({ action: 'JoinEvent', id: detail.summary.id, version: detail.summary.version, choice: detail.summary.remaining === 0 ? 'Waiting' : undefined })}>{detail.summary.remaining === 0 ? 'Pedir entrada na fila de desistências' : 'Confirmar inscrição'}</button>)}{detail.ownParticipations.map(p => <Participation key={p.id} participation={p} event={detail} showStatus={false} disabled={disabled} send={command} />)}</>}
       {manager && <>
-        {detail.summary.state === 'Scheduled' && <>
+        <p>Participantes por fechar: {detail.summary.pendingClosures}</p><EventRoster event={detail} disabled={disabled} send={command} guard={guard} initialParticipationId={initialEntry?.participationId} />
+        {['Waiting', 'AwaitingClosure'].includes(detail.summary.state) && <>
           <button className="secondary" disabled={disabled} onClick={() => guard(() => { setEditing({ id: detail.summary.id, version: detail.summary.version, definition: detail.definition }); setDetail(null) })}>Editar evento</button>
-          <form data-protect-draft onSubmit={event => { event.preventDefault(); const fields = new FormData(event.currentTarget); command({ action: 'CancelEvent', id: detail.summary.id, version: detail.summary.version, availabilityChoice: fields.get('availability') }) }}><label>Horário após cancelamento<AdaptiveSelect name="availability" required defaultValue=""><option value="">Escolhe o destino do horário</option><option value="Release">Libertar</option><option value="Keep">Manter bloqueado</option></AdaptiveSelect></label><button className="secondary" disabled={disabled}>Cancelar evento</button></form>
-          <form data-protect-draft onSubmit={event => { event.preventDefault(); const fields = new FormData(event.currentTarget); try { command({ action: 'PerformEvent', id: detail.summary.id, version: detail.summary.version, startsAt: instant(fields.get('start')), endsAt: instant(fields.get('end')) }) } catch (failure) { setError(failure.message) } }}><h3>Registar realização</h3><label>Início efetivo (Lisboa)<input name="start" type="datetime-local" required /></label><label>Fim efetivo (Lisboa)<input name="end" type="datetime-local" required /></label><button disabled={disabled}>Confirmar realização</button></form>
+          <InformationCard as="form" title="Cancelar evento" headingLevel={3} cardId="event-cancellation" data-protect-draft onSubmit={event => { event.preventDefault(); const fields = new FormData(event.currentTarget); command({ action: 'CancelEvent', id: detail.summary.id, version: detail.summary.version, choice: fields.get('cancellationReason'), availabilityChoice: fields.get('availability') }) }}><label>Motivo<AdaptiveSelect name="cancellationReason"><option value="Organizer">Decisão da gestão</option><option value="MinimumParticipants">Falta de participantes mínimos</option></AdaptiveSelect></label><label>Horário após cancelamento<AdaptiveSelect name="availability" required defaultValue=""><option value="">Escolhe o destino do horário</option><option value="Release">Libertar</option><option value="Keep">Manter bloqueado</option></AdaptiveSelect></label><button className="secondary" disabled={disabled}>Cancelar evento</button></InformationCard>
+          {detail.summary.state === 'AwaitingClosure' && <InformationCard as="form" title="Registar realização" headingLevel={3} cardId="event-outcome" data-protect-draft onSubmit={event => { event.preventDefault(); const fields = new FormData(event.currentTarget); try { command({ action: 'PerformEvent', id: detail.summary.id, version: detail.summary.version, startsAt: instant(fields.get('start')), endsAt: instant(fields.get('end')) }) } catch (failure) { setError(failure.message) } }}><DateRangeFields key={detail.summary.id} startLabel="Início efetivo (Lisboa)" endLabel="Fim efetivo (Lisboa)" required exclusive defaultValue={{ start: localDate(new Date(detail.summary.startsAt)), end: localDate(new Date(detail.summary.endsAt)) }} /><button disabled={disabled}>Confirmar realização</button></InformationCard>}
         </>}
         {detail.keepBlocked && <button className="secondary" disabled={disabled} onClick={() => command({ action: 'ReleaseEventBlock', id: detail.summary.id, version: detail.summary.version })}>Libertar horário cancelado</button>}
-        {detail.summary.state !== 'Cancelled' && <AddParticipant event={detail} people={people} disabled={disabled} send={command} />}
-        <EventRoster event={detail} disabled={disabled} send={command} people={people} guard={guard} initialParticipationId={initialEntry?.participationId} />
+        {detail.summary.state !== 'Cancelled' && <AddParticipant event={detail} disabled={disabled} send={command} />}
       </>}
     </ConsultationDialog>}
-  </section>
+  </>
 }
 
-function AddParticipant({ event, people, disabled, send }) {
+function AddParticipant({ event, disabled, send }) {
   const free = event.summary.isFree === true
   const [choice, setChoice] = useState('Confirmed')
+  const [client, setClient] = useState(null)
   const [method, setMethod] = useState('NoCharge')
   const [error, setError] = useState('')
-  return <form data-protect-draft onSubmit={e => {
+  return <InformationCard as="form" title="Adicionar participante" headingLevel={3} cardId="event-add-participant" data-protect-draft onSubmit={e => {
     e.preventDefault(); const fields = new FormData(e.currentTarget); setError('')
     try { send({ action: 'JoinEvent', id: event.summary.id, version: event.summary.version,
-      personId: choice === 'Anonymous' ? undefined : fields.get('personId'), choice, conditionsAccepted: fields.has('overcapacity'),
+      personId: choice === 'Anonymous' ? undefined : client?.id, choice, confirmOvercapacity: fields.has('overcapacity'),
       ...(choice === 'Anonymous' ? { method: free ? 'NoCharge' : method, amount: !free && fields.get('amount') ? Number(fields.get('amount')) : null, method2: fields.get('cashMethod'), ...(!free && method === 'AnonymousPaid' ? { startsAt: instant(fields.get('receivedAt')) } : {}) } : {}),
     }) } catch (failure) { setError(failure.message) }
-  }}><h3>Adicionar participante</h3>{error && <p role="alert">{error}</p>}<fieldset disabled={disabled}>
+  }}>{error && <p role="alert">{error}</p>}<fieldset className={styles.eventFields} disabled={disabled}>
     <label>Inscrição<AdaptiveSelect name="choice" value={choice} onChange={e => setChoice(e.target.value)}><option value="Confirmed">Confirmada</option>{event.summary.state !== 'Performed' && <option value="Waiting">Em espera</option>}{event.summary.state === 'Performed' && <option value="Anonymous">Anónima, sem dívida pessoal</option>}</AdaptiveSelect></label>
-    {choice !== 'Anonymous' ? <label>Cliente<AdaptiveSelect name="personId" defaultValue="" required><option value="">Seleciona a ficha</option>{people.data?.filter(p => p.identityReviewStatus !== 'Pending').map(p => <option key={p.id} value={p.id}>{p.data.firstName} {p.data.lastName}</option>)}</AdaptiveSelect></label> : <>
+    {choice !== 'Anonymous' ? <ClientSearch selected={client} onSelect={setClient} disabled={disabled} /> : <>
       {free ? <p>Participação gratuita.</p> : <label>Tratamento financeiro<AdaptiveSelect value={method} onChange={e => setMethod(e.target.value)}><option value="NoCharge">Sem cobrança</option><option value="AnonymousPaid">Pagamento integral já recebido</option></AdaptiveSelect></label>}
       {!free && method === 'AnonymousPaid' && <><label>Valor recebido<input name="amount" type="number" min="0.01" step="0.01" required /></label><label>Meio de recebimento<AdaptiveSelect name="cashMethod"><option value="Cash">Dinheiro</option><option value="Transfer">Transferência</option><option value="MbWay">MB WAY</option><option value="Card">Cartão</option><option value="Other">Outro</option></AdaptiveSelect></label><label>Data de recebimento (Lisboa)<input name="receivedAt" type="datetime-local" required /></label></>}
     </>}
-    <button>Adicionar participante</button>
-  </fieldset></form>
+    {choice !== 'Waiting' && <EventCapacityConsent event={event.summary} disabled={disabled} />}
+    <button disabled={disabled || choice !== 'Anonymous' && !client}>Adicionar participante</button>
+  </fieldset></InformationCard>
 }
 
-export function EventEditor({ event, setup, people, disabled, send, onBack, fixedService = false }) {
+export function EventEditor({ event, setup, disabled, send, onBack, fixedService = false, dates }) {
   const [error, setError] = useState('')
-  const [restrict, setRestrict] = useState(!!event.definition?.allowedPersonIds?.length)
-  const [overrideId, setOverrideId] = useState('')
+  const [billingMode, setBillingMode] = useState(event.definition?.billingMode || 'Prepayment')
   const [selectedService, setSelectedService] = useState(event.definition?.serviceId || '')
   const service = setup.data?.services.find(s => s.id === selectedService)
   const retreat = service?.serviceKind === 'Retreat'
-  const paidOccurrence = service?.definedPerEvent && !['Free', 'Contribution'].includes(service.paymentMode)
-  const block = setup.data?.windows.find(w => w.id === overrideId)
-  return <InformationCard title={event.id ? 'Editar evento' : 'Criar grupo ou retiro'} cardId="event-editor" loading={setup.loading || people.loading} error={setup.error || people.error}>
+  const paidOccurrence = service && !retreat && service.paymentMode !== 'Free' && billingMode === 'Prepayment'
+  return <InformationCard title={event.id ? 'Editar evento' : 'Criar grupo ou retiro'} cardId="event-editor" loading={setup.loading} error={setup.error}>
     {error && <p role="alert" className="notice error">{error}</p>}
-    <form data-protect-draft onSubmit={async e => { e.preventDefault(); const fields = new FormData(e.currentTarget); try {
-      if (restrict && !fields.getAll('person').length) throw new Error('Seleciona pelo menos uma ficha autorizada.')
-      await send({ action: 'SaveEvent', id: event.id, version: event.version || 0, event: { serviceId: selectedService, startsAt: instant(fields.get('start')), endsAt: instant(fields.get('end')), publicLocation: fields.get('location'), capacity: Number(fields.get('capacity')), published: fields.has('published'), billingMode: !retreat && service?.paymentMode !== 'Free' ? fields.get('billingMode') || service?.paymentMode : null, promoted: fields.has('promoted'), promotionText: fields.get('promotionText'), allowedPersonIds: restrict ? fields.getAll('person') : null, ...(!retreat && paidOccurrence ? { totalPrice: Number(fields.get('totalPrice')) } : {}), ...(retreat ? { program: fields.get('program'), totalPrice: Number(fields.get('totalPrice')), cancellationConditions: fields.get('cancellation') } : {}) }, conditionsAccepted: fields.has('promoted'), ...(fields.has('override') && block ? { overrideWindowId: block.id, overrideWindowVersion: block.version } : {}) })
+    <form data-protect-draft onSubmit={async e => { e.preventDefault(); const fields = new FormData(e.currentTarget); setError(''); try {
+      const start = dates ? dates.from + 'T' + fields.get('start') : fields.get('start')
+      const end = dates ? dates.to + 'T' + fields.get('end') : fields.get('end')
+      if (!start || !end || end <= start) throw new Error('O fim do evento deve ser posterior ao início. Corrige a data e a hora de fim.')
+      await send({ action: 'SaveEvent', id: event.id, version: event.version || 0, event: { serviceId: selectedService, startsAt: instant(start), endsAt: instant(end), publicLocation: fields.get('location'), capacity: Number(fields.get('capacity')), published: true, billingMode: !retreat && service?.paymentMode !== 'Free' ? billingMode : null, minimumParticipants: Number(fields.get('minimum')), allowClientCredit: fields.has('allowClientCredit'), promoted: fields.has('promoted'), promotionText: fields.get('promotionText'), allowedPersonIds: null, ...(!retreat && paidOccurrence ? { totalPrice: Number(fields.get('totalPrice')) } : {}), ...(retreat ? { program: fields.get('program'), totalPrice: Number(fields.get('totalPrice')), cancellationConditions: fields.get('cancellation') } : {}) }, conditionsAccepted: fields.has('promoted') })
     } catch (failure) { setError(failure.message) } }}><fieldset className={styles.eventFields} disabled={disabled}>
-      {!fixedService && <label>Tipo de grupo ou retiro<AdaptiveSelect aria-label="Tipo de grupo ou retiro" name="service" required value={selectedService} onChange={e => setSelectedService(e.target.value)}><option value="">Escolhe grupo ou retiro</option>{setup.data?.services.filter(s => s.serviceKind === 'Group' || s.serviceKind === 'Retreat').map(s => <option value={s.id} key={s.id}>{s.title}</option>)}</AdaptiveSelect></label>}<label>Início (Lisboa)<input type="datetime-local" name="start" required defaultValue={event.definition?.startsAt ? localDate(new Date(event.definition.startsAt)) : ''} /></label><label>Fim (Lisboa)<input type="datetime-local" name="end" required defaultValue={event.definition?.endsAt ? localDate(new Date(event.definition.endsAt)) : ''} /></label><label>Local público<input name="location" required maxLength="300" defaultValue={event.definition?.publicLocation || ''} /></label><label>Lotação<input name="capacity" type="number" min="1" max="10000" required defaultValue={event.definition?.capacity || ''} /></label>
+      {!fixedService && <label>Tipo de grupo ou retiro<AdaptiveSelect aria-label="Tipo de grupo ou retiro" name="service" required value={selectedService} onChange={e => setSelectedService(e.target.value)}><option value="">Escolhe grupo ou retiro</option>{setup.data?.services.filter(s => s.serviceKind === 'Group' || s.serviceKind === 'Retreat').map(s => <option value={s.id} key={s.id}>{s.title}</option>)}</AdaptiveSelect></label>}<DateRangeFields type={dates ? 'time' : 'datetime-local'} startLabel={dates ? 'Hora de início (Lisboa)' : 'Início (Lisboa)'} endLabel={dates ? 'Hora de fim (Lisboa)' : 'Fim (Lisboa)'} required exclusive ordered={!dates || dates.from === dates.to} defaultValue={{ start: event.definition?.startsAt ? localDate(new Date(event.definition.startsAt)).slice(dates ? 11 : 0) : '', end: event.definition?.endsAt ? localDate(new Date(event.definition.endsAt)).slice(dates ? 11 : 0) : event.definition?.startsAt ? localDate(new Date(event.definition.startsAt)).slice(dates ? 11 : 0) : '' }} onChange={() => setError('')} /><label>Local do evento<AdaptiveSelect aria-label="Local do evento" name="location" required defaultValue={event.definition?.publicLocation || ''}><option value="">Escolhe o local</option><option>Montijo</option><option>Vila Nova de São Bento</option></AdaptiveSelect></label><label>Mínimo de participantes<input name="minimum" type="number" min="1" max="10000" required defaultValue={event.definition?.minimumParticipants ?? ''} /></label><label>Lotação<input name="capacity" type="number" min="1" max="10000" required defaultValue={event.definition?.capacity || ''} /></label>
+      {!retreat && service && service.paymentMode !== 'Free' && <label>Pagamento da consulta de grupo<AdaptiveSelect name="billingMode" value={billingMode} onChange={event => setBillingMode(event.target.value)}><option value="Prepayment">Pré-pagamento</option><option value="Contribution">Contribuição livre, depois do grupo</option></AdaptiveSelect></label>}
       {!retreat && paidOccurrence && <label>Preço por participante<input aria-label="Preço por participante" name="totalPrice" type="number" min="0.01" step="0.01" required defaultValue={event.definition?.totalPrice ?? ''} /></label>}
-      {!retreat && service && !['Free', 'Contribution'].includes(service.paymentMode) && <label>Pagamento da consulta de grupo<AdaptiveSelect name="billingMode" defaultValue={event.definition?.billingMode || service.paymentMode}><option value="Prepayment">Antes da consulta</option><option value="Postpayment">Depois da consulta</option></AdaptiveSelect></label>}
       {service?.paymentMode === 'Free' && <p>Participação gratuita, sem contribuição.</p>}
       {retreat && <RetreatDefinition definition={event.definition} disabled={disabled} />}
+      {service?.paymentMode !== 'Free' && (retreat || billingMode === 'Prepayment') && <InformationCard title="Utilização de crédito pelo cliente" headingLevel={3} cardId="event-credit-authorization"><label className="checkbox"><input type="checkbox" name="allowClientCredit" defaultChecked={event.definition?.allowClientCredit || false} />Permitir utilizar crédito disponível na inscrição</label><p>A utilização é opcional e só aparece ao cliente com crédito autorizado disponível.</p></InformationCard>}
       <label className="checkbox"><input type="checkbox" name="promoted" />Divulgar também em Partilhas</label><label>Texto de divulgação (opcional)<textarea name="promotionText" maxLength="2000" defaultValue={event.definition?.promotionText || ''} /></label>
-      <label className="checkbox"><input type="checkbox" name="published" defaultChecked={event.definition?.published ?? true} />Publicado na agenda</label><label className="checkbox"><input type="checkbox" checked={restrict} onChange={e => setRestrict(e.target.checked)} />Limitar a fichas autorizadas</label>
-      {restrict && <fieldset><legend>Fichas autorizadas</legend>{people.data?.map(p => <label className="checkbox" key={p.id}><input type="checkbox" name="person" value={p.id} defaultChecked={event.definition?.allowedPersonIds?.includes(p.id)} />{p.data.firstName} {p.data.lastName}</label>)}<p>Seleciona pelo menos uma ficha.</p></fieldset>}
-      
-      <details><summary>Autorizar um bloqueio pessoal</summary><label>Bloqueio<AdaptiveSelect value={overrideId} onChange={e => setOverrideId(e.target.value)}><option value="">Sem autorização</option>{setup.data?.windows.filter(w => !w.available).map(w => <option value={w.id} key={w.id}>{agendaDate(w.startsAt)} — {agendaDate(w.endsAt)}</option>)}</AdaptiveSelect></label>{block && <label className="checkbox"><input key={block.id + ':' + block.version} type="checkbox" name="override" />Confirmo este evento apesar deste bloqueio pessoal.</label>}</details><button>Guardar evento</button>
+      <button>Publicar e sair</button>
     </fieldset></form><button type="button" className="secondary" disabled={disabled} onClick={onBack}>Voltar aos eventos</button>
   </InformationCard>
 }
 
-function EventRoster({ event, disabled, send, people, guard, initialParticipationId }) {
+function EventRoster({ event, disabled, send, guard, initialParticipationId }) {
   const [page, setPage] = useState(1)
   const [selected, setSelected] = useState(null)
   const [error, setError] = useState('')
   const read = useCallback(signal => apiRequest(`consultations/events/${event.summary.id}/participants?page=${page}`, undefined, { signal }), [event.summary.id, page])
   const roster = useLiveResource('events', `roster:${event.summary.id}:${page}`, read)
-  const names = useConsultationNames([...(roster.data?.items.filter(p => p.personId) || []), ...(event.protectedSeats || []).filter(p => p.personId)], selected?.personId ? selected : null, true)
+  const names = useConsultationNames(roster.data?.items.filter(p => p.personId) || [], selected?.personId ? selected : null, true)
   useEffect(() => {
     const id = initialParticipationId
     if (!id) return
@@ -143,40 +138,66 @@ function EventRoster({ event, disabled, send, people, guard, initialParticipatio
     apiRequest(`consultations/events/${event.summary.id}/participants/${id}`).then(p => { if (active) { setSelected(p); setError('') } }).catch(failure => { if (active) setError(failure.message) })
     return () => { active = false }
   }, [initialParticipationId, event.summary.id])
-  async function act(command, retry, cleanup) { const result = await send(command, retry, cleanup); if (result) setSelected(null); return result }
+  async function act(command, retry, cleanup) { const result = await send(command, retry, cleanup); if (result) {
+    if (command.action === 'RegisterParticipation') setSelected(await apiRequest(`consultations/events/${event.summary.id}/participants/${command.id}`))
+    else setSelected(null)
+  } return result }
   return <InformationCard title="Participantes" cardId="event-roster" loading={roster.loading} error={roster.error} onRetry={roster.refresh}>
     {error && <p role="alert" className="notice error">{error}</p>}
-    {roster.data?.items.map(p => <article className={styles.participant} key={p.id}><p>{p.personId ? names.data?.[p.personId] || 'Ficha de cliente' : p.guestContact ? `${p.guestContact.firstName} ${p.guestContact.lastName}` : 'Participação anónima'} · {p.process.processLabel}{p.protectedSeat ? ' · Vaga protegida' : ''}</p><button className="secondary" disabled={disabled} onClick={() => guard(() => setSelected(p))}>Abrir participação</button></article>)}
-    {roster.data?.total > 8 && <nav className="pager"><button disabled={disabled || page === 1} onClick={() => guard(() => setPage(p => p - 1))}>Anterior</button><span>Página {page}</span><button disabled={disabled || page * 8 >= roster.data.total} onClick={() => guard(() => setPage(p => p + 1))}>Seguinte</button></nav>}
-    {selected && <div className={styles.editor}>
-      <h3>{selected.personId ? names.data?.[selected.personId] || 'Ficha de cliente' : 'Participação sem ficha'}</h3><Participation key={selected.id} participation={selected} event={event} disabled={disabled} send={act} manager people={people} names={names.data} />
-      {event.summary.state === 'Performed' && selected.state === 'Confirmed' && <EventAttendanceForm key={'draft:' + selected.id} event={event} participation={selected} disabled={disabled} send={act} />}
-      <button className="secondary" disabled={disabled} onClick={() => guard(() => setSelected(null))}>Fechar participação</button>
-    </div>}
+    <RecordTable caption="Participantes do evento" rows={roster.data?.items || []} rowKey={p => p.id} columns={[
+      { key: 'client', label: 'Cliente', render: p => p.personId ? names.data?.[p.personId] || 'Ficha de cliente' : p.guestContact ? `${p.guestContact.firstName} ${p.guestContact.lastName}` : 'Participação anónima' },
+      { key: 'attendance', label: 'Participação', render: p => p.process.stateLabel },
+      { key: 'financial', label: 'Situação financeira', render: p => p.financialLabel },
+      { key: 'remaining', label: 'Por pagar', render: p => p.financialState === 'ContributionUndefined' ? 'Por definir' : agendaMoney(p.remaining) },
+      { key: 'action', label: 'Ação', render: p => <button className="text-button" disabled={disabled} onClick={() => guard(() => setSelected(p))}>Abrir e tratar</button> },
+    ]} />
+    <Pagination total={roster.data?.total} page={page} disabled={disabled} onChange={next => guard(() => setPage(next))} />
+    {selected && <ConsultationDialog title={event.summary.title} label="Detalhe da participação" disabled={disabled} onClose={() => guard(() => setSelected(null))}>
+      <AppointmentSummary consultation={event.summary} showTitle={false} stateLabel={selected.process.processLabel} typeLabel={event.summary.kind === 'Retreat' ? 'Retiro' : 'Grupo'} />
+      <p>{selected.personId ? names.data?.[selected.personId] || 'Ficha de cliente' : 'Participação sem ficha'}</p>
+      <Participation key={selected.id + ':' + selected.version} participation={selected} event={event} disabled={disabled} send={act} manager names={names.data} showStatus={false} />
+      {selected.canClose && <EventAttendanceForm key={'draft:' + selected.id} event={event} participation={selected} disabled={disabled} send={act} />}
+    </ConsultationDialog>}
+
   </InformationCard>
 }
 
-export function Participation({ participation: p, event, disabled, send, manager = false, people, names }) {
-  const free = event.summary.isFree === true
+export function Participation({ participation: p, event, disabled, send, manager = false, names, showStatus = true }) {
+  const [client, setClient] = useState(null)
+  const [conversation, setConversation] = useState(false)
+  const presented = useRef(new Set())
+  const onPresented = useCallback(items => { for (const item of items) if (!item.own) presented.current.add(item.id) }, [])
   const act = (action, fields = {}) => send({ action, id: p.id, version: p.version, ...fields })
-  return <article className={styles.participation}><p>{p.process.processLabel}</p>
-    <p>{p.financialState === 'Paid' ? 'Paga' : p.financialState === 'ContributionUndefined' ? 'Por pagar — contribuição por definir' : p.remaining > 0 ? `Por pagar: ${agendaMoney(p.remaining)}` : p.expectationOpen ? 'Aguarda recebimento' : 'Sem dívida'}</p>
-    {p.acceptedConditions && <details><summary>Condições aceites na inscrição</summary>{p.acceptedConditions.sections.map(section => <section key={section.title}><h3>{section.title}</h3>{section.paragraphs.map(text => <p key={text}>{text}</p>)}{section.bullets.length > 0 && <ul>{section.bullets.map(text => <li key={text}>{text}</li>)}</ul>}</section>)}</details>}
-    {manager && p.canReceive && <FinancialEntryForm
-      people={[{ id: p.personId, data: { firstName: names?.[p.personId] || 'Ficha de cliente' } }]} participation={p} disabled={disabled} instant={instant}
-      submit={async (e, input) => { e.preventDefault(); await send(input(new FormData(e.currentTarget))) }} />}
-    {!manager && free && <p>Participação gratuita.</p>}
-    {!p.attendance && p.creditProposals?.some(proposal => !proposal.decision) && <p>Proposta de utilização de crédito: {agendaMoney(p.creditProposals.find(proposal => !proposal.decision).amount)}.</p>}
-    {manager && p.expectationOpen && p.referencePrice > 0 && p.balance >= p.referencePrice && <button className="secondary" disabled={disabled} onClick={() => act('UseParticipationCreditForAdvance')}>Validar crédito disponível para o pré-pagamento</button>}
-    {manager && p.guestContact && <><p>+{p.guestContact.dialCode} {p.guestContact.phone}</p>{p.guestContact.email && <p>{p.guestContact.email}</p>}{p.state === 'Requested' && <form data-protect-draft onSubmit={e => { e.preventDefault(); const fields = new FormData(e.currentTarget); act('LinkEventGuest', { personId: fields.get('person'), conditionsAccepted: fields.has('verified') }) }}><label>Ficha verificada<AdaptiveSelect name="person" required defaultValue={p.personId || ""}><option value="">Seleciona a ficha</option>{people.data?.map(person => <option key={person.id} value={person.id}>{person.data.firstName} {person.data.lastName}</option>)}</AdaptiveSelect></label><label className="checkbox"><input name="verified" type="checkbox" required />Verifiquei a identidade e confirmo a ficha selecionada.</label><button disabled={disabled}>Aprovar pedido e confirmar inscrição</button><button type="button" className="secondary" disabled={disabled} onClick={() => act('RejectEventGuest')}>Recusar pedido</button></form>}</>}
-    {['Confirmed', 'Waiting'].includes(p.state) && !p.attendance && !manager && new Date(event.summary.startsAt) > new Date() && <button className="secondary" disabled={disabled} onClick={() => { if (window.confirm('Confirmas o cancelamento da inscrição?')) act('CancelParticipation') }}>Cancelar inscrição</button>}
-    {manager && ['Confirmed', 'Waiting'].includes(p.state) && !p.attendance && <form onSubmit={e => { e.preventDefault(); act('CancelParticipation', { availabilityChoice: new FormData(e.currentTarget).get('availability') }) }}><label>Vaga após cancelamento<AdaptiveSelect name="availability"><option value="Release">Libertar</option><option value="Keep">Proteger</option></AdaptiveSelect></label><button className="secondary" disabled={disabled}>Cancelar inscrição</button></form>}
-    {manager && p.protectedSeat && <button className="secondary" disabled={disabled} onClick={() => act('ReleaseEventSeat')}>Libertar vaga protegida</button>}
-    {manager && p.state === 'Waiting' && <form data-protect-draft onSubmit={e => { e.preventDefault(); const fields = new FormData(e.currentTarget); act('ConfirmParticipation', { conditionsAccepted: fields.has('overcapacity'), relatedId: fields.get('source') || undefined }) }}><label>Vaga a atribuir<AdaptiveSelect name="source" defaultValue=""><option value="">Usar uma vaga pública disponível</option>{event.protectedSeats?.map(seat => <option key={seat.id} value={seat.id}>Vaga protegida · {names?.[seat.personId] || 'Participação sem ficha'}</option>)}</AdaptiveSelect></label><button disabled={disabled}>Confirmar participação</button></form>}
-    {manager && p.financialState === 'ContributionUndefined' && <form data-protect-draft onSubmit={e => { e.preventDefault(); act('DefineParticipationContribution', { amount: Number(new FormData(e.currentTarget).get('amount')) }) }}><label>Valor final da contribuição<input name="amount" type="number" required min="0.01" step="0.01" /></label><button disabled={disabled}>Definir contribuição</button></form>}
-    {!free && event.summary.kind !== 'Retreat' && p.state === 'Confirmed' && p.attendance === 'Performed' && p.financialChoice === 'Unpaid' && !p.settlementId && p.remaining > 0 && <CreditSettlementForm record={p} manager={manager} participation disabled={disabled} act={act} />}
-    {event.summary.kind === 'Retreat' && <RetreatPayments participation={p} manager={manager} disabled={disabled} act={act} />}
-    {p.sharedSummary && <div className={styles.note}><h3>Acompanhamento</h3>{p.sharedSummary}</div>}{manager && p.privateNote && <div className={styles.note}><h3>Nota privada</h3>{p.privateNote}</div>}
-    {!manager && p.section === 'Closed' && (!p.archivedAt || p.archivedContentVersion !== p.publicContentVersion) && <button disabled={disabled} onClick={() => act('ArchiveParticipation', { publicContentVersion: p.publicContentVersion })}>Já vi a informação sobre a consulta, posso arquivar.</button>}
-  </article>
+  const paymentVisible = p.conditionsPending || p.remaining > 0 || p.financialState === 'ContributionUndefined' || !!p.paymentDeclaredAt
+  const clientPayment = { ...p, state: p.attendance === 'Performed' ? 'Performed' : p.state, financialChoice: event.summary.paymentMode,
+    paymentConditions: event.paymentConditions, paymentInformation: p.acceptedConditions?.paymentInformation || event.paymentConditions?.paymentInformation,
+    amountDue: p.remaining, actions: [...(p.conditionsPending ? ['Accept'] : []), ...(!p.conditionsPending && p.clientCreditAvailable > 0 ? ['UseAuthorizedCredit'] : []),
+      ...(!p.conditionsPending && !p.paymentDeclaredAt && p.state === 'Confirmed' && paymentVisible ? ['DeclarePayment'] : [])] }
+  const clientAct = (action, fields) => act(({ Accept: 'AcceptParticipationConditions', DeclarePayment: 'DeclareParticipationPayment' })[action] || action, fields)
+
+  return <div className={styles.participation}>
+    {showStatus && <AppointmentSummary consultation={event.summary} showTitle={false} stateLabel={eventStatusLabel(event.summary, { manager, participation: p })} typeLabel={event.summary.kind === 'Retreat' ? 'Retiro' : 'Grupo'} />}
+    {!manager && paymentVisible && <ClientPaymentPanel consultation={clientPayment} disabled={disabled} act={clientAct} participation />}
+    {p.acceptedConditions && <details><summary>Condições aceites na inscrição</summary><ConditionsContent conditions={p.acceptedConditions} /></details>}
+    {manager && p.canReceive && <FinancialEntryForm people={[{ id: p.personId, data: { firstName: names?.[p.personId] || 'Ficha de cliente' } }]} participation={{ ...p, paymentMode: event.summary.paymentMode }} disabled={disabled} instant={instant} reviewBeforeSubmit submit={async (e, input) => { e.preventDefault(); return send(input(new FormData(e.currentTarget))) }} />}
+    {manager && (p.remaining > 0 || p.financialState === 'ContributionUndefined') && <InformationCard title="Pagamento da participação" headingLevel={3} cardId="participation-payment">
+      <p>Por pagar: <strong>{p.financialState === 'ContributionUndefined' ? 'Contribuição por definir' : agendaMoney(p.remaining)}</strong></p>
+      {p.paymentDeclaredAt && <p>Aguarda confirmação de recebimento pela terapeuta.</p>}
+    </InformationCard>}
+    {manager && p.canSettle && <CreditSettlementForm record={p} manager={manager} participation disabled={disabled} act={act} />}
+    {manager && p.guestContact && <><p>+{p.guestContact.dialCode} {p.guestContact.phone}</p>{p.state === 'Requested' && <InformationCard title="Ficha do participante" cardId="event-guest-identity"><ClientSearch selected={client} onSelect={setClient} disabled={disabled} /><button disabled={disabled || !client} onClick={() => act('LinkEventGuest', { personId: client.id, conditionsAccepted: true })}>Aprovar inscrição na ficha verificada</button><button className="secondary" disabled={disabled} onClick={() => act('RejectEventGuest')}>Recusar inscrição</button></InformationCard>}</>}
+    {['Confirmed', 'Waiting'].includes(p.state) && !p.attendance && event.summary.registrationOpen && <button className="secondary" disabled={disabled} onClick={() => { if (window.confirm(p.state === 'Waiting' ? 'Desistir deste pedido na fila?' : 'Cancelar a inscrição, libertar a vaga e repor o crédito liquidado?')) act('CancelParticipation') }}>{p.state === 'Waiting' ? 'Desistir da fila' : 'Cancelar inscrição'}</button>}
+    {manager && (p.state === 'Waiting' || p.canRegisterParticipation) && <InformationCard as="form" title={p.canRegisterParticipation ? 'Registar participação' : 'Fila de desistências'} headingLevel={3} cardId="event-waitlist-confirmation" onSubmit={e => { e.preventDefault(); act(p.canRegisterParticipation ? 'RegisterParticipation' : 'ConfirmParticipation', { confirmOvercapacity: new FormData(e.currentTarget).has('overcapacity') }) }}>
+      {p.waitlistPosition && <p>Posição na fila: {p.waitlistPosition} · Pedido: {agendaDate(p.createdAt)}</p>}
+      <EventCapacityConsent event={event.summary} disabled={disabled} />
+      <button disabled={disabled || p.state === 'Waiting' && p.waitlistPosition > 1}>{p.canRegisterParticipation ? 'Registar participação' : 'Confirmar inscrição'}</button>
+    </InformationCard>}
+    {!manager && p.state === 'Waiting' && <p>Estás na fila de desistências, por ordem do pedido. Aguarda a confirmação da terapeuta; ainda não tens de pagar.</p>}
+    {(manager || !paymentVisible) && <ConsultationPaymentHistory entries={p.paymentHistory || []} />}
+    {p.photoIds?.map((photoId, index) => <img className={styles.photo} key={photoId} src={`/api/consultations/${p.id}/photos/${photoId}`} alt={`Imagem partilhada ${index + 1}`} />)}
+    {p.sharedSummary && <InformationCard title="Informação partilhada" cardId="event-shared-information"><p className="shared-consultation-note">{p.sharedSummary}</p></InformationCard>}
+    {manager && p.privateNote && <InformationCard title="Nota privada — apenas gestão" cardId="event-private-information"><p className="shared-consultation-note">{p.privateNote}</p></InformationCard>}
+    {p.attendance === 'Performed' && <><a href={'#acompanhamento-' + p.id} onClick={e => { e.preventDefault(); setConversation(true) }}>Abrir conversas de acompanhamento</a>{conversation && <ConsultationConversation id={p.id} manager={manager} onMessagesPresented={onPresented} />}</>}
+    {!manager && p.canArchive && <button disabled={disabled} onClick={() => act('ArchiveParticipation', { publicContentVersion: p.publicContentVersion, ...(presented.current.size ? { messageIds: [...presented.current] } : {}) })}>{p.attendance === 'Performed' ? 'Vi as informações do acompanhamento - quero arquivar' : 'Arquivar registo'}</button>}
+  </div>
 }

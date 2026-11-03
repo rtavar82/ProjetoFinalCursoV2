@@ -1,5 +1,6 @@
 import styles from './TherapistManagement.module.css'
 import { useEffect, useState } from 'react'
+import { showSuccess } from './actionNotices'
 import { request } from './identityApi'
 import { observeResource } from './liveUpdates'
 
@@ -11,7 +12,6 @@ const date = value => new Intl.DateTimeFormat('pt-PT', { dateStyle: 'short', tim
 export default function TherapistManagement({ busy, perform }) {
   const [state, setState] = useState(null)
   const [loadError, setLoadError] = useState('')
-  const [message, setMessage] = useState('')
   useEffect(() => {
     let current = true
     const stop = observeResource('accountSecurity', async () => {
@@ -27,9 +27,8 @@ export default function TherapistManagement({ busy, perform }) {
     const form = event.currentTarget
     const email = new FormData(form).get('email')
     perform(async () => {
-      setMessage('')
       const result = await request('therapist-invitations', { email, replaceInvitationId: replaceId })
-      form.reset(); setMessage(result.message); await reload()
+      form.reset(); showSuccess(result.message); await reload()
     })
   }
   const invitation = state?.invitation
@@ -37,7 +36,6 @@ export default function TherapistManagement({ busy, perform }) {
   return <section className={`${styles.page} therapist-management`} aria-labelledby="therapist-heading">
     <p className="eyebrow">A TUA EQUIPA</p><h3 id="therapist-heading">Gestora-terapeuta</h3>
     {loadError && <p className="notice error" role="alert">{loadError}</p>}
-    {message && <p className="notice success" role="status">{message}</p>}
     {!state && !loadError && <p role="status">A consultar o estado…</p>}
     {state?.therapist ? <><div className="invitation-status"><strong>{state.therapist.displayName}</strong><p>{state.therapist.email}</p><span>{therapistStates[state.therapist.state]}</span></div><p className="field-help">Esta instalação tem uma única conta permanente de gestora-terapeuta. Um registo incompleto é retomado pela própria destinatária, sem criar outra conta.</p></> : state && <>
       <p>Convida a pessoa que será responsável pelo acompanhamento terapêutico. Ela define os seus dados e palavra-passe, confirma o email e regista uma Passkey.</p>
@@ -49,7 +47,7 @@ export default function TherapistManagement({ busy, perform }) {
         <button disabled={busy}>{busy ? 'A guardar o convite…' : replaceId ? 'Reenviar ou substituir convite' : 'Enviar convite'}</button>
       </form>
       {replaceId && <button className="secondary" disabled={busy} onClick={() => perform(async () => {
-        setMessage(''); const result = await request(`therapist-invitations/${replaceId}/cancel`, {}); setMessage(result.message); await reload()
+        const result = await request(`therapist-invitations/${replaceId}/cancel`, {}); showSuccess(result.message); await reload()
       })}>Cancelar este convite</button>}
     </>}
   </section>

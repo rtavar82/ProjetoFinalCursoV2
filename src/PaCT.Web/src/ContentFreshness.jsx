@@ -1,17 +1,15 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect } from 'react'
 import { refreshOpenedView } from './liveUpdates'
 import { STALE_CONTENT } from './readFreshness'
-import styles from './ContentFreshness.module.css'
+import { showWarning } from './actionNotices'
 
 export default function ContentFreshness() {
-  const [visible, setVisible] = useState(false)
-  const popup = useRef(null)
   useEffect(() => {
     let dismissal, navigation
     function warn() {
       if (dismissal) return
-      setVisible(true)
-      dismissal = window.setTimeout(() => { dismissal = null; setVisible(false) }, 3000)
+      showWarning('Não foi possível atualizar. O conteúdo pode estar desatualizado.')
+      dismissal = window.setTimeout(() => { dismissal = null }, 3000)
     }
     function opened() {
       if (navigation) return
@@ -49,11 +47,5 @@ export default function ContentFreshness() {
       window.clearTimeout(dismissal); window.clearTimeout(navigation)
     }
   }, [])
-  useEffect(() => {
-    if (visible) popup.current?.showPopover?.()
-    else popup.current?.hidePopover?.()
-  }, [visible])
-  return <div ref={popup} popover="manual" hidden={!visible} className={styles.popup} role="status" aria-live="polite" aria-atomic="true">
-    Não foi possível atualizar. O conteúdo pode estar desatualizado.
-  </div>
+  return null
 }

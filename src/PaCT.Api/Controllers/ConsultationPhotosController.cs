@@ -17,6 +17,9 @@ public sealed class ConsultationPhotosController(IConsultationStore consultation
         var allowed = await consultations.ReadAsync(data => data.Consultations.Any(c => c.Id == id && (conversationVersion is { } current
             ? c.State == "Performed" && c.ClosedAt is not null && !c.ConversationBlocked && c.ConversationVersion == current
             : c.Version == version && ProcessLifecycle.Substate(c, time.GetUtcNow()) == "AwaitingClosure")), ct);
+        if (!allowed) allowed = await consultations.ReadAsync(data => data.Participations.Any(p => p.Id == id && (conversationVersion is { } current
+            ? p.Attendance == "Performed" && !p.ConversationBlocked && p.ConversationVersion == current
+            : p.Version == version && p.Attendance is null)), ct);
         if (!allowed) return Conflict(new ProblemDetails { Status = 409, Title = conversationVersion is null ? "A consulta mudou ou já não permite preparar este fecho." : "A conversa mudou ou está encerrada para novos envios." });
         if (file.Length is 0 or > 4194304) return BadRequest(new ProblemDetails { Status = 400, Title = "Cada fotografia pode ter até 4 MB." });
         using var buffer = new MemoryStream(); await file.CopyToAsync(buffer, ct);
@@ -31,7 +34,10 @@ public sealed class ConsultationPhotosController(IConsultationStore consultation
         if (account is null) return Unauthorized();
         var allowed = await consultations.ReadAsync(data => data.Consultations.Any(c => c.Id == id
             && (Roles.IsManager(account.Role) || c.State == "Performed" && c.PersonId == account.PersonId)
-            && (c.PhotoIds.Contains(photoId) || data.Messages.Any(m => m.ConsultationId == id && m.PhotoIds?.Contains(photoId) == true))), ct);
+            && (c.PhotoIds.Contains(photoId) || data.Messages.Any(m => m.TargetId == id && m.PhotoIds?.Contains(photoId) == true))), ct);
+        if (!allowed) allowed = await consultations.ReadAsync(data => data.Participations.Any(p => p.Id == id
+            && (Roles.IsManager(account.Role) || p.Attendance == "Performed" && p.PersonId == account.PersonId)
+            && ((p.PhotoIds ?? []).Contains(photoId) || data.Messages.Any(m => m.TargetId == id && m.PhotoIds?.Contains(photoId) == true))), ct);
         if (!allowed) return NotFound();
         var photo = await photos.ReadAsync(id, photoId, ct);
         return File(photo.Bytes, photo.ContentType, enableRangeProcessing: false);

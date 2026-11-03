@@ -19,17 +19,6 @@ public sealed class GuestConsultationsController(IConsultationStore store, IClie
         return Ok(await store.SubmitGuestAsync(input, ct));
     }
 
-    [HttpGet, Authorize(Roles = Roles.Managers)]
-    public async Task<IActionResult> List(int page = 1, bool history = false, CancellationToken ct = default)
-    {
-        if (page is < 1 or > 100000) return Problem(statusCode: 400, title: "Página inválida.");
-        var now = time.GetUtcNow();
-        return Ok(await store.ReadAsync(data =>
-        {
-            var rows = data.GuestRequests.Where(g => history != GuestConsultations.Occupies(g, now)).OrderBy(g => g.StartsAt).ThenBy(g => g.Id).ToArray();
-            return new { total = rows.Length, page, pageSize = 8, items = rows.Skip((page - 1) * 8).Take(8).Select(g => View(g, now)).ToArray() };
-        }, ct));
-    }
     [HttpGet("{id:guid}"), Authorize(Roles = Roles.Managers)]
     public async Task<IActionResult> Detail(string id, CancellationToken ct)
     {
@@ -45,6 +34,7 @@ public sealed class GuestConsultationsController(IConsultationStore store, IClie
         request.Id, request.Version, request.StartsAt, request.EndsAt, request.CreatedAt,
         serviceTitle = request.Service.Title, request.Service.Modality, request.Service.PublicLocation, request.Service.PaymentMode,
         process = ProcessLifecycle.Status(request, now), state = ProcessLifecycle.Substate(request, now), request.PersonId, request.ConsultationId,
+        request.AcceptedAt, request.AcceptedTermsVersion,
         identity,
         contact = JsonSerializer.Deserialize<GuestContact>(security.Decrypt(request.Id, "consultation-guest-contact", Convert.FromBase64String(request.ContactCiphertext))),
         history = request.History ?? []

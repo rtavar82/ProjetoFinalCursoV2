@@ -1,0 +1,47 @@
+:root {
+  --body-font: 'Segoe UI', Arial, sans-serif;
+  --heading-font: Georgia, 'Times New Roman', serif;
+  --code-font: ui-monospace, Consolas, monospace;
+  --font-size-body: 16px;
+  --font-size-overline: 11px;
+  --font-size-caption: 12px;
+  --font-size-small: 14px;
+  --font-size-lead: 18px;
+  --font-size-badge: 15px;
+  --font-size-icon: 28px;
+  --font-size-brand: 27px;
+  --font-size-field: 16px;
+  --font-size-label: 13px;
+  --font-size-action: 14px;
+  --font-size-page: clamp(34px, 3.5vw, 48px);
+  --font-size-hero: clamp(34px, 5vw, 60px);
+  --font-size-section: 26px;
+  --font-size-subsection: 22px;
+  --font-size-h4: 20px;
+  --font-size-h5: 18px;
+  --font-size-h6: 16px;
+  --font-size-count: 34px;
+  --canvas: #f3f5ef;
+  --surface: #ffffff;
+  --ink: #253e34;
+  --muted: #64746a;
+  --accent: #3b654e;
+  --green: var(--accent);
+  --accent-hover: #244d3c;
+  --tint: #eaf0e5;
+  --line: #e1e7dd;
+  --card-radius: 20px;
+  --card-padding: 18px;
+  --notice-bg: #f5f0e5;
+  --notice-line: #e7ddc7;
+  --notice-ink: #755a33;
+  --success-bg: #eff6f0;
+  --success-line: #cadbcf;
+  --success-ink: #245e3c;
+  --error-bg: #fff6f5;
+  --error-line: #e3b8b8;
+  --error-ink: #9c2525;
+  --dialog-backdrop: #253e3480;
+}
+@media (min-width: 768px) { :root { --card-padding: 24px; --font-size-count: 43px; } }
+@media (min-width: 1080px) { :root { --font-size-brand: 29px; } }

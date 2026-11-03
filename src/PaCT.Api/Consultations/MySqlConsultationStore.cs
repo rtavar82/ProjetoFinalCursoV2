@@ -41,7 +41,13 @@ public sealed class MySqlConsultationStore(DatabaseConnectionSettings settings, 
             var json = await command.ExecuteScalarAsync(ct);
             if (json is string text) data.Consultations.Add(JsonSerializer.Deserialize<Consultation>(text)!);
         }
+        if (data.Consultations.Count == 0)
+        {
+            await using var command = Command(connection, transaction, "SELECT data FROM event_participations WHERE id=@id", ("@id", id));
+            if (await command.ExecuteScalarAsync(ct) is string text) data.Participations.Add(JsonSerializer.Deserialize<EventParticipation>(text)!);
+        }
         var c = ConsultationConversation.Authorized(data, id, actor);
+        var targetColumn = c.IsParticipation ? "participation_id" : "consultation_id";
         var owners = actor.IsManager ? new Dictionary<string, string>() : await PaCT.Api.Clients.ClientAggregation.LoadReadOwnersAsync(connection, transaction, ct);
         var readAccounts = owners.Where(pair => pair.Value == actor.PersonId).Select(pair => pair.Key).Append(actor.AccountId).Distinct().ToArray();
         var readPredicate = actor.IsManager ? "1=1" : "r.account_id IN (" + string.Join(',', readAccounts.Select((_, index) => "@read" + index)) + ")";
@@ -49,7 +55,7 @@ public sealed class MySqlConsultationStore(DatabaseConnectionSettings settings, 
         var messages = new List<ConsultationMessage>(); var reads = new List<string>();
         await using (var command = Command(connection, transaction, $"""
             SELECT m.data,EXISTS(SELECT 1 FROM consultation_message_reads r WHERE r.message_id=m.id AND ({readPredicate}))
-            FROM consultation_messages m WHERE m.consultation_id=@id AND (@before IS NULL OR m.sequence<@before)
+            FROM consultation_messages m WHERE m.{targetColumn}=@id AND (@before IS NULL OR m.sequence<@before)
             ORDER BY m.sequence DESC LIMIT 20
             """, readParameters.Concat(new (string, object?)[] { ("@id", id), ("@before", before) }).ToArray()))
         await using (var reader = await command.ExecuteReaderAsync(ct))
@@ -64,7 +70,7 @@ public sealed class MySqlConsultationStore(DatabaseConnectionSettings settings, 
                 COALESCE(SUM(JSON_UNQUOTE(JSON_EXTRACT(m.data,'$.AuthorIsManager'))=@sender
                     AND NOT EXISTS(SELECT 1 FROM consultation_message_reads r WHERE r.message_id=m.id AND ({readPredicate}))),0)
             FROM consultation_messages m
-            WHERE m.consultation_id=@id
+            WHERE m.{targetColumn}=@id
             """, readParameters.Concat(new (string, object?)[] { ("@id", id), ("@sender", actor.IsManager ? "false" : "true") }).ToArray()))
         await using (var reader = await command.ExecuteReaderAsync(ct))
         {
@@ -87,9 +93,9 @@ public sealed class MySqlConsultationStore(DatabaseConnectionSettings settings, 
     private static async Task FillPublicParticipations(MySqlConnection connection, MySqlTransaction transaction, ConsultationData data, CancellationToken ct)
     {
         // Capacity reads do not load contact ciphertext, notes or the credit ledger.
-        await using (var command = Command(connection, transaction, "SELECT id,event_id,person_id,JSON_UNQUOTE(JSON_EXTRACT(data,'$.State')),JSON_EXTRACT(data,'$.ProtectedSeat') FROM event_participations ORDER BY id"))
+        await using (var command = Command(connection, transaction, "SELECT id,event_id,person_id,JSON_UNQUOTE(JSON_EXTRACT(data,'$.State')) FROM event_participations ORDER BY id"))
         await using (var reader = await command.ExecuteReaderAsync(ct))
-            while (await reader.ReadAsync(ct)) data.Participations.Add(new(reader.GetGuid(0).ToString(), reader.GetGuid(1).ToString(), reader.IsDBNull(2) ? null : reader.GetGuid(2).ToString(), reader.GetString(3), DateTimeOffset.UnixEpoch, ProtectedSeat: reader.GetString(4) == "true"));
+            while (await reader.ReadAsync(ct)) data.Participations.Add(new(reader.GetGuid(0).ToString(), reader.GetGuid(1).ToString(), reader.IsDBNull(2) ? null : reader.GetGuid(2).ToString(), reader.GetString(3), DateTimeOffset.UnixEpoch));
     }
     private Task<T> ReadCore<T>(Func<ConsultationData, T> read, bool agendaOnly, CancellationToken ct) =>
         Write((_, _, data) => Task.FromResult(read(data)), ct, agendaOnly: agendaOnly, synchronizeClock: true);
@@ -236,15 +242,23 @@ public sealed class MySqlConsultationStore(DatabaseConnectionSettings settings, 
         {
             var notice = data.EventNotices[i];
             var freeConfirmation = notice.Kind == "EventConfirmed" && notice.EmailPending;
-            if (notice.Kind != "EventAcceptanceSummary" && !freeConfirmation || notice.EmailQueuedAt is not null || notice.Cancelled || notice.PersonId is null) continue;
+            var extra = notice.Kind is "EventCancelled" or "EventParticipationClosed" or "EventReminder24";
+            if (notice.Kind != "EventAcceptanceSummary" && !freeConfirmation && !extra || notice.EmailQueuedAt is not null || notice.Cancelled || notice.PersonId is null || notice.DueAt > time.GetUtcNow()) continue;
             var participation = data.Participations.Single(p => p.Id == notice.ParticipationId);
             var item = data.Events.Single(e => e.Id == notice.EventId);
-            if (item.Service.ServiceKind != "Group" || participation.State != "Confirmed"
-                || (freeConfirmation ? !GroupEvents.IsFree(item.Service) : GroupEvents.IsFree(item.Service) || participation.AcceptedAt is null)) continue;
+            if (!extra && (participation.State != "Confirmed"
+                || (freeConfirmation ? !GroupEvents.IsFree(item.Service) : GroupEvents.IsFree(item.Service) || participation.AcceptedAt is null))) continue;
             var summary = AppointmentCommunications.Summary(item.Service, item.Definition.StartsAt, item.Definition.EndsAt,
                 item.Definition.PublicLocation, GroupPaymentConditions.Mode(item));
-            if (string.IsNullOrWhiteSpace(summary.Instructions)) continue;
-            if (!await QueueClientEmail(connection, transaction, notice.PersonId, notice.Id, freeConfirmation ? "GroupConfirmation" : "GroupAcceptanceSummary", summary, ct)) continue;
+            if (notice.Kind != "EventCancelled" && string.IsNullOrWhiteSpace(summary.Instructions)) continue;
+            if (notice.Kind == "EventCancelled")
+            {
+                var restored = data.Entries.Where(x => x.OriginReference == participation.Id && x.Kind == "SettlementReturn").Sum(x => x.Amount);
+                summary = summary with { Instructions = (item.State == "Cancelled" ? EventLifecycle.Status(item, time.GetUtcNow()).StateLabel : participation.CancellationBy == "Participant" ? "Inscrição cancelada pelo participante." : "Inscrição cancelada pela gestão.")
+                    + (restored > 0 ? "\nCrédito reposto: " + restored.ToString("0.00", System.Globalization.CultureInfo.GetCultureInfo("pt-PT")) + " €" : "") };
+            }
+            var emailKind = extra ? notice.Kind : freeConfirmation ? "GroupConfirmation" : "GroupAcceptanceSummary";
+            if (!await QueueClientEmail(connection, transaction, notice.PersonId, notice.Id, emailKind, summary, ct)) continue;
             var now = time.GetUtcNow();
             data.EventNotices[i] = notice with { EmailQueuedAt = now, EmailPending = false };
         }
@@ -385,7 +399,7 @@ public sealed class MySqlConsultationStore(DatabaseConnectionSettings settings, 
                 if (value is GroupEvent group) { columns += ",service_id"; parameters += ",@service"; values.Add(("@service", group.Service.Id)); }
                 if (value is EventParticipation participation) { columns += ",event_id,person_id,guest_operation_id"; parameters += ",@event,@person,@guestOperation"; values.Add(("@event", participation.EventId)); values.Add(("@person", participation.PersonId)); values.Add(("@guestOperation", participation.GuestOperationId)); }
                 if (value is EventCashEntry cash) { columns += ",event_id,participation_id,amount"; parameters += ",@event,@participation,@amount"; values.Add(("@event", cash.EventId)); values.Add(("@participation", cash.ParticipationId)); values.Add(("@amount", cash.Amount)); }
-                if (value is EventNotice eventNotice) { columns += ",event_id,participation_id"; parameters += ",@event,@participation"; values.Add(("@event", eventNotice.EventId)); values.Add(("@participation", eventNotice.ParticipationId)); }
+                if (value is EventNotice eventNotice) { columns += ",event_id,participation_id"; parameters += ",@event,@participation"; values.Add(("@event", eventNotice.EventId)); values.Add(("@participation", (object?)eventNotice.ParticipationId ?? DBNull.Value)); }
                 if (value is SessionPack pack) { columns += ",person_id"; parameters += ",@person"; values.Add(("@person", pack.PersonId)); }
                 if (value is PackUse usage) { columns += ",person_id,pack_id"; parameters += ",@person,@pack"; values.Add(("@person", usage.PersonId)); values.Add(("@pack", usage.PackId)); }
                 if (value is PackNotice packNotice) { columns += ",person_id,pack_id"; parameters += ",@person,@pack"; values.Add(("@person", packNotice.PersonId)); values.Add(("@pack", packNotice.PackId)); }
@@ -393,7 +407,7 @@ public sealed class MySqlConsultationStore(DatabaseConnectionSettings settings, 
                 if (value is BalanceNotice balanceNotice) { columns += ",person_id"; parameters += ",@person"; values.Add(("@person", balanceNotice.PersonId)); }
                 if (value is CreditEntry entry) { columns += ",person_id,consultation_id,amount"; parameters += ",@person,@consultation,@amount"; values.Add(("@person", entry.PersonId)); values.Add(("@consultation", entry.ConsultationId)); values.Add(("@amount", entry.Amount)); }
                 if (value is ConsultationNotice notice) { columns += ",consultation_id"; parameters += ",@consultation"; values.Add(("@consultation", notice.ConsultationId)); }
-                if (value is ConsultationMessage message) { columns += ",consultation_id,author_id,sequence"; parameters += ",@consultation,@author,@sequence"; values.Add(("@consultation", message.ConsultationId)); values.Add(("@author", message.AuthorId)); values.Add(("@sequence", message.Sequence)); }
+                if (value is ConsultationMessage message) { columns += ",consultation_id,participation_id,author_id,sequence"; parameters += ",@consultation,@participation,@author,@sequence"; values.Add(("@consultation", (object?)message.ConsultationId ?? DBNull.Value)); values.Add(("@participation", (object?)message.ParticipationId ?? DBNull.Value)); values.Add(("@author", message.AuthorId)); values.Add(("@sequence", message.Sequence)); }
                 if (value is ConsultationMessageRead read) { columns += ",message_id,account_id"; parameters += ",@message,@account"; values.Add(("@message", read.MessageId)); values.Add(("@account", read.AccountId)); }
                 await using var insert = Command(connection, transaction, "INSERT INTO " + table + "(" + columns + ") VALUES(" + parameters + ")", values.ToArray());
                 await insert.ExecuteNonQueryAsync(ct);

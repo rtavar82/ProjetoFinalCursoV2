@@ -64,11 +64,13 @@ public sealed record Consultation
     public bool ExpectationOpen { get; init; }
     public DateTimeOffset? AdvanceSatisfiedAt { get; init; }
     public decimal? AdvanceSatisfiedBalance { get; init; }
-    public bool CollectionClosed { get; init; }
+    [JsonPropertyName("CollectionClosed")] // Preserve the existing stored classification and its history.
+    public bool OldDebt { get; init; }
     public CollectionDecision[] CollectionHistory { get; init; } = [];
     public PaymentCommunication[] PaymentCommunications { get; init; } = [];
     public decimal ReceivedAmount { get; init; }
     public DateTimeOffset? AcceptedAt { get; init; }
+    public bool RequiresClientAcceptance { get; init; } = true;
     public string? AcceptedTermsVersion { get; init; }
     public string? AcceptedBy { get; init; }
     public string? AcceptanceReasonCiphertext { get; init; }
@@ -82,6 +84,7 @@ public sealed record Consultation
     public string? SettlementId { get; init; }
     public decimal SettledAmount { get; init; }
     public CreditUseProposal[] CreditProposals { get; init; } = [];
+    public ConsultationCreditAuthorization[] CreditAuthorizations { get; init; } = [];
     public string? CancellationOrigin { get; init; }
     public string? CancelledBy { get; init; }
     public DateTimeOffset? CancelledAt { get; init; }
@@ -107,20 +110,26 @@ public sealed record Consultation
 }
 public sealed record ConsultationRead(string AccountId, long PublicContentVersion, DateTimeOffset At);
 public sealed record ConversationDecision(string AccountId, bool Blocked, long Version, DateTimeOffset At);
-public sealed record ConsultationMessage(string Id, string ConsultationId, string AuthorId, bool AuthorIsManager,
+public sealed record ConsultationMessage(string Id, string? ConsultationId, string AuthorId, bool AuthorIsManager,
     long Sequence, DateTimeOffset CreatedAt, string TextCiphertext,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string[]? PhotoIds = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string[]? PhotoIds = null, string? ParticipationId = null)
+{
+    [JsonIgnore] public string TargetId => ParticipationId ?? ConsultationId ?? throw new InvalidOperationException("Mensagem sem destinatário.");
+}
 public sealed record ConsultationMessageRead(string Id, string MessageId, string AccountId, DateTimeOffset At);
 public sealed record ConsultationNoteRevision(long PublicContentVersion, string Kind, string AuthorId, DateTimeOffset At, string? ContentCiphertext);
 public sealed record CollectionDecision(string Id, bool Closed, string AuthorId, DateTimeOffset At, string? ReasonCiphertext);
 public sealed record PaymentCommunication(string Id, string? AuthorId, DateTimeOffset At);
 public sealed record CreditAllocation(string ReceiptId, decimal Amount);
+public sealed record ConsultationCreditAuthorization(string Id, string AuthorId, DateTimeOffset At, string Phase,
+    bool Allowed, CreditAllocation[] Sources);
 public sealed record CreditUseProposal(string Id, string AuthorId, decimal Amount, DateTimeOffset At,
     string? Decision = null, string? DecidedBy = null, DateTimeOffset? DecidedAt = null, decimal? AppliedAmount = null);
 public sealed record CreditEntry(string Id, string PersonId, string? ConsultationId, string Kind, decimal Amount,
     string AuthorId, DateTimeOffset CreatedAt, string? OriginalId, string? Method, string? ReasonCiphertext,
     DateTimeOffset? EffectiveAt = null, string? Origin = null, string? OriginReference = null,
-    CreditAllocation[]? Allocations = null, long Sequence = 0);
+    CreditAllocation[]? Allocations = null, long Sequence = 0,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? AuthorizationId = null);
 public sealed record ConsultationNotice(string Id, string? PersonId, string ConsultationId, string Kind,
     DateTimeOffset DueAt, DateTimeOffset? ExpiresAt, DateTimeOffset? ReadAt = null, bool Cancelled = false,
     string? ClosedBy = null, string? ClosureReason = null, string? PushState = null,
@@ -165,22 +174,22 @@ public sealed record ConsultationCommand
     public decimal? Amount { get; init; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public decimal? SettlementAmount { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? AllowClientCredit { get; init; }
     public string? Method { get; init; }
     public string? Origin { get; init; }
     public string? OriginReference { get; init; }
     public string? Reason { get; init; }
     public bool ConditionsAccepted { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool ConfirmOvercapacity { get; init; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public PaCT.Api.Clients.GuestIdentityDecision? GuestIdentity { get; init; }
     public string? TermsVersion { get; init; }
     public string? SharedNote { get; init; }
     public string? PrivateNote { get; init; }
     public string[] PhotoIds { get; init; } = [];
-    public string? OverrideWindowId { get; init; }
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public long? OverrideWindowVersion { get; init; }
     public ConsultationService? Service { get; init; }
-    public AvailabilityWindow? Window { get; init; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public AvailabilityPublication? Publication { get; init; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]

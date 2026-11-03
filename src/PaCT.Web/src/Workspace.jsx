@@ -82,7 +82,7 @@ function WorkspaceContent({ profile: initialProfile, busy, perform, notify, erro
   function navigate(next) { if (next !== page || next === 'Home') guard(() => { setConsultationEntry(null); setPackEntry(null); if (next === 'Home') { setHomePage('PublicHome'); window.scrollTo(0, 0) } setPage(next) }) }
   function openPack(id) { guard(() => {
     if (client) { setPackEntry({ id, revision: Date.now() }); setPage('Account') }
-    else { setConsultationEntry({ packs: true, id, revision: Date.now() }); setPage('Agenda') }
+    else { setConsultationEntry({ packs: true, id, revision: Date.now() }); setPage('Finance') }
   }) }
   function navigateHome(next, serviceId = '') {
     guard(() => {
@@ -107,10 +107,10 @@ function WorkspaceContent({ profile: initialProfile, busy, perform, notify, erro
       {draftError && <p className="notice error" role="alert">{draftError}</p>}
       {(client || operational) && <ConsultationAlerts
         client={client}
-        onFollowup={id => guard(() => { setConsultationEntry({ id, closed: client, followup: client, conversation: client, revision: Date.now() }); setPage('Agenda') })}
+        onFollowup={id => guard(() => { setConsultationEntry({ id, followup: client, conversation: client, revision: Date.now() }); setPage('Agenda') })}
         onEvent={(id, participationId) => guard(() => { setConsultationEntry({ events: true, id, participationId, revision: Date.now() }); setPage('Agenda') })}
         onPack={openPack}
-        onGuests={() => guard(() => { setConsultationEntry({ guests: true, revision: Date.now() }); setPage('Agenda') })}
+        onGuests={id => guard(() => { setConsultationEntry({ guests: true, id, revision: Date.now() }); setPage('Agenda') })}
         onFinance={() => guard(() => { setConsultationEntry(client ? { payments: true, revision: Date.now() } : null); setPage(operational ? 'Finance' : 'Agenda') })}
         onOpen={id => guard(() => { setConsultationEntry({ id, revision: Date.now() }); setPage('Agenda') })} />}
       {!client && reviewSummary.count > 0 && <div className="notice error review-alert" role="status"><p>{reviewSummary.error ? 'Última informação disponível: ' : ''}{reviewSummary.count === 1 ? 'Existe 1 ocorrência de cliente por analisar.' : `Existem ${reviewSummary.count} ocorrências de clientes por analisar.`}</p><button className="text-button" disabled={busy} onClick={openReviews}>Rever ocorrências de clientes</button></div>}
@@ -128,7 +128,7 @@ function WorkspaceContent({ profile: initialProfile, busy, perform, notify, erro
       </PublicPresentation>}
       {!client && page === 'Clients' && <Clients key={clientEntry.version} initialView={clientEntry.view} pendingReviewCount={reviewSummary.count} busy={busy} perform={perform} notify={notify} guard={guard} />}
       {client && page === 'Profile' && <PersonalProfile busy={busy} perform={perform} notify={notify} />}
-      {(client || operational) && ['Agenda', 'Consultations', 'Finance'].includes(page) && <ActiveConsultationPage key={`${page}:${consultationEntry?.payments ? 'payments' : consultationEntry?.events ? 'events' : consultationEntry?.packs ? 'packs' : consultationEntry?.guests ? 'guests' : 'default'}`} manager={operational} initialEntry={consultationEntry} guard={guard} perform={perform} notify={notify} profileBusy={busy} onCreateClient={() => { setClientEntry(previous => ({ version: previous.version + 1, view: 'Create' })); setPage('Clients') }} />}
+      {(client || operational) && ['Agenda', 'Consultations', 'Finance'].includes(page) && <ActiveConsultationPage key={`${page}:${operational ? 'manager' : consultationEntry?.payments ? 'payments' : consultationEntry?.events ? 'events' : consultationEntry?.packs ? 'packs' : consultationEntry?.guests ? 'guests' : 'default'}`} manager={operational} initialEntry={consultationEntry} guard={guard} perform={perform} notify={notify} profileBusy={busy} onCreateClient={() => { setClientEntry(previous => ({ version: previous.version + 1, view: 'Create' })); setPage('Clients') }} />}
       {operational && page === 'Testimonials' && <TestimonialManager guard={guard} onPublic={onPublicTestimonials} />}
       {page === 'Account' && <AccountPage profile={profile} busy={busy} perform={perform} notify={notify} guard={guard} onPasskeyUpdated={onPasskeyUpdated} onSecuritySignedOut={onSecuritySignedOut} onAccountClosed={onAccountClosed} onForgetBrowser={onForgetBrowser} packEntry={packEntry} />}
   </AppLayout>

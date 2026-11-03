@@ -11,46 +11,43 @@ namespace PaCT.Api.Data;
 
 public static class ProcessStagePreparation
 {
-    internal static readonly string[] Tables = ["consultations", "guest_consultation_requests", "group_events", "event_participations"];
+    internal static readonly string[] Tables = ["consultations", "guest_consultation_requests"];
     internal sealed record Row(string Table, string Id, string Before, string After, string Stage);
     private sealed record Plan(Row[] Rows, string[] Issues);
     private static DateTimeOffset? Date(JsonNode row, string name) => row[name] is null ? null : row[name]!.GetValue<DateTimeOffset>();
     private static string? Text(JsonNode row, string name) => row[name]?.GetValue<string>();
 
     // Used only by the explicit upgrade, never as a fallback during ordinary application reads.
-    internal static string Upgrade(string table, string json, IReadOnlyDictionary<string, JsonNode> events, DateTimeOffset now)
+    internal static string Upgrade(string table, string json, DateTimeOffset now)
     {
+        if (table is not ("consultations" or "guest_consultation_requests")) throw new InvalidOperationException("Use a preparação própria dos eventos.");
         var row = JsonNode.Parse(json)!.AsObject();
         if (row.ContainsKey("Stage")) return json;
         var state = Text(row, "State") ?? throw new InvalidOperationException("Missing substate.");
-        var start = table == "group_events" ? Date(row["Definition"]!, "StartsAt")!.Value
-            : table == "event_participations" ? Date(events[Text(row, "EventId")!]["Definition"]!, "StartsAt")!.Value : Date(row, "StartsAt")!.Value;
-        var approved = table == "event_participations" ? Date(row, "ConfirmedAt") : Date(row, "ApprovedAt");
+        var start = Date(row, "StartsAt")!.Value;
+        var approved = Date(row, "ApprovedAt");
         var closed = Date(row, "ClosedAt"); var cancelled = Date(row, "CancelledAt");
         var history = row["History"] as JsonArray;
         if (cancelled is null && state == "Cancelled")
         {
             cancelled = history?.Where(h => Text(h!, "Action")?.Contains("Cancel", StringComparison.OrdinalIgnoreCase) == true)
                 .Select(h => Date(h!, "At")).LastOrDefault();
-            if (cancelled is null && table == "event_participations")
-                cancelled = (events[Text(row, "EventId")!]["History"] as JsonArray)?.Where(h => Text(h!, "Action") == "Cancel").Select(h => Date(h!, "At")).LastOrDefault();
         }
         var stage = table switch
         {
             "guest_consultation_requests" => ProcessStage.Request,
             _ when state is "Requested" or "Rejected" or "Expired" or "Waiting" => ProcessStage.Request,
-            "event_participations" when state == "Cancelled" && approved is null => ProcessStage.Request,
             _ when state is "Performed" or "NoShow" or "AwaitingClosure" || Text(row, "Attendance") is "Performed" or "NoShow" => ProcessStage.Consultation,
             _ when state is "Cancelled" or "CancelledClient" or "CancelledManager" => closed is not null || cancelled >= start
                 ? ProcessStage.Consultation : cancelled is not null ? ProcessStage.Booking : throw new InvalidOperationException("Cancellation time needs review."),
-            _ when state is "Confirmed" or "Scheduled" => now >= start ? ProcessStage.Consultation : ProcessStage.Booking,
+            _ when state == "Confirmed" => now >= start ? ProcessStage.Consultation : ProcessStage.Booking,
             _ => throw new InvalidOperationException("Unknown legacy substate.")
         };
         row["Stage"] = stage.ToString();
         if (table != "guest_consultation_requests")
         {
             var changes = new List<ProcessStageChange>();
-            if (table is "consultations" or "event_participations" && approved is { } at)
+            if (approved is { } at)
                 changes.Add(new(ProcessStage.Request, ProcessStage.Booking, at, Text(row, "ApprovedBy")));
             if (stage == ProcessStage.Consultation) changes.Add(new(ProcessStage.Booking, stage, start, null));
             row["StageHistory"] = JsonSerializer.SerializeToNode(changes);
@@ -68,18 +65,15 @@ public static class ProcessStagePreparation
             await using var reader = await command.ExecuteReaderAsync(ct);
             while (await reader.ReadAsync(ct)) raw.Add((table, reader.GetGuid(0).ToString(), reader.GetString(1)));
         }
-        var events = raw.Where(r => r.Table == "group_events").ToDictionary(r => r.Id, r => JsonNode.Parse(r.Json)!);
         var rows = new List<Row>(); var issues = new List<string>();
         foreach (var row in raw)
         {
             try
             {
-                var upgraded = Upgrade(row.Table, row.Json, events, now); var stage = Text(JsonNode.Parse(upgraded)!, "Stage")!;
+                var upgraded = Upgrade(row.Table, row.Json, now); var stage = Text(JsonNode.Parse(upgraded)!, "Stage")!;
                 object model = row.Table switch {
                     "consultations" => JsonSerializer.Deserialize<Consultation>(upgraded)!,
-                    "guest_consultation_requests" => JsonSerializer.Deserialize<GuestConsultationRequest>(upgraded)!,
-                    "group_events" => JsonSerializer.Deserialize<GroupEvent>(upgraded)!,
-                    _ => JsonSerializer.Deserialize<EventParticipation>(upgraded)! };
+                    _ => JsonSerializer.Deserialize<GuestConsultationRequest>(upgraded)! };
                 ProcessLifecycle.Validate(model);
                 rows.Add(new(row.Table, row.Id, row.Json, upgraded, stage));
             }

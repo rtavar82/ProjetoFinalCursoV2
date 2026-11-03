@@ -55,7 +55,7 @@ internal static class SecurityEmailContent
 {
     internal static (string Subject, string Body) Create(EmailPayload payload, string publicWebUrl) => payload.Kind switch
     {
-        "GroupAcceptanceSummary" or "GroupConfirmation" => GroupSummary(payload, publicWebUrl),
+        "GroupAcceptanceSummary" or "GroupConfirmation" or "EventCancelled" or "EventParticipationClosed" or "EventReminder24" => GroupSummary(payload, publicWebUrl),
         "PrepaymentApproval" or "BookingConfirmation" or "AppointmentReminder" or "AppointmentSharedInformation" => AppointmentContent(payload, publicWebUrl),
         "ConfirmEmail" => ("PaCT — confirma o teu email", "Confirma o email da tua conta de gestão PaCT.\n\n"
             + publicWebUrl + "/#confirm-email=" + Uri.EscapeDataString(payload.Token)
@@ -84,8 +84,12 @@ internal static class SecurityEmailContent
         var zone = TimeZoneInfo.FindSystemTimeZoneById("Europe/Lisbon");
         var date = TimeZoneInfo.ConvertTime(summary.StartsAt, zone).ToString("dd/MM/yyyy HH:mm");
         var end = TimeZoneInfo.ConvertTime(summary.EndsAt, zone).ToString("HH:mm");
+        if (payload.Kind is "EventCancelled" or "EventParticipationClosed" or "EventReminder24")
+            return (payload.Kind == "EventCancelled" ? "PaCT — evento cancelado" : payload.Kind == "EventReminder24" ? "PaCT — lembrete do evento" : "PaCT — participação tratada",
+                (payload.Kind == "EventCancelled" ? "O evento foi cancelado." : payload.Kind == "EventReminder24" ? "O evento começa dentro de 24 horas." : "A tua participação foi tratada. Consulta o resultado e a informação partilhada na PaCT.")
+                + "\n\n" + summary.Service + "\n" + date + " (hora de Lisboa)\n\n" + summary.Instructions + "\n\n" + publicWebUrl + "/#agenda");
         if (summary.PaymentMode != "Prepayment")
-            return ("PaCT — inscrição confirmada", "A tua inscrição na consulta de grupo ficou confirmada.\n\n"
+            return ("PaCT — inscrição confirmada", "A tua inscrição ficou confirmada.\n\n"
                 + summary.Service + "\n" + date + " — " + end + " (hora de Lisboa)\n\n" + summary.Instructions
                 + "\n\nConsulta a tua inscrição na PaCT:\n" + publicWebUrl + "/#agenda");
         var amount = summary.Price is { } price ? price.ToString("0.00", System.Globalization.CultureInfo.GetCultureInfo("pt-PT")) + " €" : summary.PaymentMode == "Contribution" ? "Contribuição livre" : "Valor a combinar";
@@ -93,9 +97,9 @@ internal static class SecurityEmailContent
             ? "Aceitaste as condições e indicaste que vais efetuar o pagamento de seguida. Tens oito horas para o fazer. O recebimento será confirmado pela terapeuta."
             : summary.PaymentMode == "Contribution" ? "Aceitaste as condições. Escolhes a tua contribuição e pagas depois da consulta."
             : "Aceitaste as condições. O pagamento é feito depois da consulta.";
-        return ("PaCT — resumo da inscrição e das condições aceites", "A tua inscrição na consulta de grupo ficou confirmada.\n\n"
+        return ("PaCT — resumo da inscrição e das condições aceites", "A tua inscrição ficou confirmada.\n\n"
             + summary.Service + "\n" + date + " — " + end + " (hora de Lisboa)\n" + summary.Instructions + "\nValor: " + amount
-            + "\n\n" + next + "\nPodes pagar por transferência bancária, MB WAY ou dinheiro combinado com a terapeuta."
+            + "\n\n" + next + "\nForma de pagamento\n- Transferência bancária\n- MB WAY\n- Dinheiro, combinado com a terapeuta."
             + "\nOs meios e as condições que aceitaste estão disponíveis na tua inscrição na PaCT."
             + "\n\n" + publicWebUrl + "/#agenda");
     }
@@ -179,14 +183,14 @@ public sealed class SecurityEmailWorker(IIdentityStore store, ITherapistInvitati
             eligible = await clientAccess.CanSendEmailAsync(job, payload, ct);
         if (payload.Kind == "PasswordChange" && passwords is not null)
             eligible = await passwords.CanSendAsync(job, payload, ct);
-        if (payload.Kind is "GroupAcceptanceSummary" or "GroupConfirmation" && consultations is not null && job.CreatedAt.AddHours(24) > now && job.Id == payload.Token
+        if (payload.Kind is "GroupAcceptanceSummary" or "GroupConfirmation" or "EventCancelled" or "EventParticipationClosed" or "EventReminder24" && consultations is not null && job.CreatedAt.AddHours(24) > now && job.Id == payload.Token
             && account is { Role: Roles.Client, ClosedAt: null, PersonActive: true, LinkStatus: "Verified", EmailConfirmedAt: not null }
             && payload.Recipient == security.Decrypt(account.PersonId, "email", account.EmailCiphertext))
             eligible = await consultations.ReadAsync(data => data.EventNotices.Any(n => n.Id == payload.Token
-                && n.Kind == (payload.Kind == "GroupConfirmation" ? "EventConfirmed" : "EventAcceptanceSummary") && n.PersonId == account.PersonId && !n.Cancelled
-                && data.Participations.Any(p => p.Id == n.ParticipationId && p.PersonId == account.PersonId && p.State == "Confirmed"
-                    && (payload.Kind == "GroupConfirmation" || p.AcceptedAt is not null))
-                && data.Events.Any(e => e.Id == n.EventId && e.State != "Cancelled" && e.ScheduleVersion == n.ScheduleVersion
+                && n.Kind == (payload.Kind == "GroupConfirmation" ? "EventConfirmed" : payload.Kind == "GroupAcceptanceSummary" ? "EventAcceptanceSummary" : payload.Kind) && n.PersonId == account.PersonId && !n.Cancelled
+                && data.Participations.Any(p => p.Id == n.ParticipationId && p.PersonId == account.PersonId && (payload.Kind == "EventCancelled" ? p.State == "Cancelled" : payload.Kind == "EventParticipationClosed" ? p.Attendance is not null : p.State == "Confirmed")
+                    && (payload.Kind != "GroupAcceptanceSummary" || p.AcceptedAt is not null))
+                && data.Events.Any(e => e.Id == n.EventId && (payload.Kind == "EventCancelled" || e.State != "Cancelled") && e.ScheduleVersion == n.ScheduleVersion
                     && (payload.Kind != "GroupConfirmation" || PaCT.Api.Consultations.GroupEvents.IsFree(e.Service)))), ct);
         if (payload.Kind == "PackReminder" && consultations is not null && account is { Role: Roles.Client, ClosedAt: null, PersonActive: true, LinkStatus: "Verified", EmailConfirmedAt: not null }
             && payload.Recipient == security.Decrypt(account.PersonId, "email", account.EmailCiphertext))

@@ -1,15 +1,18 @@
 import AdaptiveSelect from './AdaptiveSelect'
+import { dismissSuccess, showSuccess } from './actionNotices'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { apiRequest } from './identityApi'
+import { readAgendaCalendar } from './agendaCalendarData'
 import ConsultationDialog from './ConsultationDialog'
 import PhoneFields from './PhoneFields'
 import AppIcon from './AppIcon'
 import { agendaClock, dayKey, servicePrice } from './agendaTime'
-import { bookingVariants, bookableSlots, variantKey, validBookingCatalogue } from './clientBookingOptions'
+import { bookingVariants, bookableSlots, variantKey } from './clientBookingOptions'
 import { durationText, readPublicEvent } from './publicAgendaData'
-import { individualRequestNotice } from './bookingRequestNotice'
+import BookingRequestNotice from './BookingRequestNotice'
 import styles from './VisitorAgenda.module.css'
 import useBookingSlot from './useBookingSlot'
+import { ConditionsAcceptanceFields } from './ConsultationConditionsForm'
 
 const signature = choice => JSON.stringify([variantKey(choice), choice.version, choice.modality, choice.publicLocation, choice.durationMinutes, choice.referencePrice, choice.paymentMode])
 const bookingDate = value => new Intl.DateTimeFormat('pt-PT', { timeZone: 'Europe/Lisbon', dateStyle: 'long' }).format(new Date(value))
@@ -30,6 +33,10 @@ export default function GuestBookingForm({ selection, onBack, onSignIn, previewO
     return () => window.clearTimeout(update)
   }, [currentSlot.slot, choices])
   const event = selection.event
+  const requestConditions = selection.eventId ? event?.requestConditions : choices.find(choice => signature(choice) === signature(selected))?.requestConditions || selected?.requestConditions
+  const needsAcceptance = selection.eventId ? !!event?.requestConditions : ['Postpayment', 'Contribution'].includes(selected?.paymentMode)
+  const [acceptedVersion, setAcceptedVersion] = useState(null)
+  const accepted = !!requestConditions?.version && acceptedVersion === requestConditions.version
   const stale = !selection.eventId && !!currentSlot.slot && !choices.some(choice => signature(choice) === signature(selected))
   function chooseType(id) {
     if (id === selected.id) return
@@ -39,7 +46,7 @@ export default function GuestBookingForm({ selection, onBack, onSignIn, previewO
   const modes = [...new Set(choices.filter(choice => choice.id === selected?.id).map(choice => choice.modality))]
   const alternatives = choices.filter(choice => choice.id === selected?.id && choice.modality === selected?.modality)
   const endsAt = selection.endsAt || new Date(Date.parse(selection.startsAt) + selected.durationMinutes * 60000).toISOString()
-  const eventClosed = !!event && (event.state !== 'Scheduled' || event.remaining <= 0 || event.restricted)
+  const eventClosed = !!event && (event.state !== 'Waiting')
   useEffect(() => {
     function leaving(e) { if (dirty.current || pending.current) { e.preventDefault(); e.returnValue = '' } }
     window.addEventListener('beforeunload', leaving)
@@ -49,10 +56,11 @@ export default function GuestBookingForm({ selection, onBack, onSignIn, previewO
     reviewHeading.current?.focus()
     reviewHeading.current?.closest('dialog')?.scrollTo({ top: 0 })
   }, [review, receipt])
-  function choose(choice) { if (choice) { setSelected(choice); setReview(null); setError(''); dirty.current = true } }
+  function choose(choice) { if (choice) { setSelected(choice); setReview(null); setAcceptedVersion(null); setError(''); dirty.current = true } }
   function back() { if (!busy && !checking && !uncertain && (!dirty.current || window.confirm('Queres voltar à agenda e descartar o preenchimento?'))) onBack() }
   async function preview(e) {
     e.preventDefault(); if (checking || busy || uncertain || stale || !selected) return
+    if (needsAcceptance && !accepted) { setError('Abre e aceita as condições e a forma de pagamento antes de rever o pedido.'); return }
     const fields = Object.fromEntries(new FormData(e.currentTarget))
     if (!fields.firstName.trim() || !fields.lastName.trim()) { setError('Preenche o primeiro e o último nome.'); return }
     if (!fields.locality?.trim()) { setError('Preenche a localidade.'); return }
@@ -60,34 +68,39 @@ export default function GuestBookingForm({ selection, onBack, onSignIn, previewO
     try {
       if (selection.eventId) {
         const current = await readPublicEvent(selection.eventId, selected.id, { publicOnly: previewOnly })
-        if (current.state !== 'Scheduled' || current.remaining <= 0 || current.restricted || Date.parse(current.startsAt) !== Date.parse(selection.startsAt) || event && current.version !== event.version)
+        if (current.state !== 'Waiting' || Date.parse(current.startsAt) !== Date.parse(selection.startsAt) || event && current.version !== event.version)
           throw new Error('Esta atividade mudou ou já não permite pedidos. Atualiza a Agenda antes de continuar.')
+        if (needsAcceptance && current.requestConditions?.version !== acceptedVersion) throw new Error('As condições mudaram. Atualiza a Agenda para ler e aceitar as condições atuais.')
       } else {
-        const calendar = await apiRequest('consultations/calendar?month=' + dayKey(selection.startsAt).slice(0, 7), undefined, { publicOnly: previewOnly })
-        if (!validBookingCatalogue(calendar) || !Array.isArray(calendar.intervals) || ![calendar.serverTime, calendar.horizonEndExclusive].every(value => Number.isFinite(Date.parse(value)))) throw new Error('Não foi possível rever as opções. Tenta novamente.')
+        const calendar = await readAgendaCalendar(dayKey(selection.startsAt).slice(0, 7), { publicOnly: previewOnly })
         const latest = bookableSlots(calendar, dayKey(selection.startsAt), bookingVariants(calendar.services)).find(slot => Date.parse(slot.startsAt) === Date.parse(selection.startsAt))
         if (!latest?.choices.some(choice => signature(choice) === signature(selected))) throw new Error('O horário ou as opções mudaram. Atualiza a Agenda antes de continuar. Os teus dados foram mantidos.')
+        if (needsAcceptance && latest.choices.find(choice => signature(choice) === signature(selected))?.requestConditions?.version !== acceptedVersion) {
+          setAcceptedVersion(null); currentSlot.refresh(); throw new Error('As condições mudaram. Lê e aceita as condições atuais antes de continuar.')
+        }
       }
       setReview({ payload: { ...fields, firstName: fields.firstName.trim(), lastName: fields.lastName.trim(), locality: fields.locality.trim(), serviceId: selected.id, startsAt: selection.startsAt,
-        ...(!selection.eventId ? { serviceVersion: selected.version, deliveryOptionId: selected.optionId } : {}) }, selected, endsAt })
+        ...(!selection.eventId ? { serviceVersion: selected.version, deliveryOptionId: selected.optionId } : {}),
+        ...(needsAcceptance && { conditionsAccepted: true, termsVersion: acceptedVersion }) }, selected, endsAt })
     } catch (failure) { setError(failure.message) }
     finally { setChecking(false) }
   }
   async function send(input) {
     if (previewOnly || activeWrite.current || !input) return
-    pending.current = input; activeWrite.current = true; setBusy(true); setError('')
+    dismissSuccess(); pending.current = input; activeWrite.current = true; setBusy(true); setError('')
     try {
       const result = await apiRequest(selection.eventId ? `consultations/events/${selection.eventId}/requests` : 'consultations/guests', input)
-      if (typeof result.id !== 'string' || typeof result.message !== 'string') throw new Error('Não foi possível confirmar o envio. Verifica o resultado antes de continuar.')
+      if (!result.id || typeof result.id !== 'string' || typeof result.message !== 'string') throw new Error('Não foi possível confirmar o envio. Verifica o resultado antes de continuar.')
+      showSuccess(result.message, input.operationId)
       pending.current = null; dirty.current = false; setUncertain(false); setReceipt(result)
     } catch (failure) {
       if (failure.status && failure.status < 500) { pending.current = null; setUncertain(false); setReview(null) } else setUncertain(true)
       setError(failure.message)
     } finally { activeWrite.current = false; setBusy(false) }
   }
-  return <ConsultationDialog compact label="O teu pedido" className={styles.dialog} disabled={busy || checking || uncertain} onClose={back}>
-    <section data-guest-request={receipt ? undefined : 'true'} data-pending-command={busy || checking || uncertain ? 'true' : undefined}><h2 ref={reviewHeading} tabIndex="-1">{receipt ? 'Pedido recebido' : review ? 'Resumo do pedido' : 'O teu pedido'}</h2>
-      {receipt ? <><p role="status">{receipt.message}</p><button type="button" onClick={onBack}>Voltar à agenda</button></> : <>
+  return <ConsultationDialog title={receipt ? 'Pedido recebido' : review ? 'Resumo do pedido' : 'O teu pedido'} titleRef={reviewHeading} label="O teu pedido" disabled={busy || checking || uncertain} onClose={back}>
+    <section data-guest-request={receipt ? undefined : 'true'} data-pending-command={busy || checking || uncertain ? 'true' : undefined}>
+      {receipt ? <button type="button" onClick={onBack}>Voltar à agenda</button> : <>
         {(error || currentSlot.error) && <p className="notice error" role="alert">{error || currentSlot.error}</p>}
         {stale && <div className="notice"><p>As opções deste horário mudaram. Os teus dados foram mantidos.</p>{choices.length > 0 && <button type="button" onClick={() => choose(choices[0])}>Rever opções atuais</button>}</div>}
         {previewOnly && <p className="notice" role="status">Pré-visualização de visitante. Os pedidos não são enviados.</p>}
@@ -96,18 +109,19 @@ export default function GuestBookingForm({ selection, onBack, onSignIn, previewO
             {!selection.eventId && <p className={styles.date}><AppIcon name="calendar" />{bookingDate(selection.startsAt)}</p>}
             <label>Tipo de consulta<AdaptiveSelect aria-label="Tipo de consulta do pedido" value={selected.id} disabled={!!selection.eventId || new Set(choices.map(choice => choice.id)).size <= 1} onChange={e => chooseType(e.target.value)}>{!choices.some(choice => choice.id === selected.id) && <option value={selected.id}>{selected.title}</option>}{[...new Map(choices.map(service => [service.id, service])).values()].map(service => <option key={service.id} value={service.id}>{service.title}</option>)}</AdaptiveSelect></label>
             <label>Modalidade<AdaptiveSelect aria-label="Modalidade do pedido" value={selected.modality} disabled={modes.length <= 1} onChange={e => choose(choices.find(choice => choice.id === selected.id && choice.modality === e.target.value))}>{[...new Set([...modes, selected.modality])].map(mode => <option key={mode} value={mode}>{mode === 'Remote' ? 'Remota' : 'Presencial'}</option>)}</AdaptiveSelect></label>
-            {selected.modality === 'InPerson' && <><label>Local<AdaptiveSelect aria-label="Local do pedido" value={variantKey(selected)} disabled={alternatives.length <= 1} onChange={e => choose(alternatives.find(choice => variantKey(choice) === e.target.value))}>{!alternatives.some(choice => variantKey(choice) === variantKey(selected)) && <option value={variantKey(selected)}>{selected.publicLocation}</option>}{alternatives.map(choice => <option key={variantKey(choice)} value={variantKey(choice)}>{choice.publicLocation}{alternatives.filter(other => other.publicLocation === choice.publicLocation).length > 1 ? ` · ${durationText(choice.durationMinutes)} · ${servicePrice(choice)}` : ''}</option>)}</AdaptiveSelect></label><p className={styles.help}>A morada completa é disponibilizada após confirmação.</p></>}
+            {selected.modality === 'InPerson' && <><label>Local<AdaptiveSelect aria-label="Local do pedido" value={variantKey(selected)} disabled={alternatives.length <= 1} onChange={e => choose(alternatives.find(choice => variantKey(choice) === e.target.value))}>{!alternatives.some(choice => variantKey(choice) === variantKey(selected)) && <option value={variantKey(selected)}>{selected.publicLocation}</option>}{alternatives.map(choice => <option key={variantKey(choice)} value={variantKey(choice)}>{choice.publicLocation}</option>)}</AdaptiveSelect></label><p className={styles.help}>A morada completa é disponibilizada após confirmação.</p></>}
             <div className={styles.times}><AppIcon name="clock" /><div>{selection.eventId && <p>Data: <strong>{bookingDates(selection.startsAt, endsAt)}</strong></p>}<p>Início previsto: <strong>{agendaClock(selection.startsAt)}</strong></p><p>Fim previsto: <strong>{agendaClock(endsAt)}</strong></p><p>Duração prevista: <strong>{durationText(selected.durationMinutes)}</strong></p><p className={styles.price}>{servicePrice(selected)}</p></div></div>
             {event?.program && <section><h3>Programa</h3><p className={styles.eventText}>{event.program}</p></section>}
             {event?.kind === 'Retreat' && <section><h3>Pagamento</h3><p>Pagamento integral.</p></section>}
             {event?.cancellationConditions && <section><h3>Condições de cancelamento</h3><p className={styles.eventText}>{event.cancellationConditions}</p></section>}
             {onSignIn && <div className={styles.signIn}><p>Já tens conta? Inicia sessão para que o pedido fique associado à tua conta.</p><button type="button" className="secondary" onClick={onSignIn}>Iniciar sessão</button></div>}
             <fieldset className={styles.identity}><legend>A tua identificação</legend><div className={styles.names}><label>Primeiro nome<input name="firstName" required maxLength="100" autoComplete="given-name" /></label><label>Último nome<input name="lastName" required maxLength="100" autoComplete="family-name" /></label></div><label>Localidade<input name="locality" required maxLength="150" autoComplete="address-level2" /></label><div className={styles.phone}><PhoneFields required codeFirst /></div><label>Email (opcional)<input name="email" type="email" maxLength="256" autoComplete="email" /></label><p className={styles.help}>As comunicações são feitas manualmente pela terapeuta.</p></fieldset>
-            <p className={styles.policy} role="note" aria-label="O que acontece a seguir">{selection.eventId ? 'Enviar o pedido não confirma a inscrição: a participação precisa de ser aprovada pela terapeuta. ' + (selected.paymentMode === 'Free' ? 'A participação nesta atividade é gratuita.' : 'Após aprovação, a terapeuta combina contigo as condições e o pagamento.') : individualRequestNotice(selected.paymentMode, { visitor: true })}</p>
+            <BookingRequestNotice className={styles.policy} paymentMode={selected.paymentMode} visitor steps={selection.eventId ? [event?.remaining === 0 ? 'Este evento está lotado. O pedido entra na fila de desistências por data e hora. A terapeuta confirma a entrada; não pagues enquanto aguardas.' : 'Enviar o pedido não confirma a inscrição: a participação precisa de ser aprovada pela terapeuta.', selected.paymentMode === 'Free' ? 'A participação nesta atividade é gratuita.' : needsAcceptance ? 'Lê e aceita as condições abaixo. A terapeuta combina contigo o pagamento depois de confirmar a entrada.' : 'Após aprovação, a terapeuta combina contigo as condições e o pagamento.'] : undefined} />
+            {needsAcceptance && (requestConditions ? <ConditionsAcceptanceFields conditions={requestConditions} disabled={busy || checking || uncertain} accepted={accepted} onChange={value => setAcceptedVersion(value ? requestConditions.version : null)} /> : <p role="status">A consultar as condições da consulta…</p>)}
             <button disabled={stale}>{checking ? 'A rever o pedido…' : 'Ver resumo do pedido'}</button>
           </fieldset>
         </form>
-        {eventClosed && <p className={styles.closed}>{event.state !== 'Scheduled' ? 'Esta atividade já não permite inscrições.' : event.restricted ? 'Esta inscrição exige contacto direto com a terapeuta.' : 'As inscrições estão completas.'}</p>}
+        {eventClosed && <p className={styles.closed}>Esta atividade já não permite inscrições.</p>}
         {review && <section className={styles.review} aria-label="Resumo do pedido">
           <dl>
             <dt>Consulta ou atividade</dt><dd>{review.selected.title}</dd>

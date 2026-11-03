@@ -1,6 +1,7 @@
 import { useLayoutEffect, useRef } from 'react'
 import PwaStatus from './PwaStatus'
 import ContentFreshness from './ContentFreshness'
+import FloatingNotices from './FloatingNotices'
 import SubmittedForms from './SubmittedForms'
 import styles from './AppFrame.module.css'
 
@@ -22,6 +23,7 @@ export default function AppFrame({ children }) {
   }, [])
 
   return <div ref={frame} className={styles.frame}>
+    <FloatingNotices />
     <ContentFreshness />
     <SubmittedForms />
     <div ref={notices} className={styles.notices}><PwaStatus /></div>

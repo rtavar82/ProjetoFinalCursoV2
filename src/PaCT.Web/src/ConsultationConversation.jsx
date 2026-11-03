@@ -1,5 +1,6 @@
 import { useCallback, useRef, useState } from 'react'
 import { apiRequest, uploadConversationPhoto } from './identityApi'
+import { announceOperation, dismissSuccess } from './actionNotices'
 import useLiveResource from './useLiveResource'
 import useEditorState from './useEditorState'
 import InformationCard from './InformationCard'
@@ -13,22 +14,21 @@ function mergeMessages(...pages) {
   return [...messages.values()].sort((a, b) => a.sequence - b.sequence)
 }
 
-export default function ConsultationConversation({ id, manager = false }) {
+export default function ConsultationConversation({ id, manager = false, onMessagesPresented }) {
   const [before, setBefore] = useState(null)
   const [history, setHistory] = useState([])
   const [busy, setBusy] = useState(false)
   const [uncertain, setUncertain] = useState(false)
   const [error, setError] = useState('')
-  const [notice, setNotice] = useState('')
   const pending = useRef(null)
   const read = useCallback(async signal => {
     const page = await apiRequest(`consultations/${id}/messages`, undefined, { signal })
-    setHistory(previous => mergeMessages(previous, page.items)); return page
-  }, [id])
+    setHistory(previous => mergeMessages(previous, page.items)); onMessagesPresented?.(page.items); return page
+  }, [id, onMessagesPresented])
   const readOlder = useCallback(async signal => {
     const page = await apiRequest(`consultations/${id}/messages?before=${before}`, undefined, { signal })
-    setHistory(previous => mergeMessages(previous, page.items)); return page
-  }, [id, before])
+    setHistory(previous => mergeMessages(previous, page.items)); onMessagesPresented?.(page.items); return page
+  }, [id, before, onMessagesPresented])
   const conversation = useLiveResource('consultationMessages', `messages:${id}:latest`, read)
   const older = useLiveResource('consultationMessages', `messages:${id}:${before}`, readOlder, !!before)
   const value = conversation.data
@@ -41,20 +41,19 @@ export default function ConsultationConversation({ id, manager = false }) {
     if (pending.current && !retry) return
     const input = retry ? pending.current : { ...command, id, operationId: crypto.randomUUID() }
     if (!input) return
-    pending.current = input; setBusy(true); setError(''); setNotice('')
+    dismissSuccess(); pending.current = input; setBusy(true); setError('')
     try {
       const result = await apiRequest('consultations/commands', input)
       if (result.id !== id) throw new Error('Não foi possível confirmar esta operação.')
-      if (input.action === 'ReadMessages') setHistory(previous => previous.map(message => input.messageIds.includes(message.id) ? { ...message, unread: false } : message))
-      pending.current = null; setUncertain(false); setNotice(result.message)
+      pending.current = null; setUncertain(false); announceOperation(input, result)
     }
     catch (failure) { setError(failure.message); if (failure.status && failure.status < 500) { pending.current = null; setUncertain(false); conversation.refresh() } else setUncertain(true) }
     finally { setBusy(false) }
   }
-  const unread = messages.filter(message => message.unread).slice(0, 20).map(message => message.id)
-  return <section className={styles.conversation} aria-label="Conversa de acompanhamento" data-pending-command={busy || uncertain ? 'true' : undefined}>
+  const unread = messages.filter(message => message.unread)
+  return <section id={'acompanhamento-' + id} className={styles.conversation} aria-label="Conversa de acompanhamento" data-pending-command={busy || uncertain ? 'true' : undefined}>
     <h3>Conversa de acompanhamento</h3>
-    {error && <p role="alert" className="notice error">{error}</p>}{notice && <p role="status">{notice}</p>}
+    {error && <p role="alert" className="notice error">{error}</p>}
     {uncertain && <button type="button" disabled={busy} onClick={() => decide(null, true)}>Verificar resultado</button>}
     {(!value || conversation.error || value.blocked || messages.length > 0) && <InformationCard cardId={'conversation:' + id} loading={conversation.loading} error={conversation.error} onRetry={conversation.refresh}>
       {value && <>{value.blocked && <p role="status">A conversa está encerrada para novas mensagens.</p>}
@@ -68,7 +67,6 @@ export default function ConsultationConversation({ id, manager = false }) {
           {message.text && <p className={styles.text}>{message.text}</p>}
           <small className={styles.author}>{message.author} · <time dateTime={message.createdAt}>{agendaDate(message.createdAt)}</time>{message.unread && <span> · Por ler</span>}</small>
         </li>)}</ol>
-        {!manager && unread.length > 0 && <button type="button" className="secondary" disabled={busy || uncertain} onClick={() => decide({ action: 'ReadMessages', messageIds: unread })}>Marcar estas mensagens como lidas</button>}
         {value.unread > unread.length && <p>Existem mais mensagens por ler.</p>}
       </>}
     </InformationCard>}
@@ -91,7 +89,7 @@ function MessageForm({ id, value, manager, disabled, onConfirmed }) {
   async function send(retry = false) {
     if (busy || disabled) return
     if (editor.fields.pending && !retry) return
-    setBusy(true); setError('')
+    dismissSuccess(); setBusy(true); setError('')
     try {
       const current = await editor.ready()
       const command = retry ? current.fields.pending : { action: 'SendMessage', id, conversationVersion: value.conversationVersion, messageText: current.fields.text, photoIds: current.fields.photoIds, operationId: crypto.randomUUID() }
@@ -102,6 +100,7 @@ function MessageForm({ id, value, manager, disabled, onConfirmed }) {
       }
       const result = await apiRequest('consultations/commands', command)
       if (result.id !== command.operationId) throw new Error('Não foi possível confirmar o envio desta mensagem. O texto foi mantido neste formulário.')
+      announceOperation(command, result)
       onConfirmed()
     } catch (failure) {
       setError(failure.message)

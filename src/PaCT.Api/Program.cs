@@ -13,6 +13,8 @@ public partial class Program
 {
     public static async Task Main(string[] args)
     {
+        var auditEvents = args.Contains("--audit-event-rules", StringComparer.Ordinal);
+        var prepareEvents = args.Contains("--prepare-event-rules", StringComparer.Ordinal);
         const string prepareOption = "--prepare-installation";
         const string auditFinanceOption = "--audit-financial-rules";
         const string prepareFinanceOption = "--prepare-financial-rules";
@@ -46,7 +48,7 @@ public partial class Program
         var prepareInvitations = args.Contains(prepareInvitationsOption, StringComparer.Ordinal);
         var prepareClients = args.Contains(prepareClientsOption, StringComparer.Ordinal);
         var builder = WebApplication.CreateBuilder(args
-            .Where(argument => argument != auditFinanceOption && argument != prepareFinanceOption && argument != prepareOption && argument != showCodeOption && argument != prepareInvitationsOption && argument != prepareClientsOption && argument != prepareConsultationsOption && argument != preparePasskeysOption && argument != resetManagerFactorsOption && argument != prepareClientAccessOption && argument != prepareAccountLoginOption && argument != configureCatalogueOption && argument != prepareTestimonialsOption && argument != auditProcessStagesOption && argument != prepareProcessStagesOption && argument != prepareRequestRecoveryOption)
+            .Where(argument => argument != "--audit-event-rules" && argument != "--prepare-event-rules" && argument != auditFinanceOption && argument != prepareFinanceOption && argument != prepareOption && argument != showCodeOption && argument != prepareInvitationsOption && argument != prepareClientsOption && argument != prepareConsultationsOption && argument != preparePasskeysOption && argument != resetManagerFactorsOption && argument != prepareClientAccessOption && argument != prepareAccountLoginOption && argument != configureCatalogueOption && argument != prepareTestimonialsOption && argument != auditProcessStagesOption && argument != prepareProcessStagesOption && argument != prepareRequestRecoveryOption)
             .ToArray());
 
         builder.Services.AddSingleton(services =>
@@ -69,13 +71,15 @@ public partial class Program
         var app = builder.Build();
         var database = app.Services.GetRequiredService<DatabaseConnectionSettings>();
 
-        if (auditFinance || prepareFinance || prepare || showCode || prepareInvitations || prepareClients || prepareConsultations || preparePasskeys || resetManagerFactors || prepareClientAccess || prepareAccountLogin || configureCatalogue || prepareTestimonials || auditProcessStages || prepareProcessStages || prepareRequestRecovery)
+        if (auditEvents || prepareEvents || auditFinance || prepareFinance || prepare || showCode || prepareInvitations || prepareClients || prepareConsultations || preparePasskeys || resetManagerFactors || prepareClientAccess || prepareAccountLogin || configureCatalogue || prepareTestimonials || auditProcessStages || prepareProcessStages || prepareRequestRecovery)
         {
             try
             {
-                if (new[] { auditFinance, prepareFinance, prepare, showCode, prepareInvitations, prepareClients, prepareConsultations, preparePasskeys, resetManagerFactors, prepareClientAccess, prepareAccountLogin, configureCatalogue, prepareTestimonials, auditProcessStages, prepareProcessStages, prepareRequestRecovery }.Count(value => value) != 1) throw new InvalidOperationException("Use one installation command at a time.");
+                if (new[] { auditEvents, prepareEvents, auditFinance, prepareFinance, prepare, showCode, prepareInvitations, prepareClients, prepareConsultations, preparePasskeys, resetManagerFactors, prepareClientAccess, prepareAccountLogin, configureCatalogue, prepareTestimonials, auditProcessStages, prepareProcessStages, prepareRequestRecovery }.Count(value => value) != 1) throw new InvalidOperationException("Use one installation command at a time.");
                 var secrets = app.Services.GetRequiredService<InstallationSecrets>();
-                if (auditFinance || prepareFinance)
+                if (auditEvents || prepareEvents)
+                    Console.WriteLine(JsonSerializer.Serialize(await EventRulesPreparation.RunAsync(database, prepareEvents, app.Services.GetRequiredService<InstallationPaths>(), app.Services.GetRequiredService<IDataProtectionProvider>(), CancellationToken.None)));
+                else if (auditFinance || prepareFinance)
                     Console.WriteLine(JsonSerializer.Serialize(await FinancialPreparation.RunAsync(database, prepareFinance, app.Services.GetRequiredService<InstallationPaths>(), app.Services.GetRequiredService<IDataProtectionProvider>(), CancellationToken.None)));
                 else if (prepareRequestRecovery)
                 {

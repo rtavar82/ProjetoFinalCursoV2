@@ -9,7 +9,7 @@ import styles from './Testimonials.module.css'
 export function TestimonialViewer({ item, onClose, imageUrl = item.imageUrl }) {
   const [returnFocus] = useState(() => document.activeElement)
   useEffect(() => () => { if (returnFocus?.isConnected) returnFocus.focus({ preventScroll: true }) }, [returnFocus])
-  return <ConsultationDialog compact className={styles.viewer} label="Testemunho" onClose={onClose}>
+  return <ConsultationDialog title="Testemunho" className={styles.viewer} label="Testemunho" onClose={onClose}>
     <h2>Testemunho</h2>
     {imageUrl && <img src={imageUrl} alt="Imagem da publicação" />}
     {item.text && <p className={styles.fullText}>{item.text}</p>}

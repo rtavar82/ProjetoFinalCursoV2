@@ -1,3 +1,5 @@
+using PaCT.Api.Identity;
+
 namespace PaCT.Api.Consultations;
 
 public sealed record ConditionSection(string Title, string[] Paragraphs, string[] Bullets);
@@ -9,10 +11,24 @@ public sealed record ConsultationConditionSet(string Version, string Mode, strin
 
 public static class ConsultationConditions
 {
+    public static bool AcceptAtRequest(string mode) => mode is "Postpayment" or "Contribution";
+    public static string VersionForMode(string mode) => mode == "Prepayment" ? ConsultationRules.TermsVersion : ConsultationRules.TermsVersion + ":" + mode;
+    public static ConsultationConditionSet? ForRequest(ConsultationService service) => service.ServiceKind is null && AcceptAtRequest(service.PaymentMode)
+        ? DescribeMode(service.PaymentMode, VersionForMode(service.PaymentMode)) : null;
+    public static void ValidateRequest(ConsultationService service, bool accepted, string? version)
+    {
+        var conditions = ForRequest(service);
+        if (conditions is not null && (!accepted || version != conditions.Version))
+            throw new IdentityProblem(400, "Abre e aceita as condições e a forma de pagamento antes de enviar o pedido.");
+        if (conditions is null && (accepted || version is not null))
+            throw new IdentityProblem(400, "A aceitação destas condições não pertence ao pedido de marcação.");
+    }
     public static string Mode(Consultation c) => c.FinancialChoice == "Prepayment" && c.AdvanceSatisfiedAt is not null
         ? "Credit" : c.FinancialChoice ?? c.Service.PaymentMode;
-    public static string Version(Consultation c) => Mode(c) == "Prepayment" ? ConsultationRules.TermsVersion : ConsultationRules.TermsVersion + ":" + Mode(c);
-    public static bool Pending(Consultation c, DateTimeOffset now) => c.AcceptedAt is null && ProcessLifecycle.Substate(c, now) == "Confirmed";
+    public static string Version(Consultation c) => VersionForMode(Mode(c));
+    public static bool HasClientAccount(ConsultationData data, string personId) => data.ClientAccountPeople.Contains(personId)
+        || data.ClientReadOwners.Values.Contains(personId, StringComparer.Ordinal);
+    public static bool Pending(Consultation c, DateTimeOffset now) => c.RequiresClientAcceptance && c.AcceptedAt is null && ProcessLifecycle.Substate(c, now) == "Confirmed";
     public static ConsultationConditionSet Describe(Consultation c)
     {
         var mode = Mode(c);
@@ -22,14 +38,15 @@ public static class ConsultationConditions
     {
         var payable = mode is "Prepayment" or "Postpayment" or "Contribution";
         var label = mode switch { "Prepayment" => "Pagamento antecipado", "Postpayment" => "Pagamento depois da consulta",
-            "Contribution" => "Contribuição livre, paga depois da consulta", "Credit" => "Crédito disponível na conta", _ => "Sem pagamento" };
+            "Contribution" => "Contribuição livre, paga depois da consulta", "Credit" => "Crédito disponível na conta",
+            "Gift" => "Oferta do pagamento", _ => "Sem pagamento necessário" };
         string[] paragraphs = mode switch
         {
             "Prepayment" => [],
             "Contribution" => [PublicPresentationContent.ContributionDescription, PublicPresentationContent.ContributionTiming],
             "Postpayment" => ["O pagamento é feito depois da consulta."],
             "Gift" => ["Esta consulta foi oferecida pela terapeuta. Não tens pagamento a efetuar por esta consulta."],
-            "Credit" => ["O crédito confirmado na tua conta dispensa um novo pagamento antecipado. O saldo não é descontado ao aceitares estas condições; a utilização do crédito é tratada no fecho ou depois da consulta."],
+            "Credit" => ["Os valores recebidos ficam em crédito na tua conta. Aceitar as condições não desconta saldo. O pagamento desta marcação exige uma liquidação confirmada, consultável no histórico de pagamentos."],
             _ => ["Esta consulta é gratuita. Não tens pagamento a efetuar por esta consulta."]
         };
         var sections = new List<ConditionSection> {

@@ -32,7 +32,7 @@ export default function useEditorState(initialFields, version) {
     const previous = current.current
     update({ fields: { ...previous.fields, photoIds: (previous.fields.photoIds || []).filter((_, i) => i !== index) }, files: previous.files.filter((_, i) => i !== index) })
   }
-  function reset() { update({ fields: { ...initial.current }, files: [] }); setBaseVersion(version) }
+  function reset(nextVersion = version, fields = initial.current) { update({ fields: { ...fields }, files: [] }); setBaseVersion(nextVersion) }
   return { ...state, change, addPhotos, removePhoto, reset, ready: async () => { await photoJob.current; return current.current },
     conflict: baseVersion !== version, acceptCurrentVersion: () => setBaseVersion(version) }
 }

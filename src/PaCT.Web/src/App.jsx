@@ -17,6 +17,7 @@ import PublicTestimonials from './PublicTestimonials'
 import PublicPromotions from './PublicPromotions'
 import { publicRoute } from './publicPresentationData'
 import { cancelSubmittedWrites } from './submittedWrites'
+import { dismissSuccess, showSuccess } from './actionNotices'
 
 function readLink() {
   const parameters = new URLSearchParams(window.location.hash.slice(1))
@@ -103,7 +104,7 @@ export default function App() {
         return
       }
       try {
-        try { const me = await request('me'); if (current) { setProfile(me); setStage('SignedIn'); if (googleResult === 'Linked') setMessage('Conta Google associada.') } }
+        try { const me = await request('me'); if (current) { setProfile(me); setStage('SignedIn'); if (googleResult === 'Linked') showSuccess('Conta Google associada.') } }
         catch (failure) { if (failure.status !== 401) throw failure; const progress = await request('progress'); if (current) setStage(progress.stage) }
       } catch (failure) { if (current) { setError(failure.message); setStage('SignIn') } }
     }
@@ -116,6 +117,7 @@ export default function App() {
   async function perform(action) {
     if (busyRef.current) return
     busyRef.current = true
+    dismissSuccess()
     setBusy(true); setError(''); setMessage('')
     try { await action() }
     catch (failure) {
@@ -171,7 +173,7 @@ export default function App() {
   const step = ['Register', 'Invitation'].includes(stage) ? 1 : ['EmailLink', 'ConfirmEmail', 'EmailConfirmed'].includes(stage) ? 2
     : ['ConfigureAuthenticator', 'VerifyFactor', 'RecoveryCodes', 'VerifyPasskey'].includes(stage) ? 3 : stage === 'SignedIn' ? 4 : 0
 
-  function notify(text, failure = false) { setError(failure ? text : ''); setMessage(failure ? '' : text) }
+  function notify(text, failure = false) { setError(failure ? text : ''); setMessage(''); if (!failure) showSuccess(text) }
   function navigatePublic(next, serviceId = '') {
     if (document.querySelector('[data-pending-command="true"]')) return
     if ((guestSelection || document.querySelector('[data-guest-request="true"]')) && !window.confirm('Queres sair e descartar o preenchimento do pedido?')) return
@@ -183,10 +185,10 @@ export default function App() {
   if (stage === 'SignedIn' && profile) return <Workspace profile={profile} busy={busy} perform={perform} notify={notify} error={error} message={message} errorRef={errorRef}
     onPublicTestimonials={() => navigatePublic('PublicTestimonials')}
     onSignOut={() => perform(async () => { await request('sign-out', {}); setProfile(null); setRecoveryCodes([]); setStage('SignIn') })}
-    onForgetBrowser={() => perform(async () => { const result = await request('forget-browser', {}); setMessage(result.message) })}
+    onForgetBrowser={() => perform(async () => { const result = await request('forget-browser', {}); notify(result.message) })}
     onPasskeyUpdated={() => showStage('SignedIn')}
-    onSecuritySignedOut={text => { setProfile(null); setError(''); setMessage(text); setStage('SignIn') }}
-    onAccountClosed={text => { setProfile(null); setError(''); setMessage(text); setStage('SignIn') }} />
+    onSecuritySignedOut={text => { setProfile(null); notify(text); setStage('SignIn') }}
+    onAccountClosed={text => { setProfile(null); notify(text); setStage('SignIn') }} />
 
   if (['PublicHome', 'PublicTherapist', 'PublicTestimonials', 'PublicPromotions', 'PublicAgenda'].includes(stage)) return <PublicPresentation page={stage} onNavigate={navigatePublic} profile={profile} onAccount={() => { window.history.pushState(null, '', '#inicio'); setStage('SignedIn') }}>
     {stage === 'PublicPromotions' && <PublicPromotions onAgenda={serviceId => navigatePublic('PublicAgenda', serviceId)} />}

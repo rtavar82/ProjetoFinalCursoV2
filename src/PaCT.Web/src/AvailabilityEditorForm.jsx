@@ -1,10 +1,10 @@
+import DateRangeFields from './DateRangeFields'
 import AdaptiveSelect from './AdaptiveSelect'
 import { useRef, useState } from 'react'
 import { apiRequest } from './identityApi'
-import { addDays, agendaDate, dayKey, instant } from './agendaTime'
+import { addDays, agendaDate, dayKey, instant, rollingPeriod } from './agendaTime'
 import { bookingVariants } from './clientBookingOptions'
 import { EventEditor } from './GroupEventsPanel'
-import useClientOptions from './useClientOptions'
 import styles from './ManagerScheduling.module.css'
 
 const weekday = day => new Date(day + 'T12:00:00Z').getUTCDay()
@@ -33,15 +33,12 @@ export default function AvailabilityEditorForm({ setup, disabled, publish, refre
   const modes = [...new Set(variants.map(v => v.modality))]
   const places = [...new Set(variants.filter(v => v.modality === 'InPerson' && (!mode || mode === v.modality)).map(v => v.publicLocation).filter(Boolean))]
   const freeFields = available && serviceId && !event ? [!mode && 'a modalidade', mode !== 'Remote' && !place && 'o local'].filter(Boolean) : []
-  const people = useClientOptions(event)
   function changeDates(next) { setDates(next); const values = daysBetween(next.from, next.to).filter(day => day >= today); setSelected(values.length === 1 ? values : weekdays(values)); setScope(''); setError('') }
   function preset(value) {
     if (!dates.from) return
-    let from = dates.from < today ? today : dates.from, to = from
-    if (value === 'Week') { from = addDays(from, -((weekday(from) + 6) % 7)); to = addDays(from, 6) }
-    if (value === 'Month') to = addDays(from, 29)
-    if (from < today) from = today
-    changeDates({ from, to }); setScope(value)
+    const from = dates.from < today ? today : dates.from
+    const range = rollingPeriod(value, from)
+    changeDates({ from: range.from, to: addDays(range.to, -1) }); setScope(value)
   }
   function chooseService(value) { setServiceId(value); setMode(''); setPlace(''); setClientChoicesConfirmed(false) }
   function payload() {
@@ -77,17 +74,17 @@ export default function AvailabilityEditorForm({ setup, disabled, publish, refre
   }
   let eventSeed = null
   if (event && dates.from) {
-    try { const startsAt = instant(dates.from + 'T' + first); eventSeed = { definition: { serviceId, startsAt, endsAt: service.definedPerEvent ? undefined : new Date(Date.parse(startsAt) + service.durationMinutes * 60000).toISOString(), publicLocation: service.publicLocation, capacity: 1, published: false } } } catch { /* The event editor retains its own date validation. */ }
+    try { const startsAt = instant(dates.from + 'T' + first); eventSeed = { definition: { serviceId, startsAt, endsAt: startsAt, publicLocation: service.publicLocation, capacity: 1, published: false } } } catch { /* The event editor retains its own date validation. */ }
   }
   return <div data-card-id="availability-editor-form"><p className={styles.intro}>Escolhe as datas e revê as alterações antes de publicar. As marcações existentes são mantidas.</p>
     {feedback}{error && <p role="alert" className="notice error">{error}</p>}
     {!review && <form data-protect-draft onSubmit={e => e.preventDefault()}><fieldset disabled={disabled || reviewing} className={styles.fields}>
-      <div className={styles.pair}><label>Data inicial<input type="date" required min={today} value={dates.from} onChange={e => changeDates({ ...dates, from: e.target.value })} /></label><label>Data final<input type="date" required min={dates.from || today} value={dates.to} onChange={e => changeDates({ ...dates, to: e.target.value })} /></label></div>
+      <div className={styles.pair}><DateRangeFields type="date" startLabel="Data inicial" endLabel="Data final" required min={today} value={{ start: dates.from, end: dates.to }} onChange={next => changeDates({ from: next.start, to: next.end })} /></div>
       <nav className={styles.quick} aria-label="Seleção rápida do período">{[['Day', 'Dia'], ['Week', 'Semana'], ['Month', 'Mês']].map(([key, label]) => <button key={key} type="button" className="secondary" aria-pressed={scope === key} onClick={() => preset(key)}>{label}</button>)}</nav>
       <label>Disponibilidade<AdaptiveSelect aria-label="Disponibilidade" value={String(available)} onChange={e => setAvailable(e.target.value === 'true')}><option value="true">Aberta para agendamento</option><option value="false">Indisponível</option></AdaptiveSelect></label>
       {available && <label>Tipo de consulta / evento<AdaptiveSelect aria-label="Tipo de consulta / evento" value={serviceId} onChange={e => chooseService(e.target.value)}><option value="">Livre — consulta escolhida pelo cliente</option>{setup.services.filter(s => s.active !== false).map(s => <option value={s.id} key={s.id}>{s.title}</option>)}</AdaptiveSelect></label>}
     </fieldset></form>}
-    {event ? <EventEditor fixedService key={serviceId} event={eventSeed || { definition: { serviceId } }} setup={{ data: setup }} people={people} disabled={disabled || reviewing} send={input => publish(input, onSaved)} onBack={onBack} /> : <form data-protect-draft onSubmit={preview}>
+    {event ? <EventEditor fixedService key={serviceId} event={eventSeed || { definition: { serviceId } }} setup={{ data: setup }} dates={dates} disabled={disabled || reviewing} send={input => publish(input, onSaved)} onBack={onBack} /> : <form data-protect-draft onSubmit={preview}>
       {!review ? <fieldset className={styles.fields} disabled={disabled || reviewing}>
         <fieldset className={styles.days}><legend>Dias a alterar</legend><div className={styles.dayChoices}>{days.map(day => <label key={day}><input type="checkbox" checked={selected.includes(day)} disabled={day < today} onChange={e => setSelected(e.target.checked ? [...selected, day] : selected.filter(value => value !== day))} />{labelDay(day)}</label>)}</div>
           {days.length > 1 && <div className={styles.dayTools}><button type="button" className="text-button" onClick={() => setSelected(weekdays(days.filter(day => day >= today)))}>Segunda a sexta</button><button type="button" className="text-button" onClick={() => setSelected(days.filter(day => day >= today))}>Todos os dias</button><button type="button" className="text-button" onClick={() => setSelected([])}>Limpar seleção</button></div>}
@@ -97,7 +94,7 @@ export default function AvailabilityEditorForm({ setup, disabled, publish, refre
           <p className={styles.help}>{wholeDays ? available ? 'Nos dias escolhidos, fica só o horário indicado abaixo. As outras horas deixam de aceitar pedidos.' : 'Fecha os dias escolhidos para novos pedidos.' : available ? 'Altera apenas as horas indicadas abaixo. As outras horas mantêm-se.' : 'Fecha apenas as horas indicadas abaixo. As outras horas mantêm-se.'}</p>
           <p className={styles.help}>Os horários com marcações mantêm-se.</p>
         </section>
-        {(available || !wholeDays) && <div className={styles.pair}><label>{available ? 'Primeiro início' : 'Bloquear das'}<input type="time" step="60" required value={first} onChange={e => setFirst(e.target.value)} /></label><label>{available ? 'Último início permitido' : 'Bloquear até'}<input type="time" step="60" required value={last} onChange={e => setLast(e.target.value)} /></label></div>}
+        {(available || !wholeDays) && <div className={styles.pair}><DateRangeFields type="time" startLabel={available ? 'Primeiro início' : 'Bloquear das'} endLabel={available ? 'Último início permitido' : 'Bloquear até'} required exclusive={!available} value={{ start: first, end: last }} onChange={next => { setFirst(next.start); setLast(next.end) }} /></div>}
         {available && <><div className={styles.pair}><label>Visibilidade<AdaptiveSelect aria-label="Visibilidade" value={audience} onChange={e => setAudience(e.target.value)}><option value="All">Visitantes e registados</option><option value="Registered">Só registados</option></AdaptiveSelect></label><label>Modalidade<AdaptiveSelect aria-label="Modalidade" value={mode} onChange={e => { setMode(e.target.value); setPlace(''); setClientChoicesConfirmed(false) }}><option value="">Livre — escolhida pelo cliente</option>{modes.map(value => <option value={value} key={value}>{value === 'Remote' ? 'Remota' : 'Presencial'}</option>)}</AdaptiveSelect></label></div>
           {mode !== 'Remote' && <div className={styles.pair}><label>Local<AdaptiveSelect aria-label="Local" value={place} onChange={e => { setPlace(e.target.value); setClientChoicesConfirmed(false) }}><option value="">Livre — escolhido pelo cliente</option>{places.map(value => <option key={value}>{value}</option>)}</AdaptiveSelect></label></div>}
           {freeFields.length > 0 && <section className="notice" aria-label="Campos à escolha do cliente"><p>Falta definir {freeFields.join(' e ')}. Podes deixar esses campos à escolha do cliente.</p><label className="checkbox"><input type="checkbox" checked={clientChoicesConfirmed} onChange={e => setClientChoicesConfirmed(e.target.checked)} />Confirmo que os campos livres ficam à escolha do cliente.</label></section>}

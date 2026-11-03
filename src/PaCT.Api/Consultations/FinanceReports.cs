@@ -10,6 +10,7 @@ public static class FinanceReports
         var receipts = entries.Where(e => e.Kind == "Receipt" && Period(e.EffectiveAt ?? e.CreatedAt)).ToArray();
         var refunds = entries.Where(e => e.Kind == "Refund" && Period(e.EffectiveAt ?? e.CreatedAt)).ToArray();
         var settlements = entries.Where(e => e.Kind == "Settlement" && Period(e.CreatedAt)).ToArray();
+        var settlementReturns = entries.Where(e => e.Kind == "SettlementReturn" && Period(e.CreatedAt)).Sum(e => e.Amount);
         var consultations = data.Consultations.Where(c => (personId is null || c.PersonId == personId) && Period(c.StartsAt) && c.State == "Performed").ToArray();
         var unpaid = consultations.Where(ConsultationRules.HasDebt).ToArray();
         var packDebts = data.Packs.Where(p => (personId is null || p.PersonId == personId) && p.SettlementId is null && Period(p.PurchasedAt)).ToArray();
@@ -17,15 +18,16 @@ public static class FinanceReports
             && Period(data.Events.Single(e => e.Id == p.EventId).Definition.StartsAt)).ToArray();
         var anonymous = personId is null && origin is null or "EventService" && kind is null or "Receipt" ? data.EventCash.Where(e => Period(e.EffectiveAt)).Sum(e => e.Amount) : 0;
         return new { asOf = now, from, to,
-            received = receipts.Sum(e => e.Amount) + anonymous, anonymousEventReceipts = anonymous, refunded = -refunds.Sum(e => e.Amount), settled = -settlements.Sum(e => e.Amount),
+            received = receipts.Sum(e => e.Amount) + anonymous, anonymousEventReceipts = anonymous, refunded = -refunds.Sum(e => e.Amount),
+            settled = -settlements.Sum(e => e.Amount) - settlementReturns, settlementReturns,
             corrections = entries.Where(e => (e.Kind is "Adjustment" or "AdjustmentReversal" or "Reversal") && Period(e.CreatedAt)).Sum(e => e.Amount),
             globalNegativeDebt = data.Entries.Where(e => personId is null || e.PersonId == personId).GroupBy(e => e.PersonId).Sum(g => Math.Max(0, -g.Sum(e => e.Amount))),
             availableBalance = data.Entries.Where(e => personId is null || e.PersonId == personId).GroupBy(e => e.PersonId).Sum(g => Math.Max(0, g.Sum(e => e.Amount))),
             netBalance = data.Entries.Where(e => personId is null || e.PersonId == personId).Sum(e => e.Amount),
             paidConsultations = consultations.Count(c => c.SettlementId is not null), unpaidConsultations = unpaid.Length,
             pendingContributions = unpaid.Count(c => c.Service.PaymentMode == "Contribution"), undefinedContributions = unpaid.Count(c => c.FinalAmount is null),
-            activeCollectionAmount = unpaid.Where(c => !c.CollectionClosed).Sum(ConsultationRules.Remaining),
-            closedCollectionAmount = unpaid.Where(c => c.CollectionClosed).Sum(ConsultationRules.Remaining),
+            activeCollectionAmount = unpaid.Where(c => !c.OldDebt).Sum(ConsultationRules.Remaining),
+            oldDebtAmount = unpaid.Where(c => c.OldDebt).Sum(ConsultationRules.Remaining),
             totalUnpaid = unpaid.Sum(ConsultationRules.Remaining), noDebtConsultations = consultations.Count(c => c.NoDebtReason is not null),
             unpaidPackPurchases = packDebts.Length, unpaidPackAmount = packDebts.Sum(p => p.Amount), unpaidEventParticipations = eventDebts.Length, unpaidEventAmount = eventDebts.Sum(p => GroupEvents.AmountDue(data, p)),
             retreatRestitutionsPending = data.Participations.Where(p => (personId is null || p.PersonId == personId) && p.ReturnDue is not null).Sum(p => Math.Max(0, p.ReturnDue!.Value - RetreatFinance.Returned(p))),

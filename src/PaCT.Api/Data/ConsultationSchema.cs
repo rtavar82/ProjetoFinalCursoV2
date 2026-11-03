@@ -105,6 +105,7 @@ public static class ConsultationSchema
               id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin PRIMARY KEY,
               service_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
               data JSON NOT NULL,
+              CONSTRAINT CK_group_event_state CHECK (JSON_UNQUOTE(JSON_EXTRACT(data,'$.State')) IN ('Waiting','AwaitingClosure','Performed','Cancelled')),
               FOREIGN KEY (service_id) REFERENCES consultation_services(id) ON DELETE RESTRICT,
               CHECK (JSON_UNQUOTE(JSON_EXTRACT(data,'$.Service.Id'))=service_id)
             ) ENGINE=InnoDB
@@ -119,7 +120,7 @@ public static class ConsultationSchema
               FOREIGN KEY (event_id) REFERENCES group_events(id) ON DELETE RESTRICT,
               FOREIGN KEY (person_id) REFERENCES people(id) ON DELETE RESTRICT,
               CHECK (JSON_UNQUOTE(JSON_EXTRACT(data,'$.EventId'))=event_id),
-              CHECK (JSON_UNQUOTE(JSON_EXTRACT(data,'$.State')) IN ('Requested','Confirmed','Waiting','Cancelled'))
+              CHECK (JSON_UNQUOTE(JSON_EXTRACT(data,'$.State')) IN ('Requested','Confirmed','Waiting','Cancelled','Rejected','Expired'))
             ) ENGINE=InnoDB
             """,
         "event_cash_entries" => """
@@ -138,7 +139,7 @@ public static class ConsultationSchema
             CREATE TABLE event_notices (
               id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin PRIMARY KEY,
               event_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
-              participation_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+              participation_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NULL,
               data JSON NOT NULL,
               FOREIGN KEY (event_id) REFERENCES group_events(id) ON DELETE RESTRICT,
               FOREIGN KEY (participation_id) REFERENCES event_participations(id) ON DELETE RESTRICT
@@ -147,11 +148,15 @@ public static class ConsultationSchema
         "consultation_messages" => """
             CREATE TABLE consultation_messages (
               id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin PRIMARY KEY,
-              consultation_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+              consultation_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NULL,
+              participation_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NULL,
               author_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
               sequence BIGINT NOT NULL,
               data JSON NOT NULL,
               UNIQUE KEY UX_consultation_message_sequence (consultation_id,sequence),
+              UNIQUE KEY UX_participation_message_sequence (participation_id,sequence),
+              CONSTRAINT CK_message_target CHECK ((consultation_id IS NULL) <> (participation_id IS NULL)),
+              FOREIGN KEY (participation_id) REFERENCES event_participations(id) ON DELETE RESTRICT,
               FOREIGN KEY (consultation_id) REFERENCES consultations(id) ON DELETE RESTRICT,
               FOREIGN KEY (author_id) REFERENCES accounts(id) ON DELETE RESTRICT,
               CHECK (sequence>0 AND CAST(JSON_EXTRACT(data,'$.Sequence') AS SIGNED)=sequence),

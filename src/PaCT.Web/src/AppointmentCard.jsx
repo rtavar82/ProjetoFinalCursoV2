@@ -1,19 +1,14 @@
 import { useId } from 'react'
-import AppIcon from './AppIcon'
-import TimeBlock from './TimeBlock'
+import AppointmentSummary from './AppointmentSummary'
 import styles from './AppointmentCard.module.css'
 
-const day = new Intl.DateTimeFormat('pt-PT', { timeZone: 'Europe/Lisbon', dateStyle: 'long' })
-
-export default function AppointmentCard({ consultation, clientName, stateLabel, financialLabel, actionLabel, onOpen }) {
+export default function AppointmentCard({ consultation, clientName, typeLabel, stateLabel, financialLabel, actionLabel, onOpen, disabled = false, cardId, children }) {
   const title = useId()
-  return <article className={styles.card} data-card-id={'consultation-' + consultation.id} aria-labelledby={title}>
-    <TimeBlock startsAt={consultation.startsAt} endsAt={consultation.endsAt} />
-    <div className={styles.content}><p className={styles.day}>{day.format(new Date(consultation.startsAt))}</p><h3 id={title}>{consultation.serviceTitle}</h3>
-      {clientName && <p>{clientName}</p>}
-      {(consultation.publicLocation || consultation.modality) && <p className={styles.location}><AppIcon name={consultation.modality === 'Remote' ? 'video' : 'pin'} /><span>{[consultation.publicLocation, consultation.modality ? consultation.modality === 'Remote' ? 'Online' : 'Presencial' : null].filter(Boolean).join(' · ')}</span></p>}
-      <p className={styles.state}>{stateLabel}</p><p className={styles.financial}>{financialLabel}</p>
-    </div>
-    <button type="button" className={styles.action} onClick={() => onOpen(consultation.id)}>{actionLabel}<AppIcon name="arrow" /></button>
+  return <article className={`ui-card ui-card--record ${styles.card}`} data-card-id={cardId || 'consultation-' + consultation.id} aria-labelledby={title}>
+    <AppointmentSummary consultation={consultation} titleId={title} stateLabel={stateLabel} typeLabel={typeLabel} clientName={clientName} />
+    {(financialLabel || children) && <div className={styles.extra}>{financialLabel && <p>{financialLabel}</p>}{children}</div>}
+    {actionLabel && <div className={styles.actions}>
+      {actionLabel && <button type="button" className={`text-button ${styles.action}`} disabled={disabled} onClick={() => onOpen(consultation.id)}>{actionLabel}</button>}
+    </div>}
   </article>
 }

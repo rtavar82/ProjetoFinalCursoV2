@@ -9,7 +9,7 @@ import useLiveResource from './useLiveResource'
 function EventRequest({ target, onClose, onSignIn, previewOnly = false }) {
   const read = useCallback(() => readPublicEvent(target.id, target.serviceId, { publicOnly: previewOnly }), [target.id, target.serviceId, previewOnly])
   const { data: event, error, refresh } = useLiveResource('events', 'visitor-event:' + target.id, read)
-  if (!event) return <ConsultationDialog compact label="O teu pedido" onClose={onClose}><h2>O teu pedido</h2>{error ? <><p className="notice error" role="alert">{error}</p><button type="button" onClick={refresh}>Tentar novamente</button></> : <p role="status">A consultar a atividade…</p>}</ConsultationDialog>
+  if (!event) return <ConsultationDialog title="O teu pedido" label="O teu pedido" onClose={onClose}>{error ? <><p className="notice error" role="alert">{error}</p><button type="button" onClick={refresh}>Tentar novamente</button></> : <p role="status">A consultar a atividade…</p>}</ConsultationDialog>
   const service = { id: event.serviceId, title: event.title, modality: 'InPerson', publicLocation: event.publicLocation, durationMinutes: Math.round((Date.parse(event.endsAt) - Date.parse(event.startsAt)) / 60000),
     referencePrice: event.isFree ? 0 : event.totalPrice ?? event.referencePrice, paymentMode: event.isFree ? 'Free' : event.paymentMode }
   return <GuestBookingForm selection={{ eventId: event.id, startsAt: event.startsAt, endsAt: event.endsAt, service, event }} onBack={onClose} onSignIn={onSignIn} previewOnly={previewOnly} />

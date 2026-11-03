@@ -1,5 +1,7 @@
 import { availableStarts } from './agendaTime.js'
 
+export const canBookForClient = person => person.isActive !== false && person.identityReviewStatus !== 'Pending'
+
 export function validBookingCatalogue(value) {
   return Array.isArray(value?.services) && value.services.every(s => typeof s.id === 'string' && typeof s.title === 'string'
     && Number.isInteger(s.durationMinutes) && (s.definedPerEvent && ['Group', 'Retreat'].includes(s.serviceKind) ? s.durationMinutes === 0 : s.durationMinutes >= 15 && s.durationMinutes <= 720)

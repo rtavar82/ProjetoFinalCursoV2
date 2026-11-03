@@ -10,11 +10,11 @@ import useLiveResource from './useLiveResource'
 import InformationCard from './InformationCard'
 import CardGrid from './CardGrid'
 import SummaryCard from './SummaryCard'
+import Pagination from './Pagination'
 import { observeResource } from './liveUpdates'
 
 function nameOf(client) { return [client.data.firstName, client.data.lastName].filter(Boolean).join(' ') || 'Nome ainda não indicado' }
 function dateOf(value) { return new Intl.DateTimeFormat('pt-PT', { timeZone: 'Europe/Lisbon', dateStyle: 'short', timeStyle: 'short' }).format(new Date(value.endsWith('Z') ? value : value + 'Z')) }
-function Pager({ data, change }) { const pages = Math.ceil(data.total / 8); return pages > 1 && <nav className="pager" aria-label="Paginação"><button className="secondary" disabled={data.page <= 1} onClick={() => change(data.page - 1)}>Anterior</button><span>Página {data.page} de {pages}</span><button className="secondary" disabled={data.page >= pages} onClick={() => change(data.page + 1)}>Seguinte</button></nav> }
 
 export default function Clients({ busy, perform, notify, guard, initialView = 'Directory', initialId = null, pendingReviewCount }) {
   const [view, setView] = useState(initialId ? 'Detail' : initialView)
@@ -62,7 +62,7 @@ export default function Clients({ busy, perform, notify, guard, initialView = 'D
       {!result && !failure && <p role="status">A carregar fichas…</p>}
       {result && <><SummaryCard cardId="client-count" label={result.total === 1 ? 'Ficha encontrada' : 'Fichas encontradas'} value={result.total} unit="registos" icon="people" />{result.total === 0 && <p>Ainda não existem fichas correspondentes. Podes criar uma ficha com dados novos.</p>}
         <CardGrid>{result.items.map(row => <InformationCard as="article" cardId={'client-' + row.id} key={row.id}><div><h3>{nameOf(row)}</h3><p>{row.data.locality || 'Localidade não indicada'}</p>{row.data.email && <p>{row.data.email}</p>}{row.data.phone && <p>+{row.data.dialCode} {row.data.phone}</p>}<span className="client-badge">{row.hasAccount ? 'Com conta · ' + accountState(row.accountState) : 'Ficha sem conta'}</span>{row.identityReviewStatus === 'Pending' && <p>Identidade por verificar</p>}</div><button className="secondary" disabled={busy} onClick={() => open(row.id)}>Abrir ficha</button></InformationCard>)}</CardGrid>
-        <Pager data={result} change={page => { setQuery(current => ({ ...current, page })) }} />
+        <Pagination total={result.total} page={result.page} showTotal onChange={page => setQuery(current => ({ ...current, page }))} />
       </>}
     </>}
     {view === 'Create' && <InformationCard title="Criar ficha de cliente" cardId="client-create"><ClientProfileForm key="new" manual busy={busy} onSave={save} /></InformationCard>}
@@ -86,7 +86,7 @@ function Reviews({ busy, perform, notify, onChange }) {
     {!reviews && <p role="status">A carregar ocorrências…</p>}{reviews?.error && <p role="alert" className="notice error">{reviews.error}</p>}
     {reviews?.items?.length === 0 && <p>Não existem ocorrências por resolver.</p>}
     {reviews?.items?.slice((page - 1) * 8, page * 8).map(review => <ReviewCard key={review.id} review={review} busy={busy} onDecide={decision => decide(review, decision)} />)}
-    {reviews?.items && <Pager data={{ total: reviews.items.length, page }} change={setPage} />}
+    {reviews?.items && <Pagination total={reviews.items.length} page={page} showTotal onChange={setPage} />}
   </section>
 }
 

@@ -7,6 +7,8 @@ public static class ConsultationPush
     {
         var conversations = data.Notices.Where(n => !n.Cancelled && n.ReadAt is null && n.Kind.StartsWith("FollowupMessage:", StringComparison.Ordinal))
             .GroupBy(n => (n.ConsultationId, n.PersonId)).ToDictionary(g => g.Key, g => g.OrderBy(n => n.DueAt).ThenBy(n => n.Id).First().Id);
+        var eventConversations = data.EventNotices.Where(n => !n.Cancelled && n.ReadAt is null && n.Kind.StartsWith("FollowupMessage:", StringComparison.Ordinal))
+            .GroupBy(n => (n.ParticipationId, n.PersonId)).ToDictionary(g => g.Key, g => g.OrderBy(n => n.DueAt).ThenBy(n => n.Id).First().Id);
         return data.Notices.Where(n => n.PushState is not null)
         .Select(n => new ConsultationPushItem(n.Id, n.PersonId, n.DueAt,
             !n.Cancelled && n.ReadAt is null && (n.ExpiresAt is null || n.ExpiresAt > now)
@@ -15,6 +17,7 @@ public static class ConsultationPush
         .Concat(data.EventNotices.Where(n => n.PushState is not null)
             .Select(n => new ConsultationPushItem(n.Id, n.PersonId, n.DueAt,
                 !n.Cancelled && n.ReadAt is null && (n.ExpiresAt is null || n.ExpiresAt > now)
+                    && (!n.Kind.StartsWith("FollowupMessage:", StringComparison.Ordinal) || eventConversations.GetValueOrDefault((n.ParticipationId, n.PersonId)) == n.Id)
                     && (n.Kind is not ("EventWait8" or "EventWait12") || data.Participations.Any(p => p.Id == n.ParticipationId && p.State == "Confirmed" && p.ExpectationOpen)), n.PushState, n.Kind))).ToArray();
     }
 

@@ -11,19 +11,29 @@ public sealed record GuestSubmission(string OperationId, string ServiceId,
     string FirstName, string LastName, string DialCode, string Phone, string? Email = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] long? ServiceVersion = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? DeliveryOptionId = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Locality = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Locality = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] bool ConditionsAccepted = false,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? TermsVersion = null);
 public sealed record GuestContact(string FirstName, string LastName, string DialCode, string Phone, string? Email, string? Locality = null);
 public sealed record GuestDecision(string Action, string AuthorId, DateTimeOffset At, string? PersonId);
 public sealed record GuestConsultationRequest(string Id, string OperationId, string RequestHash, ConsultationService Service,
     DateTimeOffset StartsAt, DateTimeOffset EndsAt, DateTimeOffset CreatedAt, string ContactCiphertext,
     string State = "Requested", long Version = 1, string? PersonId = null, string? ConsultationId = null, GuestDecision[]? History = null, DateTimeOffset? NoticeReadAt = null,
     [property: JsonRequired] ProcessStage Stage = ProcessStage.Request, string? CancellationOrigin = null,
-    DateTimeOffset? ArchivedAt = null, string? ArchivedBy = null);
+    DateTimeOffset? ArchivedAt = null, string? ArchivedBy = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] DateTimeOffset? AcceptedAt = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? AcceptedTermsVersion = null);
 
 public static class GuestConsultations
 {
     public static bool Occupies(GuestConsultationRequest request, DateTimeOffset now) => ProcessLifecycle.Substate(request, now) is "Requested" or "InTreatment";
     public static bool CanArchive(GuestConsultationRequest request, DateTimeOffset now) => ProcessLifecycle.Substate(request, now) is "Expired" or "Rejected";
+    public static string ClientSection(GuestConsultationRequest request, DateTimeOffset now) => ProcessLifecycle.Substate(request, now) switch
+    {
+        "Expired" => "Closed",
+        "Rejected" when request.CancellationOrigin == "Client" && request.ArchivedAt is null => "Cancelled",
+        "Rejected" => "Closed", _ => "Other"
+    };
     public static GuestSubmission Normalize(GuestSubmission input, bool requireLocality = true)
     {
         if (!Guid.TryParse(input.OperationId, out _) || !Guid.TryParse(input.ServiceId, out _)) throw new IdentityProblem(400, "Não foi possível identificar o pedido ou a consulta escolhida.");
@@ -47,6 +57,7 @@ public static class GuestConsultations
         // Every new request requires the locality before creating any records.
         input = Normalize(input);
         var service = ClientBooking.Validate(data, input.ServiceId, input.StartsAt, input.ServiceVersion, input.DeliveryOptionId, now, registered: false);
+        ConsultationConditions.ValidateRequest(service, input.ConditionsAccepted, input.TermsVersion);
         if (!AgendaRules.IsBookableStart(input.StartsAt, now)) throw new IdentityProblem(400, "Escolhe um horário futuro dentro dos próximos seis meses.");
         var end = input.StartsAt.AddMinutes(service.DurationMinutes);
         AgendaRules.ValidateOccupation(data, input.StartsAt, end, now);
@@ -54,7 +65,8 @@ public static class GuestConsultations
             throw new IdentityProblem(409, "Este horário já não está disponível. Escolhe outro horário.");
         var id = Guid.NewGuid().ToString("D");
         var contact = new GuestContact(input.FirstName, input.LastName, input.DialCode, input.Phone, input.Email, input.Locality);
-        data.GuestRequests.Add(new(id, input.OperationId, hash, service, input.StartsAt, end, now, encrypt(id, "guest-contact", JsonSerializer.Serialize(contact)), PersonId: Guid.NewGuid().ToString()));
+        data.GuestRequests.Add(new(id, input.OperationId, hash, service, input.StartsAt, end, now, encrypt(id, "guest-contact", JsonSerializer.Serialize(contact)), PersonId: Guid.NewGuid().ToString(),
+            AcceptedAt: input.ConditionsAccepted ? now : null, AcceptedTermsVersion: input.TermsVersion));
         return new(id, "Pedido recebido. Aguarda o contacto da terapeuta.");
     }
     public static ConsultationResult Manage(ConsultationData data, ConsultationCommand input, ConsultationActor actor, DateTimeOffset now)
@@ -81,11 +93,12 @@ public static class GuestConsultations
             if (!data.Services.Any(x => x.Id == request.Service.Id && x.Active)) throw new IdentityProblem(409, "O serviço deixou de estar disponível. Revê o pedido antes de continuar.");
             var id = Guid.NewGuid().ToString("D");
             var consultation = new Consultation { Id = id, PersonId = input.PersonId!, Service = request.Service,
-                StartsAt = request.StartsAt, EndsAt = request.EndsAt, CreatedAt = request.CreatedAt };
+                StartsAt = request.StartsAt, EndsAt = request.EndsAt, CreatedAt = request.CreatedAt,
+                AcceptedAt = request.AcceptedAt, AcceptedTermsVersion = request.AcceptedTermsVersion };
             next = request with { State = "Linked", PersonId = input.PersonId, ConsultationId = id };
             // Remove the provisional occupation before confirming the same interval.
             data.GuestRequests[index] = next;
-            data.Consultations.Add(ConsultationRules.Approve(data, consultation, input.Choice ?? request.Service.PaymentMode, actor, now));
+            data.Consultations.Add(ConsultationRules.Approve(data, consultation, input.Choice ?? request.Service.PaymentMode, actor, now, input.AllowClientCredit == true));
         }
         else throw new IdentityProblem(400, "Ação inválida para este pedido.");
         data.GuestRequests[index] = next with { Version = request.Version + 1,

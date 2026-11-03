@@ -19,6 +19,13 @@ export function instant(value) {
 }
 export const dayKey = value => localDate(new Date(value)).slice(0, 10)
 export function addDays(day, count) { const value = new Date(day + 'T12:00:00Z'); value.setUTCDate(value.getUTCDate() + count); return value.toISOString().slice(0, 10) }
+// Shared rolling presets. `to` is exclusive for API queries; show the preceding day in inclusive date fields.
+export function rollingPeriod(mode, anchor, offset = 0) {
+  const days = { Day: 1, Week: 7, Month: 30 }[mode]
+  if (!Number.isInteger(days)) throw new Error('Escolhe um período válido.')
+  const from = addDays(anchor, offset * days)
+  return { from, to: addDays(from, days) }
+}
 export function shiftMonth(month, count) { const value = new Date(month + '-01T12:00:00Z'); value.setUTCMonth(value.getUTCMonth() + count); return value.toISOString().slice(0, 7) }
 export function monthDays(month) {
   const next = shiftMonth(month, 1) + '-01'

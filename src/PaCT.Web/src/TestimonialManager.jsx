@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import useLiveResource from './useLiveResource'
 import useEditorState from './useEditorState'
 import { readManagedTestimonials, saveTestimonial } from './testimonialData'
+import { dismissSuccess, showSuccess } from './actionNotices'
 import { TestimonialViewer } from './PublicTestimonials'
 import styles from './Testimonials.module.css'
 
@@ -22,8 +23,8 @@ export default function TestimonialManager({ guard, onPublic }) {
   async function visibility(row) {
     if (pending.current) return
     await guard(async () => {
-      pending.current = true; setBusy(true); setError('')
-      try { await saveTestimonial(row, { text: row.text, operationId: crypto.randomUUID(), removeImage: false }, null, !row.published); resource.refresh() }
+      dismissSuccess(); pending.current = true; setBusy(true); setError('')
+      try { await saveTestimonial(row, { text: row.text, operationId: crypto.randomUUID(), removeImage: false }, null, !row.published); showSuccess(row.published ? 'Publicação ocultada.' : 'Publicação publicada.'); resource.refresh() }
       catch (failure) { setError(failure.message) }
       finally { pending.current = false; setBusy(false) }
     })
@@ -69,11 +70,12 @@ function TestimonialEditor({ item, onSaved, onCancel }) {
   async function submit(event) {
     event.preventDefault()
     if (pending.current || savedAlready) return
-    pending.current = true; setBusy(true); setError('')
+    dismissSuccess(); pending.current = true; setBusy(true); setError('')
     const publish = event.nativeEvent.submitter?.value === 'publish' || item.published
     try {
       await editor.ready()
       await saveTestimonial(item, editor.fields, file, publish)
+      showSuccess(publish ? 'Publicação guardada e publicada.' : 'Publicação guardada.', editor.fields.operationId)
       setConfirmed(true); await cleanUp()
     } catch (failure) { setError(failure.message) }
     finally { pending.current = false; setBusy(false) }
@@ -81,7 +83,7 @@ function TestimonialEditor({ item, onSaved, onCancel }) {
   return <form ref={form} className={styles.editor} data-protect-draft data-pending-command={busy || imageBusy || undefined} onSubmit={submit}>
     <h2>{item.version ? 'Editar publicação' : 'Nova publicação'}</h2>
     {error && <p className="notice error" role="alert">{error}</p>}
-    {savedAlready && <p className="notice success" role="status">Publicação guardada no servidor.<button type="button" className="secondary" onClick={cleanUp}>Concluir</button></p>}
+    {savedAlready && <button type="button" className="secondary" onClick={cleanUp}>Concluir</button>}
     {editor.conflict && !savedAlready && <div className="notice error"><p>A publicação mudou. O texto e a imagem em edição foram mantidos.</p><button type="button" className="secondary" onClick={() => { editor.acceptCurrentVersion(); editor.change('operationId', crypto.randomUUID()) }}>Revi a publicação atual; manter o preenchimento</button></div>}
     <fieldset disabled={busy || imageBusy || savedAlready || editor.conflict}>
       <label>Texto<textarea name="text" maxLength="10000" value={editor.fields.text} onChange={event => change('text', event.target.value)} /></label>

@@ -1,0 +1,3 @@
+.location { margin-block: 1rem; }
+.location p { margin-block: .25rem; }
+.instructions { white-space: pre-wrap; overflow-wrap: anywhere; }

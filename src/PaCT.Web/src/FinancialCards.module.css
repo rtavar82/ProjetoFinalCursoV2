@@ -1,0 +1,10 @@
+.cards { display: grid; gap: 1rem; margin-block: 1rem; min-width: 0; }
+.card form { display: grid; gap: .8rem; margin-top: .8rem; }
+.card button { margin: 0; }
+.card summary { cursor: pointer; color: var(--accent); font-weight: 600; min-height: 36px; align-content: center; }
+.card details[open] > summary { margin-bottom: .9rem; }
+.history { list-style: none; padding: 0; margin: 0; }
+.history li + li { border-top: 1px solid var(--line); margin-top: .65rem; padding-top: .65rem; }
+.history p { margin: .2rem 0; }
+.metadata { color: var(--muted); font-size: var(--font-size-caption); }
+.amount { font-size: var(--font-size-lead); }

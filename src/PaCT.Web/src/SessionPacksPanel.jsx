@@ -7,9 +7,10 @@ import useConsultationNames from './useConsultationNames'
 import InformationCard from './InformationCard'
 import ConsultationDialog from './ConsultationDialog'
 import CardGrid from './CardGrid'
+import Pagination from './Pagination'
 import { agendaDate, agendaMoney, instant } from './agendaTime'
 
-export default function SessionPacksPanel({ manager, send, disabled, guard, feedback, initialId }) {
+export default function SessionPacksPanel({ manager, send, disabled, guard, feedback, initialId, dialogOnly = false, onClose }) {
   const [scope, setScope] = useState(initialId ? 'Unpaid' : 'Available')
   const [page, setPage] = useState(1)
   const [creating, setCreating] = useState(false)
@@ -21,14 +22,16 @@ export default function SessionPacksPanel({ manager, send, disabled, guard, feed
   const [error, setError] = useState('')
   useEffect(() => { if (initialId) { let active = true; apiRequest('consultations/packs/' + initialId).then(value => { if (active) setDetail(value) }).catch(failure => { if (active) setError(failure.message) }); return () => { active = false } } }, [initialId])
   const read = useCallback(signal => apiRequest(`consultations/packs?scope=${scope}&page=${page}`, undefined, { signal }), [scope, page])
-  const list = useLiveResource('packs', `${scope}:${page}`, read)
+  const list = useLiveResource('packs', `${scope}:${page}`, read, !dialogOnly)
   const names = useConsultationNames(list.data?.items || [], detail, manager)
   const clients = useClientOptions(manager && creating)
   const readSetup = useCallback(signal => apiRequest('consultations/setup', undefined, { signal }), [])
   const setup = useLiveResource('agenda', 'pack-services', readSetup, manager && creating)
   async function open(id) { try { setDetail(await apiRequest('consultations/packs/' + id)); setError('') } catch (failure) { setError(failure.message) } }
   async function act(action, values = {}) { const result = await send({ action, id: detail.id, version: detail.version, ...values }); if (result) await open(detail.id) }
+  function dismiss() { setDetail(null); onClose?.() }
   return <section aria-label="Packs de sessões">
+    {!dialogOnly && <>
     {!detail && feedback}
     <nav className="section-tabs" aria-label="Packs"><button className={scope === 'Available' ? '' : 'secondary'} disabled={disabled} onClick={() => guard(() => { setScope('Available'); setPage(1); setCreating(false) })}>Packs com sessões</button><button className={scope === 'Unpaid' ? '' : 'secondary'} disabled={disabled} onClick={() => guard(() => { setScope('Unpaid'); setPage(1); setCreating(false) })}>Compras por pagar</button>{manager && <><button className={scope === 'History' ? '' : 'secondary'} disabled={disabled} onClick={() => guard(() => { setScope('History'); setPage(1); setCreating(false) })}>Histórico</button><button className="secondary" disabled={disabled} onClick={() => guard(() => setCreating(true))}>Registar compra</button></>}</nav>
     {error && <p className="notice error" role="alert">{error}</p>}
@@ -44,9 +47,11 @@ export default function SessionPacksPanel({ manager, send, disabled, guard, feed
     </InformationCard>}
     <InformationCard cardId="session-packs" loading={list.loading} error={list.error} onRetry={list.refresh}>
       <CardGrid>{list.data?.items.map(pack => <InformationCard as="article" cardId={'pack-' + pack.id} key={pack.id} title={pack.title}><p>{manager && names.data?.[pack.personId]}</p><p>{pack.remaining} de {pack.sessions} sessões</p><p>Referência de um ano: {agendaDate(new Date(Date.parse(pack.expiresAt) - 1).toISOString())}</p><p>{pack.settlementId ? 'Compra paga' : 'Compra por pagar'} · {agendaMoney(pack.amount)}</p><button className="secondary" disabled={disabled} onClick={() => open(pack.id)}>Abrir pack</button></InformationCard>)}</CardGrid>
-      {list.data?.total === 0 && <p>Não existem packs neste separador.</p>}{list.data?.total > 8 && <nav className="pager" aria-label="Páginas dos packs"><button disabled={disabled || page === 1} onClick={() => setPage(p => p - 1)}>Anterior</button><span>Página {page}</span><button disabled={disabled || page * 8 >= list.data.total} onClick={() => setPage(p => p + 1)}>Seguinte</button></nav>}
+      {list.data?.total === 0 && <p>Não existem packs neste separador.</p>}<Pagination total={list.data?.total} page={page} label="Páginas dos packs" disabled={disabled} onChange={setPage} />
     </InformationCard>
-    {detail && <ConsultationDialog label="Detalhe do pack" disabled={disabled} onClose={() => guard(() => setDetail(null))}><h2>{detail.title}</h2>{feedback}<p>{detail.remaining} de {detail.sessions} sessões</p><p>Compra de {agendaDate(detail.purchasedAt)} · {agendaMoney(detail.amount)}</p><p>Referência de um ano: {agendaDate(new Date(Date.parse(detail.expiresAt) - 1).toISOString())}</p><p>{detail.settlementId ? 'Compra paga' : 'Compra por pagar'}</p>
+    </>}
+    {dialogOnly && !detail && <ConsultationDialog title="Pack de sessões" label="Detalhe do pack" disabled={disabled} onClose={() => guard(dismiss)}><InformationCard cardId="pack-detail-loading" loading={!error} error={error} /></ConsultationDialog>}
+    {detail && <ConsultationDialog title={detail.title} label="Detalhe do pack" disabled={disabled} onClose={() => guard(dismiss)}>{feedback}<p>{detail.remaining} de {detail.sessions} sessões</p><p>Compra de {agendaDate(detail.purchasedAt)} · {agendaMoney(detail.amount)}</p><p>Referência de um ano: {agendaDate(new Date(Date.parse(detail.expiresAt) - 1).toISOString())}</p><p>{detail.settlementId ? 'Compra paga' : 'Compra por pagar'}</p>
       {manager && !detail.settlementId && <><p>Crédito disponível: {agendaMoney(detail.balance)}</p><button disabled={disabled || detail.balance < detail.amount} onClick={() => { if (window.confirm(`Confirmas o pagamento integral de ${agendaMoney(detail.amount)} com crédito?`)) act('SettlePack') }}>Pagar integralmente com crédito</button></>}
       {manager && <>
         <p>As sessões não são bloqueadas automaticamente pela data de revisão.</p>

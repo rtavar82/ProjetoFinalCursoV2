@@ -1,6 +1,9 @@
-.dialog { background: var(--surface); color: var(--ink); border: 1px solid var(--line); border-radius: var(--card-radius); padding: 1.1rem; width: min(calc(100% - 1.2rem), 36rem); max-height: calc(100dvh - 1.5rem - env(safe-area-inset-top) - env(safe-area-inset-bottom)); overflow-y: auto; overflow-wrap: anywhere; box-sizing: border-box; scroll-padding-block: 1rem; }
-.dialog::backdrop { background: #253e3480; }
-.dialog h2 { font-family: Georgia, 'Times New Roman', serif; font-size: 1.4rem; margin-top: 0; }
-.compactClose { position: sticky; top: 0; float: right; width: 44px; min-height: 44px; margin: -.5rem -.5rem .2rem .5rem; padding: .3rem; font-size: 1.6rem; border: 2px solid var(--accent); background: var(--surface); color: var(--ink); z-index: 2; }
-.compactClose:hover:not(:disabled) { background: var(--tint); color: var(--ink); }
-@media (min-width: 640px) { .dialog { padding: 1.5rem; } }
+.dialog { padding: 18px; width: min(calc(100% - 20px), 45rem); max-height: calc(100dvh - 20px - env(safe-area-inset-top) - env(safe-area-inset-bottom)); overflow-y: auto; overflow-wrap: anywhere; box-sizing: border-box; scroll-padding-block: 20px; }
+.header { margin-bottom: 18px; }
+.body { display: grid; gap: 18px; min-width: 0; }
+.dialog .body > :is(p, h2, h3, button, form), .dialog .body > :global(.notice) { margin: 0; }
+.dialog .body form { display: grid; gap: 18px; }
+.dialog .body [hidden] { display: none; }
+.dialog .body label { gap: 7px; }
+.dialog .body textarea { min-height: 6rem; }
+@media (min-width: 640px) { .dialog { padding: 24px; } }

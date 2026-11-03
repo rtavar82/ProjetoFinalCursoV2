@@ -1,0 +1,7 @@
+.scroll { max-width: 100%; overflow: auto; }
+.table { width: 100%; min-width: 38rem; border-collapse: collapse; }
+.table caption { text-align: left; padding-block: 8px; color: var(--muted); }
+.table th, .table td { text-align: left; vertical-align: top; padding: 12px; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; }
+.table th { white-space: nowrap; }
+.table th:first-child, .table td:first-child { padding-left: 0; }
+.table th:last-child, .table td:last-child { padding-right: 0; }

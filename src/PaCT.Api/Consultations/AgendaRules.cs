@@ -87,6 +87,45 @@ public static class AgendaRules
             && Overlaps(start, end.AddMinutes(30), e.Definition.StartsAt, e.Definition.EndsAt.AddMinutes(30))), "O horário está ocupado por um grupo ou retiro.", 409);
     }
 
+    public static AgendaConflict[] ConfirmedConflicts(ConsultationData data, DateTimeOffset start, DateTimeOffset end, DateTimeOffset now, string? excludingEventId = null) =>
+        data.Consultations.Where(c => c.State is "Confirmed" or "AwaitingClosure" or "Performed" or "NoShow" && Overlaps(start, end.AddMinutes(30), c.StartsAt, c.EndsAt.AddMinutes(30)))
+            .Select(c => new AgendaConflict(c.Id, c.StartsAt, c.EndsAt, ProcessLifecycle.Substate(c, now), ProcessLifecycle.Status(c, now)))
+            .Concat(data.Events.Where(e => e.Id != excludingEventId && GroupEvents.Occupies(e) && data.Participations.Any(p => p.EventId == e.Id && p.State == "Confirmed")
+                && Overlaps(start, end.AddMinutes(30), e.Definition.StartsAt, e.Definition.EndsAt.AddMinutes(30)))
+                .Select(e => new AgendaConflict(e.Id, e.Definition.StartsAt, e.Definition.EndsAt, "Event", ProcessLifecycle.Status(e, now)))).ToArray();
+
+    public static void RetireWindows(ConsultationData data, DateTimeOffset start, DateTimeOffset end, ConsultationActor actor, DateTimeOffset now, bool blockedOnly = false)
+    {
+        foreach (var old in ActiveWindows(data).Where(w => (!blockedOnly || !w.Available) && Overlaps(start, end, w.StartsAt, w.EndsAt)).ToArray())
+        {
+            data.Windows[data.Windows.FindIndex(w => w.Id == old.Id)] = old with { RetiredAt = now, Version = old.Version + 1, ChangedBy = actor.AccountId };
+            foreach (var part in Remainders(old, [new(start, end)]))
+            {
+                var rules = old.Rules is null ? null : old.Rules with { FirstStartAt = old.Rules.FirstStartAt ?? old.StartsAt,
+                    LastStartAt = old.Rules.LastStartAt < part.EndsAt ? old.Rules.LastStartAt : part.EndsAt.AddTicks(-1) };
+                if (rules is not null && rules.LastStartAt < part.StartsAt) continue;
+                data.Windows.Add(old with { Id = Guid.NewGuid().ToString(), StartsAt = part.StartsAt, EndsAt = part.EndsAt, Version = 1, Rules = rules, SourceWindowId = old.Id, ChangedBy = actor.AccountId });
+            }
+        }
+    }
+
+    public static void ReplaceUnconfirmed(ConsultationData data, DateTimeOffset start, DateTimeOffset end, ConsultationActor actor,
+        DateTimeOffset now, Func<string, string, string, string> encrypt, string? excludingEventId = null)
+    {
+        Require(actor.IsManager, "Esta ação exige gestão.", 403);
+        foreach (var c in data.Consultations.Where(c => c.KeepBlocked && c.State is "CancelledClient" or "CancelledManager" && Overlaps(start, end, c.StartsAt, c.EndsAt)).ToArray())
+            ConsultationRules.Apply(data, new() { OperationId = Guid.NewGuid().ToString(), Action = "Release", Id = c.Id, Version = c.Version }, actor, now, encrypt);
+        foreach (var e in data.Events.Where(e => e.State == "Cancelled" && e.KeepBlocked && Overlaps(start, end, e.Definition.StartsAt, e.Definition.EndsAt)).ToArray())
+            GroupEvents.Apply(data, new() { OperationId = Guid.NewGuid().ToString(), Action = "ReleaseEventBlock", Id = e.Id, Version = e.Version }, actor, now, encrypt);
+        foreach (var c in data.Consultations.Where(c => c.State == "Requested" && ConsultationRules.Occupies(c, now) && Overlaps(start, end, c.StartsAt, c.EndsAt)).ToArray())
+            ConsultationRules.Apply(data, new() { OperationId = Guid.NewGuid().ToString(), Action = "Reject", Id = c.Id, Version = c.Version }, actor, now, encrypt);
+        foreach (var g in data.GuestRequests.Where(g => GuestConsultations.Occupies(g, now) && Overlaps(start, end, g.StartsAt, g.EndsAt)).ToArray())
+            GuestConsultations.Manage(data, new() { OperationId = Guid.NewGuid().ToString(), Action = "RejectGuestRequest", Id = g.Id, Version = g.Version }, actor, now);
+        foreach (var e in data.Events.Where(e => e.Id != excludingEventId && e.State == "Waiting" && Overlaps(start, end, e.Definition.StartsAt, e.Definition.EndsAt)
+            && !data.Participations.Any(p => p.EventId == e.Id && p.State == "Confirmed")).ToArray())
+            GroupEvents.Apply(data, new() { OperationId = Guid.NewGuid().ToString(), Action = "CancelEvent", Id = e.Id, Version = e.Version, Choice = "Organizer", AvailabilityChoice = "Release" }, actor, now, encrypt);
+    }
+
     public static AgendaPublicationPreview Preview(ConsultationData data, AvailabilityPublication publication, DateTimeOffset now)
     {
         Require(publication.Revision == Revision(data), "A agenda mudou. Revê os intervalos antes de publicar.", 409);
@@ -108,13 +147,8 @@ public static class AgendaRules
         }
         var ranges = ReplacementRanges(publication, start, end, now);
         bool Touches(DateTimeOffset first, DateTimeOffset last) => ranges.Any(r => Overlaps(r.StartsAt, r.EndsAt, first, last));
-        var conflicts = data.Consultations.Where(c => ConsultationRules.Occupies(c, now) && Touches(c.StartsAt, c.EndsAt.AddMinutes(30)))
-            .Select(c => new AgendaConflict(c.Id, c.StartsAt, c.EndsAt, ProcessLifecycle.Substate(c, now), ProcessLifecycle.Status(c, now)))
-            .Concat(data.GuestRequests.Where(g => GuestConsultations.Occupies(g, now) && Touches(g.StartsAt, g.EndsAt.AddMinutes(30)))
-                .Select(g => new AgendaConflict(g.Id, g.StartsAt, g.EndsAt, "GuestRequest", ProcessLifecycle.Status(g, now))))
-            .Concat(data.Events.Where(e => GroupEvents.Occupies(e) && Touches(e.Definition.StartsAt, e.Definition.EndsAt.AddMinutes(30)))
-                .Select(e => new AgendaConflict(e.Id, e.Definition.StartsAt, e.Definition.EndsAt, "Event", ProcessLifecycle.Status(e, now))))
-            .OrderBy(c => c.StartsAt).ThenBy(c => c.Id).ToArray();
+        var conflicts = ranges.SelectMany(range => ConfirmedConflicts(data, range.StartsAt, range.EndsAt, now))
+            .Where(c => Touches(c.StartsAt, c.EndsAt.AddMinutes(30))).DistinctBy(c => c.Id).OrderBy(c => c.StartsAt).ThenBy(c => c.Id).ToArray();
         // An occupied interval (including recovery) is excluded from the change itself,
         // not merely kept as an appointment on top of a replaced availability window.
         var protectedRanges = conflicts.Select(c => new AvailabilityRange(c.StartsAt, c.EndsAt.AddMinutes(30))).ToArray();
@@ -150,7 +184,7 @@ public static class AgendaRules
         if (cursor < window.EndsAt) yield return new(cursor, window.EndsAt);
     }
 
-    public static ConsultationResult Publish(ConsultationData data, AvailabilityPublication publication, ConsultationActor actor, string operationId, DateTimeOffset now)
+    public static ConsultationResult Publish(ConsultationData data, AvailabilityPublication publication, ConsultationActor actor, string operationId, DateTimeOffset now, Func<string, string, string, string>? encrypt = null)
     {
         Require(actor.IsManager, "Esta ação exige a gestora-terapeuta.", 403);
         var preview = Preview(data, publication, now);
@@ -158,6 +192,7 @@ public static class AgendaRules
             "Há horários com marcações. Revê-os e confirma a alteração apenas dos restantes horários.", 409);
         // Validate everything before changing the aggregate. The store commits the entire publication once.
         var ranges = preview.Ranges!;
+        foreach (var range in ranges) ReplaceUnconfirmed(data, range.StartsAt, range.EndsAt, actor, now, encrypt ?? ((_, _, _) => throw new InvalidOperationException("Esta operação não utiliza conteúdo privado.")));
         foreach (var old in ActiveWindows(data).Where(w => ranges.Any(r => Overlaps(r.StartsAt, r.EndsAt, w.StartsAt, w.EndsAt))).ToArray())
         {
             var index = data.Windows.FindIndex(w => w.Id == old.Id);

@@ -1,4 +1,5 @@
 import AppIcon from './AppIcon'
+import Heading from './Heading'
 import { publicLocations, publicMode, publicMoney } from './publicPresentationData'
 import styles from './PublicServiceCard.module.css'
 
@@ -21,10 +22,10 @@ export default function PublicServiceCard({ service, onPayment, onAgenda }) {
   }
   const locations = publicLocations(service.options.filter(option => option.modality === 'InPerson' && option.publicLocation.trim() === 'Vila Nova de São Bento'))
   const icon = service.packOffer ? 'user' : service.title === 'Sessão de Reiki & Alinhamento Energético' ? 'heart' : 'leaf'
-  return <article className={styles.card} aria-labelledby={`service-${service.id}`}>
+  return <article className={`ui-card ${styles.card}`} aria-labelledby={`service-${service.id}`}>
     <div className={styles.icon}><AppIcon name={icon} /></div>
     <div className={styles.copy}>
-      <h3 id={`service-${service.id}`}>{service.title}</h3>
+      <Heading level={3} appearance="card-title" id={`service-${service.id}`}>{service.title}</Heading>
       {service.presentation?.introduction && <p className={styles.introduction}>{service.presentation.introduction}</p>}
       {service.presentation?.description && <p>{service.presentation.description}</p>}
       <div className={styles.facts}><span><AppIcon name="clock" />{facts} por sessão</span><span><AppIcon name="video" />{modes}</span></div>

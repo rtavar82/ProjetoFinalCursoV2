@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { apiRequest } from './identityApi'
+import { dismissSuccess, showSuccess, showWarning } from './actionNotices'
 
 async function bounded(promise, message, milliseconds = 15000) {
   let timer
@@ -23,7 +24,7 @@ export default function PushConsent({ label = 'Ativar notificações neste dispo
   const supported = 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window
   async function enable() {
     if (busy || disabled || !supported || !navigator.onLine) return
-    setBusy(true)
+    dismissSuccess(); setBusy(true); setMessage('')
     try {
       if (await Notification.requestPermission() !== 'granted') throw new Error('As notificações não foram autorizadas. Os avisos continuam disponíveis na aplicação.')
       const registration = await activeRegistration()
@@ -32,8 +33,8 @@ export default function PushConsent({ label = 'Ativar notificações neste dispo
       const subscription = await bounded((async () => await registration.pushManager.getSubscription() || await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: bytes }))(), 'O serviço de notificações do equipamento não respondeu. Verifica a ligação e volta a tentar.')
       const result = await apiRequest('push/subscribe', subscription.toJSON())
       if (result.enabled !== true) throw new Error('Não foi possível confirmar a ativação das notificações. Volta a tentar.')
-      setMessage('Notificações ativadas neste equipamento.')
-    } catch (failure) { setMessage(failure.message || 'Não foi possível ativar as notificações neste dispositivo.') }
+      showSuccess('Notificações ativadas neste equipamento.')
+    } catch (failure) { setMessage(failure.message || 'Não foi possível ativar as notificações neste dispositivo.'); showWarning('Não foi possível ativar as notificações. Consulta a indicação junto do botão.') }
     finally { setBusy(false) }
   }
   return <div className="account-actions">{(supported || primary) && <button className={primary ? '' : 'secondary'} type="button" disabled={disabled || busy || !navigator.onLine || !supported} onClick={enable}>{busy ? 'A ativar…' : label}</button>}{!supported && <p>Este navegador não permite notificações no dispositivo. Os avisos continuam na aplicação.</p>}{message && <p role="status">{message}</p>}</div>

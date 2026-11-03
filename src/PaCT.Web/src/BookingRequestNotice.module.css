@@ -1,0 +1,2 @@
+.steps { margin: 0; padding-inline-start: 1.2rem; }
+.steps li + li { margin-top: .4rem; }
