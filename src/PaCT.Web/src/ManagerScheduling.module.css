@@ -5,8 +5,10 @@
 .intro, .help { color: var(--muted); font-size: var(--font-size-label); line-height: 1.65; margin: 0 0 24px; }
 .fields { display: grid; gap: 22px; min-width: 0; border: 0; margin: 0; padding: 0; }
 .fields label { display: grid; gap: 8px; color: var(--muted); min-width: 0; }
+.fields :global(.checkbox) { display: flex; }
 .fields :is(input, select) { min-height: 46px; }
 .pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.keepPair { align-items: end; }
 .actions { display: grid; gap: 10px; margin-top: 28px; }
 .actions button { width: 100%; min-height: 46px; margin: 0; }
 .quick, .dayTools { display: flex; flex-wrap: wrap; gap: 8px; }
@@ -36,5 +38,5 @@
   .dialog { width: 100vw; height: 100dvh; margin: 0; border-radius: 0; border: 0; }
   .header { padding-inline: 18px; }
   .body { padding-inline: 18px; }
-  .pair { grid-template-columns: 1fr; }
+  .pair:not(.keepPair) { grid-template-columns: 1fr; }
 }

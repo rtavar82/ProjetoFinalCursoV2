@@ -22,6 +22,7 @@ const messages = {
   Receipt: 'Recebimento registado em crédito.', Refund: 'Devolução registada.',
   Settle: 'Liquidação registada.', UseAuthorizedCredit: 'Crédito aplicado ao pagamento da consulta.',
   Adjustment: 'Correção financeira registada.', ReverseAdjustment: 'Anulação da correção financeira registada.',
+  CorrectFinalAmount: 'Valor final da consulta retificado.',
   ReverseReceipt: 'Anulação do recebimento registada.', ReverseRefund: 'Anulação da devolução registada.',
   MoveToOldDebts: 'Consulta enviada para Dívidas antigas. A dívida mantém-se.',
   Release: 'Horário disponibilizado.', Keep: 'Horário mantido bloqueado.',
@@ -35,7 +36,7 @@ const messages = {
   DeclareParticipationPayment: 'Pagamento comunicado à terapeuta. Aguarda a confirmação do recebimento.',
   RegisterParticipation: 'Entrada registada. Confirma agora a presença e o fecho individual.',
   ConfirmParticipation: 'Inscrição confirmada.', ReleaseEventBlock: 'Horário do evento disponibilizado.',
-  PurchasePack: 'Compra de pack registada.', SettlePack: 'Pagamento do pack liquidado.', AuthorizePackUse: 'Utilização do pack autorizada.',
+  RecordSale: 'Venda e recebimento registados.', SettlePack: 'Pagamento do pack liquidado.', AuthorizePackUse: 'Utilização do pack autorizada.',
   SetPackValidity: 'Data de revisão do pack guardada.', ExtendPack: 'Revisão do pack guardada.', WithdrawPackSessions: 'Retirada de sessões registada.', ReversePackUse: 'Sessão de pack reposta.',
 }
 

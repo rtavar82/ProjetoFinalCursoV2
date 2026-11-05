@@ -3,15 +3,12 @@ using PaCT.Api.Identity;
 
 namespace PaCT.Api.Consultations;
 
-public sealed record PackPurchaseInput(string PersonId, string Title, int Sessions, decimal Amount,
-    [property: JsonConverter(typeof(ExplicitInstantConverter))] DateTimeOffset PurchasedAt, string[] ServiceIds,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] decimal? RegularTotal = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull), JsonConverter(typeof(OptionalExplicitInstantConverter))] DateTimeOffset? ValidUntil = null);
 public sealed record PackDecision(string Action, string AuthorId, DateTimeOffset At, string? ReasonCiphertext = null, int? PreviousMonths = null, int? NewMonths = null,
     int? Quantity = null, DateTimeOffset? PreviousValidity = null, DateTimeOffset? NewValidity = null);
 public sealed record SessionPack(string Id, string PersonId, string Title, int Sessions, decimal Amount, DateTimeOffset PurchasedAt,
     string[] ServiceIds, string CreatedBy, long Version = 1, bool EarlyUseAuthorized = false, string? SettlementId = null,
-    int ExtensionMonths = 0, PackDecision[]? History = null, DateTimeOffset? ValidUntil = null, decimal? RegularTotal = null);
+    int ExtensionMonths = 0, PackDecision[]? History = null, DateTimeOffset? ValidUntil = null, decimal? RegularTotal = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? SaleId = null);
 public sealed record PackUse(string Id, string PackId, string PersonId, string ActivityId, string ServiceId,
     string ActivityKind, DateTimeOffset ActivityAt, string AuthorId, DateTimeOffset CreatedAt, string? ReversesId = null, string? ReasonCiphertext = null);
 public sealed record PackNotice(string Id, string PackId, string PersonId, string Kind, DateTimeOffset DueAt, DateTimeOffset ExpiresAt,
@@ -19,14 +16,26 @@ public sealed record PackNotice(string Id, string PackId, string PersonId, strin
 
 public static class SessionPacks
 {
+    // A paid sale funds its packs directly. It does not draw on the customer's existing credit.
+    internal static SessionPack CreatePaidSalePack(ConsultationData data, string personId, SaleLineInput line,
+        DateTimeOffset purchasedAt, ConsultationActor actor, string saleId)
+    {
+        var pack = new SessionPack(Guid.NewGuid().ToString(), personId, line.Name, line.Sessions!.Value, line.UnitPrice,
+            purchasedAt.ToUniversalTime(), line.ServiceIds!, actor.AccountId,
+            RegularTotal: line.RegularTotal, SaleId: saleId);
+        data.Packs.Add(pack);
+        return pack;
+    }
+
     private static void Require(bool valid, string message, int status = 400) { if (!valid) throw new IdentityProblem(status, message); }
+    public static bool IsPaid(SessionPack pack) => pack.SaleId is not null || pack.SettlementId is not null;
     // The communicated year is a review reference, never an automatic cutoff.
     public static DateTimeOffset ExpiresAt(SessionPack pack) => AgendaRules.Midnight(AgendaRules.LocalDate(pack.PurchasedAt).AddMonths(PackPolicy.ValidityMonths).AddDays(1));
     public static int Remaining(ConsultationData data, string id) => data.Packs.Single(p => p.Id == id).Sessions
         - data.PackUses.Count(u => u.PackId == id && u.ReversesId is null && !data.PackUses.Any(r => r.ReversesId == u.Id))
         - (data.Packs.Single(p => p.Id == id).History ?? []).Where(h => h.Action == "WithdrawPackSessions").Sum(h => h.Quantity ?? 0);
     public static bool CanUse(ConsultationData data, SessionPack pack, string serviceId, DateTimeOffset at) =>
-        pack.ServiceIds.Contains(serviceId) && pack.SettlementId is not null
+        pack.ServiceIds.Contains(serviceId) && IsPaid(pack)
         && !ActivityCatalogue.Complete(data.Services).Any(s => s.Id == serviceId && (s.ServiceKind == "Retreat" || GroupEvents.IsFree(s)))
         && at >= pack.PurchasedAt && Remaining(data, pack.Id) > 0;
     public static void Consume(ConsultationData data, string packId, string personId, string activityId, string serviceId,
@@ -43,33 +52,13 @@ public static class SessionPacks
     }
     public static ConsultationResult Apply(ConsultationData data, ConsultationCommand input, ConsultationActor actor, DateTimeOffset now, Func<string, string, string, string> encrypt)
     {
-        if (input.Action == "PurchasePack")
-        {
-            Require(actor.IsManager, "Esta ação exige a gestora-terapeuta.", 403);
-            var purchase = input.PackPurchase ?? throw new IdentityProblem(400, "Preenche a compra do pack.");
-            Require(Guid.TryParse(purchase.PersonId, out _) && purchase.Sessions is >= 1 and <= 1000 && Money(purchase.Amount), "Indica a pessoa, o número de sessões e o valor total.");
-            Require(purchase.PurchasedAt > DateTimeOffset.UnixEpoch && purchase.PurchasedAt <= now, "Indica uma data de compra já ocorrida.");
-            Require(purchase.ServiceIds is { Length: > 0 and <= 100 } && purchase.ServiceIds.Distinct().Count() == purchase.ServiceIds.Length
-                && purchase.ServiceIds.All(id => ActivityCatalogue.Complete(data.Services).Any(s => s.Id == id && s.Active && s.ServiceKind != "Retreat" && s.PaymentMode != "Free" && !SharingWorkshop.Matches(s.Title))), "Seleciona serviços individuais ou de grupo pagos. Retiros não admitem packs.");
-            var regular = purchase.RegularTotal ?? (purchase.ServiceIds.Length == 1 ? ActivityCatalogue.Complete(data.Services).Single(s => s.Id == purchase.ServiceIds[0]).ReferencePrice * purchase.Sessions : null);
-            Require(regular is > 0 && Money(regular.Value) && purchase.Amount < regular, "Indica o valor das mesmas sessões avulso. O preço promocional tem de ser inferior.");
-            Require(purchase.ValidUntil is null || purchase.ValidUntil > purchase.PurchasedAt, "A data de revisão deve ser posterior à compra.");
-            var allocations = CreditLedger.Allocate(data, purchase.PersonId, purchase.Amount);
-            var settlement = Guid.NewGuid().ToString();
-            var pack = new SessionPack(Guid.NewGuid().ToString(), purchase.PersonId, IdentityValidation.Required(purchase.Title, 200, "o nome do pack"),
-                purchase.Sessions, purchase.Amount, purchase.PurchasedAt.ToUniversalTime(), purchase.ServiceIds, actor.AccountId,
-                SettlementId: settlement, ValidUntil: purchase.ValidUntil, RegularTotal: regular);
-            data.Entries.Add(new(settlement, pack.PersonId, null, "Settlement", -pack.Amount, actor.AccountId, now, null, "Credit", null,
-                Origin: "Pack", OriginReference: pack.Id, Allocations: allocations, Sequence: CreditLedger.NextSequence(data)));
-            data.Packs.Add(pack); return new(pack.Id, "Compra integral registada. As sessões ficaram disponíveis.");
-        }
         var current = data.Packs.SingleOrDefault(p => p.Id == input.Id && (actor.IsManager || p.PersonId == actor.PersonId)) ?? throw new IdentityProblem(404, "Pack não encontrado.");
         Require(current.Version == input.Version, "O pack mudou. Revê a informação atual.", 409);
         var next = current;
         if (input.Action == "SettlePack")
         {
             Require(actor.IsManager, "A compra do pack exige um gestor.", 403);
-            Require(current.SettlementId is null, "Esta compra já foi liquidada.", 409);
+            Require(!IsPaid(current), "Esta compra já foi liquidada.", 409);
             Require(input.Amount is null || input.Amount == current.Amount, "A compra só pode ser liquidada integralmente.", 409);
             var allocations = CreditLedger.Allocate(data, current.PersonId, current.Amount); var id = Guid.NewGuid().ToString();
             data.Entries.Add(new(id, current.PersonId, null, "Settlement", -current.Amount, actor.AccountId, now, null, "Credit", null,
@@ -119,7 +108,7 @@ public static class SessionPacks
                 (Kind: "PackManager:Annual", Due: end, Until: DateTimeOffset.MaxValue),
                 (Kind: "PackManager:Validity:" + pack.ValidUntil?.ToString("O"), Due: pack.ValidUntil ?? DateTimeOffset.MaxValue, Until: DateTimeOffset.MaxValue) })
             {
-                if (pack.SettlementId is not null && remaining > 0 && item.Due <= now && now < item.Until && !data.PackNotices.Any(n => n.PackId == pack.Id && n.Kind == item.Kind))
+                if (IsPaid(pack) && remaining > 0 && item.Due <= now && now < item.Until && !data.PackNotices.Any(n => n.PackId == pack.Id && n.Kind == item.Kind))
                     data.PackNotices.Add(new(Guid.NewGuid().ToString(), pack.Id, pack.PersonId, item.Kind, item.Due, item.Until));
             }
             for (var index = 0; index < data.PackNotices.Count; index++)

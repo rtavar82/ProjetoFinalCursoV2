@@ -1,3 +1,4 @@
+import CalendarInput from './CalendarInput'
 import AdaptiveSelect from './AdaptiveSelect'
 import { useRef, useState } from 'react'
 import { apiRequest } from './identityApi'
@@ -50,7 +51,7 @@ export default function ManualBookingForm({ setup, disabled, publish, onBack, on
   const servicePicker = <label>Tipo de consulta<AdaptiveSelect aria-label="Tipo de consulta" required value={serviceId} onChange={event => selectService(event.target.value)}><option value="">Seleciona a consulta</option>{setup.services.filter(s => s.active !== false).map(service => <option key={service.id} value={service.id}>{service.title}</option>)}</AdaptiveSelect></label>
   const activity = setup.services.find(service => service.id === serviceId && service.serviceKind)
   if (activity) return <div data-card-id="manual-booking-form">{feedback}<fieldset className={styles.fields} disabled={disabled}><ClientSearch canSelect={canBookForClient} selected={person} onSelect={setPerson} disabled={disabled} />{servicePicker}</fieldset><ManualEventBooking key={serviceId} service={activity} person={person} seed={seed} disabled={disabled} publish={publish} onBack={onBack} onSaved={onSaved} onWorking={onWorking} onReviewStart={onReviewStart} /></div>
-  return <div data-card-id="manual-booking-form"><p className={styles.intro}>Podes marcar a qualquer hora, mesmo fora dos horários publicados. Todas as horas são de Lisboa.</p>
+  return <div data-card-id="manual-booking-form"><p className={styles.intro}>Podes marcar a qualquer hora, mesmo fora dos horários publicados.</p>
     {feedback}{error && <p role="alert" className="notice error">{error}</p>}
     {!review ? <form ref={form} data-protect-draft onSubmit={preview}>
       <fieldset disabled={disabled || reviewing} className={styles.fields}>
@@ -59,8 +60,8 @@ export default function ManualBookingForm({ setup, disabled, publish, onBack, on
         <label>Modalidade<AdaptiveSelect aria-label="Modalidade" required value={mode} onChange={event => selectMode(event.target.value)}><option value="">Seleciona a modalidade</option>{[...new Set(serviceVariants.map(v => v.modality))].map(value => <option value={value} key={value}>{value === 'Remote' ? 'Remota' : 'Presencial'}</option>)}</AdaptiveSelect></label>
         {mode !== 'Remote' && <label>Local<AdaptiveSelect aria-label="Local" required value={place} onChange={event => selectPlace(event.target.value)}><option value="">Seleciona o local</option>{[...new Set(serviceVariants.filter(v => v.modality === mode).map(v => v.publicLocation))].map(value => <option key={value}>{value}</option>)}</AdaptiveSelect></label>}
         {options.length > 1 && <label>Opção da consulta<AdaptiveSelect aria-label="Opção da consulta" required value={optionId} onChange={event => { setOptionId(event.target.value); setDuration(options.find(v => v.optionId === event.target.value)?.durationMinutes || duration) }}><option value="">Seleciona a opção</option>{options.map(v => <option value={v.optionId} key={v.optionId}>{v.durationMinutes} min · {servicePrice(v)}</option>)}</AdaptiveSelect></label>}
-        <label>Dia — Lisboa<input type="date" required min={dayKey(new Date())} value={day} onChange={event => setDay(event.target.value)} /></label>
-        <label>Hora de início — Lisboa<input type="time" required step="60" value={time} onChange={event => setTime(event.target.value)} /></label>
+        <label>Dia<CalendarInput type="date" required min={dayKey(new Date())} value={day} onChange={event => setDay(event.target.value)} /></label>
+        <label>Hora de início<CalendarInput type="time" required step="60" value={time} onChange={event => setTime(event.target.value)} /></label>
         <label>Duração acordada (minutos)<input type="number" required min="1" max="10080" step="1" value={duration} onChange={event => setDuration(event.target.value)} /></label>
         {variant && <><p className={styles.help}>Valor: {servicePrice(variant)}. Alterar a duração acordada não altera o catálogo.</p><label>Tratamento financeiro<AdaptiveSelect value={choice} onChange={event => setChoice(event.target.value)}><option value="">Condições da consulta</option>{variant.paymentMode === 'Prepayment' && <option value="Prepayment">Pedir pagamento antecipado</option>}<option value="Postpayment">Permitir pagamento posterior</option><option value="Gift">Oferta de pagamento</option></AdaptiveSelect></label>{person && (choice || variant.paymentMode) === 'Prepayment' && <CreditAuthorizationCard key={person.id} personId={person.id} amount={variant.referencePrice} disabled={disabled || reviewing} />}</>}
       </fieldset><div className={styles.actions}><button type="button" className="secondary" disabled={disabled || reviewing} onClick={onBack}>Voltar à agenda</button><button disabled={disabled || reviewing || variants.length === 0}>{reviewing ? 'A verificar horário…' : 'Rever antes de validar'}</button></div>

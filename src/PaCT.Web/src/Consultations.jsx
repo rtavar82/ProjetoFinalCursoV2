@@ -35,7 +35,7 @@ import ManagerVisitorAgenda from './ManagerVisitorAgenda'
 import ManagerSchedulingDialog from './ManagerSchedulingDialog'
 import ManualBookingForm from './ManualBookingForm'
 import AvailabilityEditorForm from './AvailabilityEditorForm'
-import { agendaMoney as money, agendaDate as date, instant } from './agendaTime'
+import { agendaMoney as money, agendaDate as date, instant, setDateRangeParams } from './agendaTime'
 
 const activityStates = { Waiting: 'Em espera', Withdrawn: 'Desistiu durante o retiro', Cancelled: 'Cancelada' }
 const domainFromEntry = entry => entry?.events ? { kind: 'Event', ...entry } : entry?.packs ? { kind: 'Pack', ...entry } : entry?.guests ? { kind: 'Guest', ...entry } : null
@@ -157,7 +157,7 @@ export default function Consultations({ manager, area, initialEntry, onCreateCli
     {uncertain && <button disabled={busy} onClick={() => send(null, true)}>Verificar resultado</button>}</>
   return <section className={styles.page} data-pending-command={busy || uncertain ? 'true' : undefined} onChangeCapture={event => { if (event.target.closest('dialog form')) detailDirty.current = true }}>
     <div hidden={!!clientProfileId}>
-    {!managementAgenda && <><h1>{area === 'Finance' ? 'Financeiro' : 'Consultas'}</h1><p>Datas e horas de Lisboa.</p></>}
+    {!managementAgenda && <h1>{area === 'Finance' ? 'Financeiro' : 'Consultas'}</h1>}
     {!detail && !managerDialog && !domainEntry && feedback}
     {names.error && <InformationCard error={names.error} onRetry={names.refresh} cardId="consultation-names-error" />}
     {area !== 'Finance' && agenda.error && <InformationCard error={agenda.error} onRetry={agenda.refresh} cardId="agenda-error" />}
@@ -165,14 +165,13 @@ export default function Consultations({ manager, area, initialEntry, onCreateCli
       e.preventDefault(); try {
         const f = new FormData(e.currentTarget); const q = new URLSearchParams()
         for (const name of ['personId', 'state', 'financial', 'sort', 'hasNotes']) if (f.get(name)) q.set(name, f.get(name))
-        if (f.get('from')) q.set('from', instant(f.get('from')))
-        if (f.get('to')) q.set('to', instant(f.get('to')))
+        setDateRangeParams(q, f.get('from'), f.get('to'))
         setFilters('&' + q.toString()); setSearching(f.has('global')); setPage(1)
       } catch (failure) { setError(failure.message) }
     }}><label className={`checkbox ${styles.filterWide}`}><input name="global" type="checkbox" defaultChecked />Pesquisa global, independente dos separadores</label>
       <label>Estado<AdaptiveSelect name="state"><option value="">Todos</option>{['Requested', 'Confirmed', 'AwaitingClosure', 'Performed', 'NoShow', 'Withdrawn', 'CancelledClient', 'CancelledManager', 'Rejected', 'Expired', 'Waiting', 'Cancelled'].map(v => <option key={v} value={v}>{labels[v] || activityStates[v]}</option>)}</AdaptiveSelect></label>
       <label>Situação financeira<AdaptiveSelect name="financial"><option value="">Todas</option>{['Unpaid', 'ContributionUndefined', 'ContributionPending', 'Paid', 'NoDebt', 'AwaitingReceipt'].map(v => <option key={v} value={v}>{labels[v]}</option>)}<option value="OldDebt">Dívidas antigas</option></AdaptiveSelect></label>
-      <DateRangeFields startName="from" endName="to" startLabel="Desde (Lisboa)" endLabel="Até, exclusivo (Lisboa)" exclusive />
+      <DateRangeFields type="date" startName="from" endName="to" startLabel="Desde" endLabel="Até" />
       <label>Notas<AdaptiveSelect name="hasNotes"><option value="">Com ou sem notas</option><option value="true">Com notas</option><option value="false">Sem notas</option></AdaptiveSelect></label>
       <label>Ordenação<AdaptiveSelect name="sort"><option value="">Inicial do separador</option><option value="Oldest">Mais antigas primeiro</option><option value="Newest">Mais recentes primeiro</option></AdaptiveSelect></label>
       <div className={styles.filterWide}><ClientSearch purpose="filter" selected={filterClient} onSelect={setFilterClient} disabled={busy || uncertain} /></div>
@@ -194,7 +193,8 @@ export default function Consultations({ manager, area, initialEntry, onCreateCli
         : <AvailabilityEditorForm setup={setup} disabled={busy || uncertain} feedback={feedback} refresh={agenda.refresh} onWorking={setDialogWorking} onReviewStart={() => { setError(''); setMessage('') }}
           publish={(command, cleanup, rejected) => send(command, false, cleanup, rejected)} onBack={() => guard(() => setManagerDialog(null))} onSaved={() => setManagerDialog(null)} />)}
     </ManagerSchedulingDialog>}
-    {area === 'Finance' && <FinancePanel guard={guard} disabled={busy || uncertain} submit={submit} open={open} instant={instant} onOpenDomain={openDomain} />}
+    {area === 'Finance' && <FinancePanel guard={guard} disabled={busy || uncertain || profileBusy} submit={submit} send={send} feedback={feedback}
+      clearFeedback={() => { setError(''); setMessage('') }} perform={perform} notify={notify} open={open} instant={instant} onOpenDomain={openDomain} />}
     {area === 'Consultations' && <>
       <nav className="consultation-tabs" aria-label="Separadores de consultas">{tabs.map(([key, text]) => <button key={key} className={section === key ? '' : 'secondary'} aria-pressed={section === key} onClick={() => guard(() => { setSection(key); setPage(1); setSearching(false) })}>{text}</button>)}</nav>
       <InformationCard variant="plain" cardId="consultation-results" loading={list.loading} refreshing={list.refreshing} error={list.error} onRetry={list.refresh}>{result && <>

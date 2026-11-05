@@ -4,7 +4,7 @@ using PaCT.Api.Configuration;
 
 namespace PaCT.Api.Identity;
 
-public sealed partial class MySqlIdentityStore(DatabaseConnectionSettings settings, TimeProvider? time = null) : IIdentityStore
+public sealed partial class MySqlIdentityStore(DatabaseConnectionSettings settings, TimeProvider? time = null) : IIdentityStore, ISecurityEmailOperationsStore
 {
     private const string SelectAccount = """
         SELECT a.*, p.email_ciphertext, p.is_active FROM accounts a

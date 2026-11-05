@@ -1,21 +1,27 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using PaCT.Api.Consultations;
+using PaCT.Api.Management;
 
 namespace PaCT.Api.Controllers;
 
 [ApiController, Route("api/public/presentation"), AllowAnonymous]
 [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
-public sealed class PublicPresentationController(IConsultationStore store) : ControllerBase
+public sealed class PublicPresentationController(IConsultationStore store, MySqlSitePresentationStore presentation) : ControllerBase
 {
     [HttpGet]
-    public async Task<IActionResult> Read(CancellationToken ct) => Ok(await store.ReadAgendaAsync(data => new
+    public async Task<IActionResult> Read(CancellationToken ct)
     {
-        therapist = PublicPresentationContent.Therapist,
+        var published = await presentation.PublishedAsync(ct);
+        return Ok(await store.ReadAgendaAsync(data => new
+        {
+        home = SitePresentation.PublicHome(published),
+        therapist = SitePresentation.PublicTherapist(published),
         paymentInformation = PublicPresentationContent.PaymentInformation,
         locations = PublicPresentationContent.Places.Concat(data.Services.Where(s => s.Active).SelectMany(ClientBooking.Options)
             .Select(o => new PublicPresentationContent.PublicPlace(o.Modality == "Remote" ? "Online" : o.PublicLocation, o.Modality,
-                PublicPresentationContent.LocationDescription(o.Modality, o.PublicLocation)))).DistinctBy(p => (p.Name, p.Modality)).ToArray(),
+                PublicPresentationContent.LocationDescription(o.Modality, o.PublicLocation)))).DistinctBy(p => (p.Name, p.Modality))
+            .Select(place => place with { Description = SitePresentation.LocationDescription(published, place.Modality, place.Name) }).ToArray(),
         experiences = PublicPresentationContent.Experiences,
         experiencePresentations = PublicExperienceContent.Presentations,
         services = ActivityCatalogue.Complete(data.Services).Where(s => s.Active).OrderBy(s => s.Title).ThenBy(s => s.Id).Select(s => new
@@ -27,13 +33,14 @@ public sealed class PublicPresentationController(IConsultationStore store) : Con
             {
                 var chosen = ClientBooking.Snapshot(s, option);
                 return new { option.Id, chosen.Modality, chosen.PublicLocation,
-                    locationDescription = PublicPresentationContent.LocationDescription(chosen.Modality, chosen.PublicLocation),
+                    locationDescription = SitePresentation.LocationDescription(published, chosen.Modality, chosen.PublicLocation),
                     chosen.DurationMinutes, chosen.ReferencePrice, chosen.PaymentMode,
                     packTotal = (decimal?)null };
             }).ToArray()
         }).ToArray(),
         packPolicy = new { validityMonths = PackPolicy.ValidityMonths, reminderMonthsBeforeExpiry = PackPolicy.ReminderMonthsBeforeExpiry }
-    }, ct));
+        }, ct));
+    }
     private static ServicePresentation? SafePresentation(ConsultationService service)
     {
         var text = service.Presentation ?? PublicPresentationContent.ServiceText(service.Title);

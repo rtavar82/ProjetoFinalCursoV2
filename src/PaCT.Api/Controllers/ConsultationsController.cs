@@ -111,16 +111,19 @@ public sealed class ConsultationsController(IConsultationStore store, IIdentityS
     [HttpGet]
     public async Task<IActionResult> List(string? section = null, int page = 1, bool search = false, string? personId = null,
         string? state = null, string? financial = null, DateTimeOffset? from = null, DateTimeOffset? to = null,
-        string? sort = null, bool? hasNotes = null, bool? seen = null, CancellationToken ct = default, string? serviceId = null)
+        string? sort = null, bool? hasNotes = null, bool? seen = null, CancellationToken ct = default, string? serviceId = null,
+        bool priceCorrectable = false)
     {
         var actor = await Actor(ct);
         var now = time.GetUtcNow();
         section ??= actor.IsManager ? "Requests" : "Upcoming";
+        if (priceCorrectable && !actor.IsManager) return Forbid();
         string[] sections = actor.IsManager ? ["Requests", "Conditions", "AwaitingReceipt", "Upcoming", "Ended", "Closure", "Performed", "NoShow", "Cancelled"] : ["Payments", "Closed", "Upcoming", "Other", "Cancelled", "Followup"];
         if (page is < 1 or > 100000 || from is not null && to is not null && from >= to || !sections.Contains(section) || seen is not null && (actor.IsManager || section is not ("Followup" or "Closed"))
             || personId is not null && !Guid.TryParse(personId, out _) || sort is not (null or "Oldest" or "Newest")
             || state is not (null or "Requested" or "Confirmed" or "AwaitingClosure" or "Performed" or "NoShow" or "Withdrawn" or "CancelledClient" or "CancelledManager" or "Expired" or "Rejected" or "Waiting" or "Cancelled")
             || serviceId is not null && (actor.IsManager || !Guid.TryParse(serviceId, out _))
+            || priceCorrectable && (section != "Performed" || search || personId is null)
             || financial is not (null or "OldDebt" or "ConditionsPending" or "AwaitingReceipt" or "Paid" or "NoDebt" or "Unpaid" or "ContributionUndefined" or "ContributionPending" or "Free" or "PartiallyPaid" or "PaymentDeclared" or "ReceivedPendingSettlement"))
             return Problem(statusCode: 400, title: "Página, período ou filtros inválidos.");
         return Ok(await store.ReadAsync(data =>
@@ -131,7 +134,7 @@ public sealed class ConsultationsController(IConsultationStore store, IIdentityS
                     new(search, state, financial, from, to, sort, hasNotes, seen, personId, serviceId));
                 var ownDebt = data.Consultations.Where(c => c.PersonId == actor.PersonId && ConsultationRules.HasDebt(c)).ToArray();
                 var participations = data.Participations.Where(p => p.PersonId == actor.PersonId).ToArray();
-                var otherDebt = data.Packs.Where(p => p.PersonId == actor.PersonId && p.SettlementId is null).Sum(p => p.Amount)
+                var otherDebt = data.Packs.Where(p => p.PersonId == actor.PersonId && !SessionPacks.IsPaid(p)).Sum(p => p.Amount)
                     + participations.Sum(p => GroupEvents.AmountDue(data, p));
                 return (object)new { total = result.Total, page, pageSize = 8,
                     items = result.Items.Select(row => row.Consultation is { } c ? View(c, data, actor, now) : row.Guest is { } g ? GuestView(g, data, now) : ParticipationView(row, data)).ToArray(),
@@ -156,6 +159,7 @@ public sealed class ConsultationsController(IConsultationStore store, IIdentityS
             var rows = data.Consultations.Where(c => actor.IsManager || c.PersonId == actor.PersonId)
                 .Where(c => section == "Followup" ? c.State == "Performed" && ConsultationRules.ClientSection(c, now) == "Closed" : search || (actor.IsManager ? ConsultationRules.ManagerSection(c, now) : ConsultationRules.ClientSection(c, now)) == section)
                 .Where(c => personId is null || c.PersonId == personId)
+                .Where(c => !priceCorrectable || ConsultationRules.CanCorrectFinalAmount(c))
                 .Where(c => state is null || ProcessLifecycle.Substate(c, now) == state)
                 .Where(c => financial is null || (financial == "OldDebt" ? ConsultationRules.HasOldDebt(c) : ConsultationRules.FinancialState(c) == financial))
                 .Where(c => (from is null || c.StartsAt >= from) && (to is null || c.StartsAt < to))
@@ -179,7 +183,7 @@ public sealed class ConsultationsController(IConsultationStore store, IIdentityS
         return Ok(await store.ReadAsync(data =>
         {
             var consultation = data.Consultations.SingleOrDefault(c => c.Id == id && (actor.IsManager || c.PersonId == actor.PersonId));
-            if (consultation is not null) return View(consultation, data, actor, now);
+            if (consultation is not null) return View(consultation, data, actor, now, includePriceHistory: true);
             if (!actor.IsManager && data.GuestRequests.SingleOrDefault(g => g.Id == id && g.PersonId == actor.PersonId) is { } guest)
             {
                 // An already open request keeps working when management approves it.
@@ -189,6 +193,12 @@ public sealed class ConsultationsController(IConsultationStore store, IIdentityS
             }
             throw new IdentityProblem(404, "Consulta não encontrada.");
         }, ct));
+    }
+    [HttpPost("{id:guid}/price-correction-preview"), Authorize(Roles = Roles.Managers)]
+    public async Task<IActionResult> PriceCorrectionPreview(string id, ConsultationPriceCorrectionInput input, CancellationToken ct)
+    {
+        var actor = await Actor(ct);
+        return Ok(await store.ReadAsync(data => ConsultationRules.PreviewFinalAmount(data, id, input, actor), ct));
     }
     [HttpGet("setup"), Authorize(Roles = Roles.Managers)]
     public async Task<IActionResult> Setup(CancellationToken ct) => Ok(await store.ReadAgendaAsync(data => new { services = ActivityCatalogue.Complete(data.Services), windows = AgendaRules.ActiveWindows(data).ToArray(), revision = AgendaRules.Revision(data) }, ct));
@@ -233,7 +243,7 @@ public sealed class ConsultationsController(IConsultationStore store, IIdentityS
             var entries = (sort == "Oldest" ? movementRows.OrderBy(e => e.CreatedAt).ThenBy(e => e.Sequence) : movementRows.OrderByDescending(e => e.CreatedAt).ThenByDescending(e => e.Sequence)).ThenBy(e => e.Id).ToArray();
             var running = entries.Select(e => e.PersonId).Distinct().SelectMany(id => CreditLedger.RunningBalances(data, id)).ToDictionary(x => x.Key, x => x.Value);
             var negative = balances.Where(n => data.Balance(n.Key) < 0).ToArray();
-            var additional = data.Packs.Where(p => Matches(p.PersonId) && p.SettlementId is null && (from is null || p.PurchasedAt >= from) && (to is null || p.PurchasedAt < to))
+            var additional = data.Packs.Where(p => Matches(p.PersonId) && !SessionPacks.IsPaid(p) && (from is null || p.PurchasedAt >= from) && (to is null || p.PurchasedAt < to))
                 .Select(p => new DomainObligation(p.Id, "Pack", p.PersonId, p.Title, p.Amount, p.PurchasedAt, p.Id))
                 .Concat(data.Participations.Where(p => p.PersonId is not null && Matches(p.PersonId) && (GroupEvents.AmountDue(data, p) > 0 || ClientAgenda.UndefinedDebt(p)))
                     .Select(p => (P: p, E: data.Events.Single(e => e.Id == p.EventId)))
@@ -316,7 +326,7 @@ public sealed class ConsultationsController(IConsultationStore store, IIdentityS
         }
         return Ok(await store.ExecuteAsync(input, actor, ct));
     }
-    private object View(Consultation c, ConsultationData data, ConsultationActor actor, DateTimeOffset now) => new
+    private object View(Consultation c, ConsultationData data, ConsultationActor actor, DateTimeOffset now, bool includePriceHistory = false) => new
     {
         kind = "Consultation", sourceId = c.Id, activityKind = "Individual",
         c.Id, c.PersonId, c.Version, serviceId = c.Service.Id, serviceTitle = c.Service.Title, c.StartsAt, c.EndsAt, c.Service.Modality, c.Service.PublicLocation,
@@ -331,6 +341,8 @@ public sealed class ConsultationsController(IConsultationStore store, IIdentityS
         paymentAlert = data.Notices.Any(n => n.ConsultationId == c.Id && ConsultationRules.PaymentNoticeActive(n)),
         paymentCommunications = actor.IsManager ? c.PaymentCommunications : [],
         collectionHistory = actor.IsManager ? c.CollectionHistory.Select(h => new { h.Id, h.Closed, h.AuthorId, h.At, reason = h.ReasonCiphertext is null ? null : Decrypt(c.Id, "collection", h.ReasonCiphertext) }).ToArray() : [],
+        priceHistory = actor.IsManager && includePriceHistory ? c.PriceHistory.Select(h => new { h.Id, h.PreviousAmount, h.Amount, h.AuthorId, h.At,
+            reason = Decrypt(c.Id, "price-correction", h.ReasonCiphertext), h.CreditReturnIds }).ToArray() : [],
         actions = Actions(c, data, actor, now),
         c.FinalAmount, c.NoDebtReason, c.SettlementId, c.SettledAmount, amountDue = ConsultationRules.Remaining(c), c.CreditProposals, c.ArchivedAt, c.PublicContentVersion, c.ArchivedContentVersion, c.KeepBlocked, c.AvailabilityDecidedAt,
         creditAuthorization = new { allowed = c.CreditAuthorizations.LastOrDefault()?.Allowed == true,
@@ -396,6 +408,7 @@ public sealed class ConsultationsController(IConsultationStore store, IIdentityS
             if (c.KeepBlocked) actions.Add("Release");
             if (c.State is "CancelledClient" or "CancelledManager" && c.AvailabilityDecidedAt is null) actions.Add("Keep");
             if (ConsultationRules.HasDebt(c) && !c.OldDebt) actions.Add("MoveToOldDebts");
+            if (ConsultationRules.CanCorrectFinalAmount(c)) actions.Add("CorrectFinalAmount");
         }
         if (ConsultationCredit.Payable(c))
         {

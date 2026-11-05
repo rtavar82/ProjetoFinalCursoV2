@@ -29,9 +29,13 @@ export function invalidateResources(resources) {
 export function announceSuccessfulWrite(path, body) {
   const endpoint = path.split('?')[0]
   const resources = []
+  if (/^management\//.test(endpoint) && endpoint !== 'management/presentation/editor') resources.push('management')
+  if (/^management\/presentation\/[^/]+\/publish$/.test(endpoint)) resources.push('publicPresentation')
+  if (/^finance\/expenses(?:\/|$)/.test(endpoint)) resources.push('expenses', 'management')
   if (/^(clients(?:\/|$)|profile$|identity\/client-registration$)/.test(endpoint)) resources.push('clientReviews', 'clients', 'profile', 'clientAccess')
-  if (/^clients\/reviews\/[^/]+$/.test(endpoint) && body?.accept) resources.push('consultations', 'finance', 'agenda', 'guestRequests', 'packs', 'events', 'consultationNotices', 'consultationMessages')
+  if (/^clients\/reviews\/[^/]+$/.test(endpoint) && body?.accept) resources.push('consultations', 'finance', 'sales', 'agenda', 'guestRequests', 'packs', 'events', 'consultationNotices', 'consultationMessages')
   if (endpoint === 'consultations/commands') {
+    if (body?.action === 'RecordSale') resources.push('sales')
     if (['SendMessage', 'ReadMessages', 'ReadMessageNotice', 'BlockConversation', 'ReopenConversation'].includes(body?.action)) resources.push('consultationNotices', 'consultations', 'consultationMessages')
     else resources.push('consultationNotices', 'consultations', 'finance', 'agenda', 'guestRequests', 'packs', 'events')
     if (body?.action === 'LinkGuestRequest') resources.push('clients', 'clientReviews')

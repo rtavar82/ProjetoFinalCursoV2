@@ -3,6 +3,10 @@
 .item svg { flex-shrink: 0; width: 21px; height: 21px; }
 .item[aria-current='page'], .item:hover:not(:disabled) { background: var(--tint); color: var(--accent); }
 .item[aria-current='page'] { font-weight: 600; }
+@media (max-width: 1079px) {
+  .extended { overflow-x: auto; overscroll-behavior-x: contain; }
+  .extended .item { flex: 1 0 84px; overflow-wrap: normal; }
+}
 @media (min-width: 1080px) {
   .navigation { position: static; flex: 0 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; flex-direction: column; gap: 7px; border: 0; padding: 0; margin-block: 40px 24px; box-shadow: none; }
   .item { flex: none; flex-direction: row; justify-content: flex-start; gap: 12px; min-height: 46px; padding: 12px 16px; font-size: var(--font-size-label); text-align: left; }

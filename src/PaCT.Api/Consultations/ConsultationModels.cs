@@ -80,6 +80,7 @@ public sealed record Consultation
     public DateTimeOffset? ActualStartsAt { get; init; }
     public DateTimeOffset? ActualEndsAt { get; init; }
     public decimal? FinalAmount { get; init; }
+    public ConsultationPriceRevision[] PriceHistory { get; init; } = [];
     public string? NoDebtReason { get; init; }
     public string? SettlementId { get; init; }
     public decimal SettledAmount { get; init; }
@@ -119,6 +120,11 @@ public sealed record ConsultationMessage(string Id, string? ConsultationId, stri
 public sealed record ConsultationMessageRead(string Id, string MessageId, string AccountId, DateTimeOffset At);
 public sealed record ConsultationNoteRevision(long PublicContentVersion, string Kind, string AuthorId, DateTimeOffset At, string? ContentCiphertext);
 public sealed record CollectionDecision(string Id, bool Closed, string AuthorId, DateTimeOffset At, string? ReasonCiphertext);
+public sealed record ConsultationPriceRevision(string Id, decimal PreviousAmount, decimal Amount, string ReasonCiphertext,
+    string AuthorId, DateTimeOffset At, string[] CreditReturnIds);
+public sealed record ConsultationPriceCorrectionInput(long Version, decimal? Amount);
+public sealed record ConsultationPriceCorrectionPreview(long Version, decimal PreviousAmount, decimal Amount, decimal DebtBefore,
+    decimal DebtAfter, decimal BalanceBefore, decimal BalanceAfter, decimal CreditToRestore);
 public sealed record PaymentCommunication(string Id, string? AuthorId, DateTimeOffset At);
 public sealed record CreditAllocation(string ReceiptId, decimal Amount);
 public sealed record ConsultationCreditAuthorization(string Id, string AuthorId, DateTimeOffset At, string Phase,
@@ -136,6 +142,7 @@ public sealed record ConsultationNotice(string Id, string? PersonId, string Cons
     bool EmailPending = false, DateTimeOffset? EmailQueuedAt = null);
 public sealed class ConsultationData
 {
+    internal PaCT.Api.Management.SitePublication PublishedSite { get; set; } = PaCT.Api.Management.SitePresentation.Default;
     public List<ConsultationService> Services { get; } = [];
     public List<AvailabilityWindow> Windows { get; } = [];
     public List<Consultation> Consultations { get; } = [];
@@ -144,6 +151,8 @@ public sealed class ConsultationData
     public HashSet<string> ClientAccountPeople { get; } = [];
     public Dictionary<string, string> ClientReadOwners { get; } = [];
     public List<SessionPack> Packs { get; } = [];
+    public List<FinancialSale> Sales { get; } = [];
+    public bool SalesReady { get; set; } = true;
     public List<PackUse> PackUses { get; } = [];
     public List<PackNotice> PackNotices { get; } = [];
     public List<GroupEvent> Events { get; } = [];
@@ -173,6 +182,8 @@ public sealed record ConsultationCommand
     public string? AvailabilityChoice { get; init; }
     public decimal? Amount { get; init; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public decimal? ExpectedBalance { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public decimal? SettlementAmount { get; init; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public bool? AllowClientCredit { get; init; }
@@ -193,7 +204,7 @@ public sealed record ConsultationCommand
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public AvailabilityPublication? Publication { get; init; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public PackPurchaseInput? PackPurchase { get; init; }
+    public SaleInput? Sale { get; init; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? PackId { get; init; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]

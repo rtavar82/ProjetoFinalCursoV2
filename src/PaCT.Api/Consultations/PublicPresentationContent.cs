@@ -1,7 +1,6 @@
 namespace PaCT.Api.Consultations;
 
-// Approved public copy, not imported accounts, catalogue entries or commercial values.
-// Editing/publication is intentionally outside this increment.
+// Approved defaults used before a presentation is published by management.
 public static class PublicPresentationContent
 {
     public sealed record PublicPlace(string Name, string Modality, string Description);

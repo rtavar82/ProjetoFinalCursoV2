@@ -116,6 +116,9 @@ public static class GroupEvents
             Require(existing is null || Seats(data, existing.Id) <= definition.Capacity || definition.Capacity >= existing.Definition.Capacity, "A lotação não pode ficar abaixo das vagas ocupadas ou provisórias.", 409);
             Require(existing is null || service.ServiceKind != "Retreat" || !data.Participations.Any(p => p.EventId == existing.Id && p.State == "Confirmed")
                 || RetreatFinance.Price(existing) == (definition.TotalPrice ?? service.ReferencePrice), "O preço único não pode mudar depois de existirem inscrições confirmadas.", 409);
+            service = existing is not null && existing.Definition.PublicLocation == definition.PublicLocation
+                ? service with { Instructions = existing.Service.Instructions }
+                : PaCT.Api.Management.SitePresentation.WithAddress(data.PublishedSite, service, definition.PublicLocation);
             var item = existing is null ? new(Guid.NewGuid().ToString(), service, definition, actor.AccountId, now) : existing with { Service = service, Definition = definition, Version = existing.Version + 1,
                 State = "Waiting",
                 ScheduleVersion = existing.ScheduleVersion + (existing.Definition.StartsAt != definition.StartsAt || existing.Definition.EndsAt != definition.EndsAt || existing.Definition.PublicLocation != definition.PublicLocation ? 1 : 0),

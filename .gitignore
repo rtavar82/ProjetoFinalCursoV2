@@ -25,3 +25,4 @@ appsettings.Local.json
 **/dist/
 src/PaCT.Api/wwwroot/
 
+/AGENTS.md

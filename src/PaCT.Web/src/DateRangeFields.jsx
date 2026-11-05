@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import CalendarInput from './CalendarInput'
 
 // One interaction for date/date-time pairs. Presets remain the owner's responsibility.
 export default function DateRangeFields({ startLabel, endLabel, type = 'datetime-local', startName = 'start', endName = 'end', defaultValue = { start: '', end: '' }, value, onChange, required = false, min, exclusive = false, ordered = true }) {
@@ -25,7 +26,8 @@ export default function DateRangeFields({ startLabel, endLabel, type = 'datetime
     return () => form?.removeEventListener('reset', reset)
   }, [defaultValue])
   return <>
-    <label>{startLabel}<input name={startName} type={type} required={required} min={min} value={current.start} onChange={event => change('start', event.target.value)} /></label>
-    <label>{endLabel}<input ref={endInput} name={endName} type={type} required={required} min={ordered ? current.start || min : min} value={current.end} onChange={event => change('end', event.target.value)} /></label>
+    <label>{startLabel}<CalendarInput name={startName} type={type} required={required} min={min} value={current.start} onChange={event => change('start', event.target.value)} /></label>
+    <label>{endLabel}<CalendarInput ref={endInput} name={endName} type={type} required={required} min={ordered ? current.start || min : min}
+      excludeMinimum={ordered && exclusive && !!current.start} value={current.end} onChange={event => change('end', event.target.value)} /></label>
   </>
 }

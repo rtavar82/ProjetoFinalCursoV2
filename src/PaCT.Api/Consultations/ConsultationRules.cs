@@ -156,6 +156,8 @@ public static class ConsultationRules
         DateTimeOffset now, Func<string, string, string, string> encrypt)
     {
         Require(Guid.TryParse(input.OperationId, out _), "A operação precisa de identificação válida.");
+        Require(input.Sale is null || input.Action == "RecordSale", "Os dados de venda pertencem apenas ao registo de vendas.");
+        if (input.Action == "RecordSale") return FinancialSales.Apply(data, input, actor, now, encrypt);
         Require(input.AllowClientCredit is null || actor.IsManager && input.Action is "Approve" or "Close" or "Manual" or "LinkGuestRequest",
             "A autorização de crédito só pode ser definida pela gestão na aprovação ou no fecho.");
         if (input.Action is "SendMessage" or "ReadMessages" or "BlockConversation" or "ReopenConversation")
@@ -192,7 +194,7 @@ public static class ConsultationRules
             return new(input.Id!, "Aviso marcado como lido.");
         }
         if (input.Action is "RejectGuestRequest" or "LinkGuestRequest" or "ArchiveGuestRequest") return GuestConsultations.Manage(data, input, actor, now);
-        if (input.Action is "PurchasePack" or "AuthorizePackUse" or "ExtendPack" or "SetPackValidity" or "WithdrawPackSessions" or "SettlePack" or "ReversePackUse") return SessionPacks.Apply(data, input, actor, now, encrypt);
+        if (input.Action is "AuthorizePackUse" or "ExtendPack" or "SetPackValidity" or "WithdrawPackSessions" or "SettlePack" or "ReversePackUse") return SessionPacks.Apply(data, input, actor, now, encrypt);
         if (input.Action is "SaveEvent" or "CancelEvent" or "PerformEvent" or "ReleaseEventBlock" or "JoinEvent" or "AcceptParticipationConditions" or "CancelParticipation" or "ConfirmParticipation" or "RegisterParticipation" or "CloseParticipation" or "SettleParticipation" or "UseParticipationCredit" or "DeclareParticipationPayment" or "LinkEventGuest" or "RejectEventGuest" or "ArchiveParticipation")
         { var result = GroupEvents.Apply(data, input, actor, now, encrypt); GroupEvents.Advance(data, now); return result; }
         if (input.Action == "PublishAvailability")
@@ -243,6 +245,7 @@ public static class ConsultationRules
             var service = input.Action == "Manual" ? ManualBooking.Resolve(data, input.ServiceId, input.ServiceVersion, input.DeliveryOptionId, input.DurationMinutes)
                 : data.Services.SingleOrDefault(s => s.Id == input.ServiceId && s.Active && s.ServiceKind is null) ?? throw new IdentityProblem(400, "Serviço individual indisponível.");
             if (input.Action == "Request") service = ClientBooking.Validate(data, input.ServiceId, input.StartsAt.ToUniversalTime(), input.ServiceVersion, input.DeliveryOptionId, now);
+            service = PaCT.Api.Management.SitePresentation.WithAddress(data.PublishedSite, service, service.PublicLocation);
             var person = actor.IsManager ? input.PersonId : actor.PersonId;
             Require(Guid.TryParse(person, out _), "Seleciona a ficha do cliente.");
             var start = input.StartsAt.ToUniversalTime();
@@ -275,7 +278,9 @@ public static class ConsultationRules
             Require(input.Origin != "Consultation" || input.Id is not null, "Seleciona a consulta de origem.");
             Require(input.Id is null || input.Origin == "Consultation", "A consulta selecionada deve corresponder à origem do recebimento.");
             Require(input.Origin is not ("Sale" or "EventService") || !string.IsNullOrWhiteSpace(input.OriginReference) && input.OriginReference.Length <= 120, "Indica a referência da venda ou evento/serviço.");
+            Require(input.Origin != "Sale" || !data.Sales.Any(s => s.Id == input.OriginReference), "Esta venda já tem o recebimento registado. Não registes o mesmo dinheiro novamente.", 409);
             Require(input.Origin != "Pack" || data.Packs.Any(p => p.Id == input.OriginReference && p.PersonId == input.PersonId), "Seleciona a compra de pack desta pessoa.");
+            Require(input.Origin != "Pack" || !data.Packs.Any(p => p.Id == input.OriginReference && p.SaleId is not null), "Este pack foi vendido com o recebimento já registado.", 409);
             Consultation? c = null;
             if (input.Id is not null)
             {
@@ -456,6 +461,9 @@ public static class ConsultationRules
                 next = ConsultationCredit.Authorize(data, next, actor, now, "Closure", performed && noDebt is null && input.AllowClientCredit == true);
                 if (performed) Notice(data, next, "Closed", next.PersonId, now);
                 break;
+            case "CorrectFinalAmount":
+                next = CorrectFinalAmount(data, current, input, actor, now, encrypt);
+                break;
             case "MoveToOldDebts":
                 Manager(actor); Require(HasDebt(current), "Esta consulta não tem uma cobrança por regularizar.", 409);
                 Require(!current.OldDebt, "Esta consulta já está em Dívidas antigas.", 409);
@@ -493,6 +501,56 @@ public static class ConsultationRules
         SatisfyAdvances(data, now);
         SyncBalanceNotices(data, now);
         return new(current.Id, input.Action == "Accept" ? "Condições aceites." : input.Action == "UseAuthorizedCredit" ? "Crédito utilizado. A situação de pagamento foi atualizada." : "Operação concluída.");
+    }
+    public static bool CanCorrectFinalAmount(Consultation c) =>
+        c.State == "Performed" && c.ClosedAt is not null && c.NoDebtReason is null && Money(c.FinalAmount);
+
+    public static ConsultationPriceCorrectionPreview PreviewFinalAmount(ConsultationData data, string id, ConsultationPriceCorrectionInput input, ConsultationActor actor)
+    {
+        Manager(actor);
+        var c = data.Consultations.SingleOrDefault(c => c.Id == id) ?? throw new IdentityProblem(404, "Consulta não encontrada.");
+        Require(c.Version == input.Version, "A consulta mudou. Atualiza antes de decidir.", 409);
+        return PreviewFinalAmount(data, c, input.Amount);
+    }
+
+    private static ConsultationPriceCorrectionPreview PreviewFinalAmount(ConsultationData data, Consultation c, decimal? amount)
+    {
+        Require(CanCorrectFinalAmount(c), "Só é possível retificar o valor definido de uma consulta realizada e fechada a pagamento.", 409);
+        Require(Money(amount) && amount != c.FinalAmount, "Indica um novo valor final positivo e diferente do atual.");
+        var previous = c.FinalAmount!.Value;
+        var revised = amount!.Value;
+        var debits = data.Entries.Where(e => e.ConsultationId == c.Id && e.PersonId == c.PersonId && e.Kind == "Settlement").ToArray();
+        var debitIds = debits.Select(e => e.Id).ToHashSet();
+        var returns = data.Entries.Where(e => e.Kind == "SettlementReturn" && e.OriginalId is not null && debitIds.Contains(e.OriginalId)).Sum(e => e.Amount);
+        Require(returns - debits.Sum(e => e.Amount) == c.SettledAmount
+            && c.SettledAmount >= 0 && c.SettledAmount <= previous
+            && (c.SettlementId is null ? c.SettledAmount < previous : c.SettledAmount == previous && debitIds.Contains(c.SettlementId)),
+            "A liquidação anterior exige revisão antes de retificar o valor.", 409);
+        var balance = data.Balance(c.PersonId);
+        var restore = Math.Max(0, c.SettledAmount - revised);
+        return new(c.Version, previous, revised, Remaining(c), Math.Max(0, revised - c.SettledAmount), balance, balance + restore, restore);
+    }
+
+    private static Consultation CorrectFinalAmount(ConsultationData data, Consultation c, ConsultationCommand input,
+        ConsultationActor actor, DateTimeOffset now, Func<string, string, string, string> encrypt)
+    {
+        Manager(actor);
+        var preview = PreviewFinalAmount(data, c, input.Amount);
+        Require(preview.BalanceBefore == input.ExpectedBalance, "O saldo mudou ou ainda não foi revisto. Revê a correção antes de confirmar.", 409);
+        Require(!string.IsNullOrWhiteSpace(input.Reason) && input.Reason.Length <= 2000, "Indica a justificação privada, até 2000 caracteres.");
+        var reason = encrypt(c.Id, "price-correction", input.Reason!.Trim());
+        var entryCount = data.Entries.Count;
+        var next = ConsultationCredit.Reconcile(data, c, actor, now, preview.Amount);
+        var revision = new ConsultationPriceRevision(input.OperationId, preview.PreviousAmount, preview.Amount, reason, actor.AccountId,
+            now, data.Entries.Skip(entryCount).Select(e => e.Id).ToArray());
+        var newDebt = preview.DebtBefore == 0 && preview.DebtAfter > 0;
+        return next with
+        {
+            FinalAmount = preview.Amount,
+            PriceHistory = [..c.PriceHistory, revision],
+            OldDebt = c.OldDebt && !newDebt,
+            PaymentDeclaredAt = newDebt ? null : c.PaymentDeclaredAt
+        };
     }
     public static void SyncBalanceNotices(ConsultationData data, DateTimeOffset now)
     {

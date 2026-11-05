@@ -13,12 +13,14 @@ public static class FinanceReports
         var settlementReturns = entries.Where(e => e.Kind == "SettlementReturn" && Period(e.CreatedAt)).Sum(e => e.Amount);
         var consultations = data.Consultations.Where(c => (personId is null || c.PersonId == personId) && Period(c.StartsAt) && c.State == "Performed").ToArray();
         var unpaid = consultations.Where(ConsultationRules.HasDebt).ToArray();
-        var packDebts = data.Packs.Where(p => (personId is null || p.PersonId == personId) && p.SettlementId is null && Period(p.PurchasedAt)).ToArray();
+        var packDebts = data.Packs.Where(p => (personId is null || p.PersonId == personId) && !SessionPacks.IsPaid(p) && Period(p.PurchasedAt)).ToArray();
         var eventDebts = data.Participations.Where(p => (personId is null || p.PersonId == personId) && GroupEvents.AmountDue(data, p) > 0
             && Period(data.Events.Single(e => e.Id == p.EventId).Definition.StartsAt)).ToArray();
         var anonymous = personId is null && origin is null or "EventService" && kind is null or "Receipt" ? data.EventCash.Where(e => Period(e.EffectiveAt)).Sum(e => e.Amount) : 0;
+        var sales = origin is null or "Sale" && kind is null or "Receipt"
+            ? data.Sales.Where(s => (personId is null || s.PersonId == personId) && Period(s.EffectiveAt)).Sum(s => s.Total) : 0;
         return new { asOf = now, from, to,
-            received = receipts.Sum(e => e.Amount) + anonymous, anonymousEventReceipts = anonymous, refunded = -refunds.Sum(e => e.Amount),
+            received = receipts.Sum(e => e.Amount) + anonymous + sales, saleReceipts = sales, salesPrepared = data.SalesReady, anonymousEventReceipts = anonymous, refunded = -refunds.Sum(e => e.Amount),
             settled = -settlements.Sum(e => e.Amount) - settlementReturns, settlementReturns,
             corrections = entries.Where(e => (e.Kind is "Adjustment" or "AdjustmentReversal" or "Reversal") && Period(e.CreatedAt)).Sum(e => e.Amount),
             globalNegativeDebt = data.Entries.Where(e => personId is null || e.PersonId == personId).GroupBy(e => e.PersonId).Sum(g => Math.Max(0, -g.Sum(e => e.Amount))),

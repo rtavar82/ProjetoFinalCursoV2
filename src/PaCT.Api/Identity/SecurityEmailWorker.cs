@@ -6,21 +6,32 @@ namespace PaCT.Api.Identity;
 
 public interface ISecurityEmailTransport
 {
+    SecurityEmailTransportStatus GetConfigurationStatus();
     void CheckConfiguration();
     Task<string> SendAsync(EmailPayload payload, CancellationToken ct);
 }
 
-public sealed class SmtpSecurityEmailTransport(IConfiguration configuration, InstallationSecrets installation) : ISecurityEmailTransport
+public sealed class SmtpSecurityEmailTransport(IConfiguration configuration, IInstallationSecrets installation) : ISecurityEmailTransport
 {
-    public void CheckConfiguration()
+    public SecurityEmailTransportStatus GetConfigurationStatus()
     {
-        _ = installation.PublicWebUrl;
+        try { _ = installation.PublicWebUrl; }
+        catch (IdentityProblem) { return new(false, "InstallationConfiguration", "O envio de emails está indisponível: a configuração segura da instalação não está disponível."); }
+
         if (string.IsNullOrWhiteSpace(configuration["Email:Smtp:Host"])
             || string.IsNullOrWhiteSpace(configuration["Email:Smtp:UserName"])
-            || string.IsNullOrWhiteSpace(configuration["Email:Smtp:Password"])
-            || !MailboxAddress.TryParse(configuration["Email:Smtp:FromEmail"], out _)
+            || string.IsNullOrWhiteSpace(configuration["Email:Smtp:Password"]))
+            return new(false, "MissingSmtpConfiguration", "O envio de emails está indisponível: falta concluir a configuração privada do servidor SMTP.");
+        if (!MailboxAddress.TryParse(configuration["Email:Smtp:FromEmail"], out _)
             || !int.TryParse(configuration["Email:Smtp:Port"], out var port) || port is < 1 or > 65535)
-            throw new IdentityProblem(503, "Falta concluir a configuração privada do envio de emails.");
+            return new(false, "InvalidSmtpConfiguration", "O envio de emails está indisponível: a configuração privada do servidor SMTP não é válida.");
+        return new(true, "Ready", "O envio SMTP está configurado para processamento.");
+    }
+
+    public void CheckConfiguration()
+    {
+        var status = GetConfigurationStatus();
+        if (!status.Available) throw new IdentityProblem(503, status.Message);
     }
 
     public async Task<string> SendAsync(EmailPayload payload, CancellationToken ct)
@@ -132,7 +143,7 @@ internal static class SecurityEmailContent
 
 public sealed class SecurityEmailWorker(IIdentityStore store, ITherapistInvitationStore invitations, IdentitySecurity security, IInstallationSecrets installation,
     ISecurityEmailTransport transport, TimeProvider time, ILogger<SecurityEmailWorker> logger, ClientAccessService? clientAccess = null, PasswordChangeService? passwords = null,
-    PaCT.Api.Consultations.IConsultationStore? consultations = null) : BackgroundService
+    PaCT.Api.Consultations.IConsultationStore? consultations = null, SecurityEmailHealth? health = null) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -148,6 +159,7 @@ public sealed class SecurityEmailWorker(IIdentityStore store, ITherapistInvitati
             catch (Exception error)
             {
                 logger.LogWarning("Security email processing unavailable: type={ErrorType}", error.GetType().Name);
+                health?.RecordFailure(error is IdentityProblem ? "Configuration" : "Worker", time.GetUtcNow().UtcDateTime);
                 try { await Task.Delay(TimeSpan.FromSeconds(30), stoppingToken); }
                 catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { break; }
             }
@@ -156,8 +168,11 @@ public sealed class SecurityEmailWorker(IIdentityStore store, ITherapistInvitati
 
     internal async Task<bool> ProcessNextAsync(CancellationToken ct)
     {
-        transport.CheckConfiguration();
         var now = time.GetUtcNow().UtcDateTime;
+        health?.RecordWorkerActivity(now);
+        var configuration = transport.GetConfigurationStatus();
+        health?.ObserveConfiguration(configuration, now);
+        transport.CheckConfiguration();
         await store.RecoverInterruptedEmailsAsync(now, ct);
         var job = await store.ClaimEmailAsync(now, ct);
         if (job is null) return false;
@@ -205,6 +220,7 @@ public sealed class SecurityEmailWorker(IIdentityStore store, ITherapistInvitati
                 && data.Consultations.Any(c => c.Id == n.ConsultationId && c.PersonId == account.PersonId
                     && PaCT.Api.Consultations.AppointmentCommunications.EmailKind(n, c, time.GetUtcNow()) == payload.Kind)), ct);
         var state = eligible ? await transport.SendAsync(payload, ct) : "Cancelled";
+        health?.RecordOutcome(state, time.GetUtcNow().UtcDateTime);
         await store.CompleteEmailAsync(job.Id, state, time.GetUtcNow().UtcDateTime, ct);
         return true;
     }

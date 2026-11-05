@@ -126,7 +126,7 @@ export default function GuestBookingForm({ selection, onBack, onSignIn, previewO
           <dl>
             <dt>Consulta ou atividade</dt><dd>{review.selected.title}</dd>
             <dt>Data</dt><dd>{bookingDates(selection.startsAt, review.endsAt)}</dd>
-            <dt>Horário — Lisboa</dt><dd>{agendaClock(selection.startsAt)} — {agendaClock(review.endsAt)}</dd>
+            <dt>Horário</dt><dd>{agendaClock(selection.startsAt)} — {agendaClock(review.endsAt)}</dd>
             <dt>Modalidade</dt><dd>{review.selected.modality === 'Remote' ? 'Remota' : 'Presencial'}</dd>
             {review.selected.modality === 'InPerson' && <><dt>Local</dt><dd>{review.selected.publicLocation}</dd></>}
             <dt>Valor</dt><dd>{servicePrice(review.selected)}</dd>

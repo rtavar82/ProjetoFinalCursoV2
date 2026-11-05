@@ -11,7 +11,7 @@ namespace PaCT.Api.Controllers;
 public sealed class ClientsController(ClientService clients) : ControllerBase
 {
     private string Author => User.FindFirstValue(ClaimTypes.NameIdentifier)!;
-    [HttpGet] public async Task<IActionResult> List(string field = "Name", string? term = null, int page = 1, CancellationToken ct = default) => Ok(await clients.SearchAsync(field, term, page, ct));
+    [HttpGet] public async Task<IActionResult> List(string? term = null, int page = 1, CancellationToken ct = default) => Ok(await clients.SearchAsync(term, page, ct));
     [HttpGet("{id:guid}")] public async Task<IActionResult> Get(string id, CancellationToken ct) => Ok(await clients.GetAsync(id, ct));
     [HttpGet("names")] public async Task<IActionResult> Names([FromQuery] string[] ids, CancellationToken ct) => Ok(await clients.NamesAsync(ids, ct));
     [HttpPost] public Task<IActionResult> Create(ProfileChange input, CancellationToken ct) => Save(null, input, ct);

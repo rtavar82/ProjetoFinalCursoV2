@@ -88,11 +88,19 @@ public static class TherapistInvitationSchema
         var snapshot = new Dictionary<string, object>();
         foreach (var table in tables)
         {
+            var identifier = "`" + table.Replace("`", "``", StringComparison.Ordinal) + "`";
+            var keyColumns = new List<string>();
+            await using (var command = new MySqlCommand("SELECT COLUMN_NAME FROM information_schema.STATISTICS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME=@table AND INDEX_NAME='PRIMARY' ORDER BY SEQ_IN_INDEX", connection, transaction))
+            {
+                command.Parameters.AddWithValue("@table", table);
+                await using var reader = await command.ExecuteReaderAsync(ct);
+                while (await reader.ReadAsync(ct)) keyColumns.Add("`" + reader.GetString(0).Replace("`", "``", StringComparison.Ordinal) + "`");
+            }
             string definition;
-            await using (var command = new MySqlCommand("SHOW CREATE TABLE `" + table + "`", connection, transaction))
+            await using (var command = new MySqlCommand("SHOW CREATE TABLE " + identifier, connection, transaction))
             await using (var reader = await command.ExecuteReaderAsync(ct)) { await reader.ReadAsync(ct); definition = reader.GetString(1); }
             var rows = new List<Dictionary<string, object?>>();
-            await using (var command = new MySqlCommand("SELECT * FROM `" + table + "` ORDER BY id", connection, transaction))
+            await using (var command = new MySqlCommand("SELECT * FROM " + identifier + (keyColumns.Count > 0 ? " ORDER BY " + string.Join(",", keyColumns) : ""), connection, transaction))
             await using (var reader = await command.ExecuteReaderAsync(ct))
                 while (await reader.ReadAsync(ct))
                 {
@@ -100,6 +108,8 @@ public static class TherapistInvitationSchema
                     for (var column = 0; column < reader.FieldCount; column++) row[reader.GetName(column)] = reader.IsDBNull(column) ? null : reader.GetValue(column);
                     rows.Add(row);
                 }
+            // Tables without a primary key still need a stable, lossless comparison.
+            if (keyColumns.Count == 0) rows = rows.OrderBy(row => JsonSerializer.Serialize(row), StringComparer.Ordinal).ToList();
             snapshot[table] = new { definition, rows };
         }
         return JsonSerializer.SerializeToUtf8Bytes(snapshot);

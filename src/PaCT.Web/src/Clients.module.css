@@ -3,9 +3,6 @@
 .page :global(.section-tabs) button, .page :global(.button-row) button { width: auto; margin: 0; }
 .page :global(.section-tabs) { margin: 28px 0; gap: 8px; }
 .page :global(.section-tabs) button, .page :global(.button-row) button { flex: 1 1 100%; }
-.page :global(.search-panel) { padding: var(--card-padding); background: var(--surface); border: 1px solid var(--line); border-radius: var(--card-radius); margin-bottom: 24px; min-width: 0; }
-.page :global(.search-panel) > p { font-size: var(--font-size-small); color: var(--muted); }
-.page :global(.search-panel) :global(.field-help) { margin-top: 16px; margin-bottom: 0; }
 .page :global(.client-badge) { display: inline-block; font-size: var(--font-size-overline); color: var(--accent); background: var(--tint); padding: 4px 9px; border-radius: 7px; margin-top: 8px; }
 .page :global(.client-form) :global(.field-help) { margin: 0; }
 .page :global(.review-card) { border: 1px solid #dfd6b8; background: #fffdf6; padding: 18px; border-radius: 16px; margin-top: 24px; }

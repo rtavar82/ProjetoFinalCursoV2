@@ -2,16 +2,19 @@ import AdaptiveSelect from './AdaptiveSelect'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { apiRequest } from './identityApi'
 import ClientProfileForm from './ClientProfileForm'
+import FinancialSalesPanel from './FinancialSalesPanel'
+import SessionPacksPanel from './SessionPacksPanel'
+import { announceOperation } from './actionNotices'
 import ClientComparison from './ClientComparison'
 import ClientDataSummary from './ClientDataSummary'
 import ClientAccessSettings from './ClientAccessSettings'
 import styles from './Clients.module.css'
 import useLiveResource from './useLiveResource'
 import InformationCard from './InformationCard'
-import CardGrid from './CardGrid'
-import SummaryCard from './SummaryCard'
+import ClientSearch from './ClientSearch'
+import { clientAccountStateLabel } from './clientLabels'
 import Pagination from './Pagination'
-import { observeResource } from './liveUpdates'
+import { invalidateResources, observeResource } from './liveUpdates'
 
 function nameOf(client) { return [client.data.firstName, client.data.lastName].filter(Boolean).join(' ') || 'Nome ainda não indicado' }
 function dateOf(value) { return new Intl.DateTimeFormat('pt-PT', { timeZone: 'Europe/Lisbon', dateStyle: 'short', timeStyle: 'short' }).format(new Date(value.endsWith('Z') ? value : value + 'Z')) }
@@ -33,18 +36,21 @@ export default function Clients({ busy, perform, notify, guard, initialView = 'D
   const readInitial = useCallback(signal => apiRequest('clients/' + initialId, undefined, { signal }), [initialId])
   const initial = useLiveResource('clients', 'client-entry:' + initialId, readInitial, !!initialId && view === 'Detail' && !editedClient)
   const client = editedClient || (view === 'Detail' ? initial.data : null)
-  const [query, setQuery] = useState({ field: 'Name', term: '', page: 1 })
-  const read = useCallback(signal => apiRequest('clients?' + new URLSearchParams(query), undefined, { signal }), [query])
-  const directory = useLiveResource('clients', JSON.stringify(query), read, view === 'Directory')
-  const result = directory.data
-  const failure = directory.error
-  function search(event) { event.preventDefault(); const values = Object.fromEntries(new FormData(event.currentTarget)); setQuery({ ...values, page: 1 }) }
   function open(id) { perform(async () => { const data = await apiRequest('clients/' + id); dirty.current = false; setClient(data); setView('Detail') }) }
   function save(input) { perform(async () => {
     const saved = await apiRequest(client ? 'clients/' + client.id : 'clients', input)
     notify(saved.message, !saved.saved)
     if (saved.saved) { dirty.current = false; setClient(saved.client); setView('Detail') }
   }) }
+  async function sendPack(command) {
+    let result
+    await perform(async () => {
+      const input = { ...command, operationId: crypto.randomUUID() }
+      result = await apiRequest('consultations/commands', input)
+      announceOperation(input, result)
+    })
+    return result
+  }
   return <section className={styles.page} aria-labelledby="clients-title" onChangeCapture={event => { if (event.target.closest('form.client-form') && !dirty.current) { dirty.current = true; if (client) setClient(client) } }}>
     <div className="section-heading"><div><h1 id="clients-title">Clientes</h1><p>Pesquisa uma ficha para consultar os dados e o acompanhamento do cliente.</p></div></div>
     <nav className="section-tabs" aria-label="Área Clientes">
@@ -52,27 +58,16 @@ export default function Clients({ busy, perform, notify, guard, initialView = 'D
       <button disabled={busy} className={view === 'Create' ? '' : 'secondary'} aria-pressed={view === 'Create'} onClick={() => { if (view !== 'Create') guard(() => { setClient(null); setView('Create') }) }}>Criar ficha</button>
       <button disabled={busy} className={view === 'Reviews' ? '' : 'secondary'} aria-pressed={view === 'Reviews'} onClick={() => { if (view !== 'Reviews') guard(() => setView('Reviews')) }}>Ocorrências para rever{pendingReviewCount > 0 ? ` (${pendingReviewCount})` : ''}</button>
     </nav>
-    {view === 'Directory' && <>
-      <InformationCard className="search-panel" title="Pesquisar clientes" cardId="client-search"><p>Pesquisa por nome, email ou telefone. São usadas as fichas existentes, incluindo clientes sem conta registada.</p>
-        <form onSubmit={search} data-allow-update><div className="fields-grid"><label>Pesquisar por<AdaptiveSelect name="field" defaultValue="Name"><option value="Name">Nome</option><option value="Email">Email</option><option value="Phone">Telefone</option></AdaptiveSelect></label><label>Pesquisa de clientes<input name="term" maxLength="256" placeholder="Por nome: pelo menos três caracteres" /></label></div>
-          <div className="button-row"><button disabled={busy}>Pesquisar</button><button type="button" className="secondary" onClick={() => { setQuery({ field: 'Name', term: '', page: 1 }) }}>Ver todas as fichas</button></div>
-        </form><p className="field-help">Email: endereço completo. Telefone: algarismos do número, com ou sem indicativo.</p>
-      </InformationCard>
-      {failure && <div className="notice error" role="alert">{failure}<button className="secondary" onClick={directory.refresh}>Voltar a tentar</button></div>}
-      {!result && !failure && <p role="status">A carregar fichas…</p>}
-      {result && <><SummaryCard cardId="client-count" label={result.total === 1 ? 'Ficha encontrada' : 'Fichas encontradas'} value={result.total} unit="registos" icon="people" />{result.total === 0 && <p>Ainda não existem fichas correspondentes. Podes criar uma ficha com dados novos.</p>}
-        <CardGrid>{result.items.map(row => <InformationCard as="article" cardId={'client-' + row.id} key={row.id}><div><h3>{nameOf(row)}</h3><p>{row.data.locality || 'Localidade não indicada'}</p>{row.data.email && <p>{row.data.email}</p>}{row.data.phone && <p>+{row.data.dialCode} {row.data.phone}</p>}<span className="client-badge">{row.hasAccount ? 'Com conta · ' + accountState(row.accountState) : 'Ficha sem conta'}</span>{row.identityReviewStatus === 'Pending' && <p>Identidade por verificar</p>}</div><button className="secondary" disabled={busy} onClick={() => open(row.id)}>Abrir ficha</button></InformationCard>)}</CardGrid>
-        <Pagination total={result.total} page={result.page} showTotal onChange={page => setQuery(current => ({ ...current, page }))} />
-      </>}
-    </>}
+    <div hidden={view !== 'Directory'}><ClientSearch purpose="directory" enabled={view === 'Directory'} disabled={busy} onSelect={person => open(person.id)} /></div>
     {view === 'Create' && <InformationCard title="Criar ficha de cliente" cardId="client-create"><ClientProfileForm key="new" manual busy={busy} onSave={save} /></InformationCard>}
     {view === 'Detail' && !client && <InformationCard loading={initial.loading} error={initial.error} onRetry={initial.refresh} cardId="client-entry" />}
-    {view === 'Detail' && client && <InformationCard title={nameOf(client)} cardId="client-editor"><p className="client-badge">{client.hasAccount ? 'Com conta · ' + accountState(client.accountState) : 'Ficha de gestão sem conta de acesso'}</p><ClientProfileForm key={client.id + ':' + client.version} client={client} busy={busy} onSave={save} />{client.hasAccount && client.accountState === 'Active' && <ClientAccessSettings key={client.id} client={client} busy={busy} perform={perform} notify={notify} />}</InformationCard>}
-    {view === 'Reviews' && <Reviews busy={busy} perform={perform} notify={notify} onChange={directory.refresh} />}
+    {view === 'Detail' && client && <InformationCard title={nameOf(client)} cardId="client-editor"><p className="client-badge">{client.hasAccount ? 'Com conta · ' + clientAccountStateLabel(client.accountState) : 'Ficha de gestão sem conta de acesso'}</p><ClientProfileForm key={client.id + ':' + client.version} client={client} busy={busy} onSave={save} />{client.hasAccount && client.accountState === 'Active' && <ClientAccessSettings key={client.id} client={client} busy={busy} perform={perform} notify={notify} />}</InformationCard>}
+    {view === 'Detail' && client && <FinancialSalesPanel key={'sales-' + client.id} personId={client.id} disabled={busy} guard={guard} />}
+    {view === 'Detail' && client && <InformationCard title="Packs de sessões" cardId="client-packs"><SessionPacksPanel key={'packs-' + client.id} personId={client.id} manager send={sendPack} disabled={busy} guard={guard} /></InformationCard>}
+    {view === 'Reviews' && <Reviews busy={busy} perform={perform} notify={notify} onChange={() => invalidateResources(['clients'])} />}
   </section>
 }
 
-function accountState(state) { return ({ Active: 'Acesso ativo', ConfirmEmail: 'Email por confirmar', SetPassword: 'Palavra-passe por definir', Closed: 'Conta encerrada' })[state] || state }
 
 function Reviews({ busy, perform, notify, onChange }) {
   const [reviews, setReviews] = useState(null)

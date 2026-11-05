@@ -57,6 +57,7 @@ public static class GuestConsultations
         // Every new request requires the locality before creating any records.
         input = Normalize(input);
         var service = ClientBooking.Validate(data, input.ServiceId, input.StartsAt, input.ServiceVersion, input.DeliveryOptionId, now, registered: false);
+        service = PaCT.Api.Management.SitePresentation.WithAddress(data.PublishedSite, service, service.PublicLocation);
         ConsultationConditions.ValidateRequest(service, input.ConditionsAccepted, input.TermsVersion);
         if (!AgendaRules.IsBookableStart(input.StartsAt, now)) throw new IdentityProblem(400, "Escolhe um horário futuro dentro dos próximos seis meses.");
         var end = input.StartsAt.AddMinutes(service.DurationMinutes);

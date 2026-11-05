@@ -13,21 +13,23 @@ public sealed class ClientService(IClientStore store, IdentitySecurity security,
     private Task<T> Write<T>(string? operationId, string? author, string kind, object input, Func<IClientSession, Task<T>> apply, CancellationToken ct) =>
         store.ExecuteAsync(session => ClientCommands.Execute(session, security, operationId, author, kind, input, Now, () => apply(session)), true, ct);
 
-    public Task<object> SearchAsync(string field, string? term, int page, CancellationToken ct) => store.ExecuteAsync<object>(async session =>
+    public Task<object> SearchAsync(string? term, int page, CancellationToken ct) => store.ExecuteAsync<object>(async session =>
     {
-        if (page is < 1 or > 100000 || field is not ("Name" or "Email" or "Phone")) throw new IdentityProblem(400, "Pesquisa inválida.");
+        if (page is < 1 or > 100000) throw new IdentityProblem(400, "Pesquisa inválida.");
         term = term?.Trim();
-        if (!string.IsNullOrEmpty(term) && (term.Length > 256 || (field == "Name" && term.Length < 3))) throw new IdentityProblem(400, "Na pesquisa por nome, indica pelo menos três caracteres.");
+        if (!string.IsNullOrEmpty(term) && term.Length is < 3 or > 256) throw new IdentityProblem(400, "Indica pelo menos três caracteres e até 256 para pesquisar clientes.");
         var rows = (await session.ClientsAsync()).Where(row => row.IsActive).Select(View);
         if (!string.IsNullOrEmpty(term))
         {
             var normalized = ClientValidation.NormalizeName(term);
-            rows = rows.Where(row => field switch {
-                "Name" => ClientValidation.NormalizeName(row.Data.FirstName + " " + row.Data.LastName).Contains(normalized, StringComparison.Ordinal),
-                "Email" => string.Equals(row.Data.Email, term, StringComparison.OrdinalIgnoreCase),
-                _ => ("+" + row.Data.DialCode + row.Data.Phone).Contains(new string(term.Where(char.IsAsciiDigit).ToArray()), StringComparison.Ordinal)
-            });
-            if (field == "Phone" && !term.Any(char.IsAsciiDigit)) throw new IdentityProblem(400, "Indica algarismos para pesquisar o telefone.");
+            // Only phone-shaped terms may match a phone: digits in an email or
+            // a name must not accidentally select an unrelated client's number.
+            var digits = new string(term.Where(char.IsAsciiDigit).ToArray());
+            if (digits.StartsWith("00", StringComparison.Ordinal)) digits = digits[2..];
+            var phoneTerm = digits.Length >= 3 && term.All(c => char.IsAsciiDigit(c) || char.IsWhiteSpace(c) || c is '+' or '-' or '(' or ')' or '.');
+            rows = rows.Where(row => normalized.Length > 0 && ClientValidation.NormalizeName(row.Data.FirstName + " " + row.Data.LastName).Contains(normalized, StringComparison.Ordinal)
+                || (row.Data.Email?.Contains(term, StringComparison.OrdinalIgnoreCase) ?? false)
+                || phoneTerm && (row.Data.DialCode + row.Data.Phone).Contains(digits, StringComparison.Ordinal));
         }
         var filtered = rows.OrderByDescending(row => row.CreatedAt).ThenBy(row => row.Id, StringComparer.Ordinal).ToArray();
         return new { total = filtered.Length, page, pageSize = 8,

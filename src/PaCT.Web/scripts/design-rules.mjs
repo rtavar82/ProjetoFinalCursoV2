@@ -42,6 +42,7 @@ export default {
       meta: { type: 'problem', schema: [], messages: {
         inline: 'Usar os papéis e tokens da base visual; não definir tipografia inline.',
         pagination: 'Reutilizar Pagination para manter a mesma navegação e regra de visibilidade.',
+        calendarInput: 'Reutilizar CalendarInput para escolher datas e horas.',
         dateRange: 'Reutilizar DateRangeFields nos pares de datas/horas para garantir o acompanhamento e a validação do fim.'
       } },
       create(context) {
@@ -50,8 +51,11 @@ export default {
           JSXElement(node) {
             const opening = node.openingElement
             const attribute = name => opening.attributes.find(item => item.type === 'JSXAttribute' && item.name.name === name)?.value?.value
-            if (opening.name.name === 'input' && ['end', 'to', 'publicationEnd'].includes(attribute('name')) && ['date', 'datetime-local', 'time'].includes(attribute('type'))) context.report({ node, messageId: 'dateRange' })
-            if (context.filename.replaceAll('\\', '/').endsWith('/src/Pagination.jsx') || node.openingElement.name.name !== 'nav') return
+            const element = opening.name.name
+            const file = context.filename.replaceAll('\\', '/')
+            if (element === 'input' && ['date', 'datetime-local', 'time'].includes(attribute('type')) && !file.endsWith('/src/CalendarInput.jsx')) context.report({ node, messageId: 'calendarInput' })
+            if (element === 'CalendarInput' && ['end', 'to', 'publicationEnd'].includes(attribute('name')) && !file.endsWith('/src/DateRangeFields.jsx')) context.report({ node, messageId: 'dateRange' })
+            if (element !== 'nav' || file.endsWith('/src/Pagination.jsx')) return
             const text = textWithin(node)
             if (text.includes('Anterior') && text.includes('Seguinte')) context.report({ node, messageId: 'pagination' })
           },

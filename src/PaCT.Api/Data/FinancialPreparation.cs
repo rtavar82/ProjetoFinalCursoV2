@@ -39,7 +39,12 @@ public static class FinancialPreparation
         var applicable = entries.Where(e => e.Kind == "Settlement" && (table == "consultations"
             ? e.ConsultationId == id : e.Origin == "EventService" && e.OriginReference == id)).ToArray();
         if (applicable.Any(e => e.PersonId != person || e.Amount >= 0)) throw new InvalidOperationException("Liquidação com cliente ou valor incompatível.");
-        var amount = -applicable.Sum(e => e.Amount);
+        var settlementIds = applicable.Select(e => e.Id).ToHashSet();
+        var returned = entries.Where(e => e.Kind == "SettlementReturn" && e.OriginalId is not null && settlementIds.Contains(e.OriginalId)).ToArray();
+        if (returned.Any(e => e.PersonId != person || e.Amount <= 0)
+            || applicable.Any(e => returned.Where(r => r.OriginalId == e.Id).Sum(r => r.Amount) > -e.Amount))
+            throw new InvalidOperationException("Reposição de crédito com cliente ou valor incompatível.");
+        var amount = -applicable.Sum(e => e.Amount) - returned.Sum(e => e.Amount);
         var final = row["FinalAmount"]?.GetValue<decimal>() ?? row["AgreedTotal"]?.GetValue<decimal>();
         var completed = row["SettlementId"]?.GetValue<string>();
         if (amount > 0 && (final is null || amount > final) || completed is not null && (!applicable.Any(e => e.Id == completed) || amount != final))

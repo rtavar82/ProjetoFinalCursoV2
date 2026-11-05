@@ -20,7 +20,7 @@ public sealed class SessionPacksController(IConsultationStore store, IIdentitySt
         return Ok(await store.ReadAsync(data =>
         {
             var rows = data.Packs.Where(p => person is null || p.PersonId == person)
-                .Where(p => scope == "History" || scope == "Unpaid" && p.SettlementId is null || scope == "Available" && p.SettlementId is not null && SessionPacks.Remaining(data, p.Id) > 0
+                .Where(p => scope == "History" || scope == "Unpaid" && !SessionPacks.IsPaid(p) || scope == "Available" && SessionPacks.IsPaid(p) && SessionPacks.Remaining(data, p.Id) > 0
                     || scope == "Compatible" && SessionPacks.CanUse(data, p, serviceId!, at!.Value))
                 .OrderBy(p => SessionPacks.ExpiresAt(p)).ThenBy(p => p.Id).ToArray();
             return new { total = rows.Length, page, pageSize = 8, items = rows.Skip((page - 1) * 8).Take(8).Select(p => View(p, data, manager)).ToArray() };
@@ -38,7 +38,7 @@ public sealed class SessionPacksController(IConsultationStore store, IIdentitySt
     {
         pack.Id, pack.PersonId, pack.Version, pack.Title, pack.Sessions, pack.Amount, pack.PurchasedAt, pack.ServiceIds,
         expiresAt = SessionPacks.ExpiresAt(pack), remaining = SessionPacks.Remaining(data, pack.Id), pack.EarlyUseAuthorized, pack.SettlementId,
-        pack.ExtensionMonths, pack.ValidUntil, pack.RegularTotal, balance = data.Balance(pack.PersonId),
+        pack.ExtensionMonths, pack.ValidUntil, pack.RegularTotal, pack.SaleId, paid = SessionPacks.IsPaid(pack), balance = data.Balance(pack.PersonId),
         decisions = (pack.History ?? []).Select(h => new { h.Action, h.At, h.Quantity, h.NewValidity }).ToArray(),
         uses = data.PackUses.Where(u => u.PackId == pack.Id).Select(u => new { u.Id, u.ActivityId, u.ActivityKind, u.ActivityAt, u.CreatedAt, u.ReversesId,
             reversed = data.PackUses.Any(r => r.ReversesId == u.Id) }).ToArray(),

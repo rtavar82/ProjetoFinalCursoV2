@@ -2,7 +2,7 @@ import DateRangeFields from './DateRangeFields'
 import AdaptiveSelect from './AdaptiveSelect'
 import { useState } from 'react'
 import AppIcon from './AppIcon'
-import { addDays, instant } from './agendaTime'
+import { setDateRangeParams } from './agendaTime'
 import styles from './ClientAgenda.module.css'
 
 const empty = { from: '', to: '', serviceId: '' }
@@ -16,8 +16,7 @@ export default function ClientHistorySearch({ services = [], onSearch }) {
     try {
       const query = new URLSearchParams({ search: 'true' })
       if (values.serviceId) query.set('serviceId', values.serviceId)
-      if (values.from) query.set('from', instant(values.from + 'T00:00'))
-      if (values.to) query.set('to', instant(addDays(values.to, 1) + 'T00:00'))
+      setDateRangeParams(query, values.from, values.to)
       setError(''); onSearch(query.toString())
     } catch (failure) { setError(failure.message) }
   }

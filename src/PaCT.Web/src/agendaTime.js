@@ -14,11 +14,16 @@ export function instant(value) {
   const target = Date.parse(value + ':00Z')
   if (!Number.isFinite(target)) throw new Error('Indica uma data e hora válidas.')
   const matches = [-60, 0, 60].map(offset => new Date(target + offset * 60000)).filter(d => localDate(d) === value)
-  if (matches.length !== 1) throw new Error('Esta hora de Lisboa é ambígua ou inexistente devido à mudança de hora. Escolhe outra hora.')
+  if (matches.length !== 1) throw new Error('Esta hora é ambígua ou inexistente devido à mudança de hora. Escolhe outra hora.')
   return matches[0].toISOString()
 }
 export const dayKey = value => localDate(new Date(value)).slice(0, 10)
 export function addDays(day, count) { const value = new Date(day + 'T12:00:00Z'); value.setUTCDate(value.getUTCDate() + count); return value.toISOString().slice(0, 10) }
+// The selected final day is inclusive. Search endpoints use an exclusive upper bound.
+export function setDateRangeParams(query, from, to) {
+  if (from) query.set('from', instant(from + 'T00:00'))
+  if (to) query.set('to', instant(addDays(to, 1) + 'T00:00'))
+}
 // Shared rolling presets. `to` is exclusive for API queries; show the preceding day in inclusive date fields.
 export function rollingPeriod(mode, anchor, offset = 0) {
   const days = { Day: 1, Week: 7, Month: 30 }[mode]

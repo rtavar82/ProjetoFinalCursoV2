@@ -8,6 +8,7 @@ public interface IInstallationSecrets
 {
     bool IsPrepared { get; }
     byte[] SearchKey { get; }
+    string PublicWebUrl { get; }
     bool VerifyInstallationCode(string value);
 }
 

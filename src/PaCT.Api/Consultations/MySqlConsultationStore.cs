@@ -130,7 +130,7 @@ public sealed class MySqlConsultationStore(DatabaseConnectionSettings settings, 
                 if (reader.GetGuid(0).ToString() != actor.AccountId || reader.GetString(1) != hash) throw new IdentityProblem(409, "Esta identificação já foi usada para outra operação.");
                 return JsonSerializer.Deserialize<ConsultationResult>(reader.GetString(2))!;
             }
-        var person = input.Action == "PurchasePack" ? input.PackPurchase?.PersonId : input.Action is "Manual" or "Request" or "Receipt" or "Adjustment" or "LinkGuestRequest" or "JoinEvent" or "LinkEventGuest" ? actor.IsManager ? input.PersonId : actor.PersonId : null;
+        var person = input.Action == "RecordSale" ? input.Sale?.PersonId : input.Action is "Manual" or "Request" or "Receipt" or "Adjustment" or "LinkGuestRequest" or "JoinEvent" or "LinkEventGuest" ? actor.IsManager ? input.PersonId : actor.PersonId : null;
         if (person is not null)
         {
             await using var check = Command(connection, transaction, """
@@ -144,6 +144,8 @@ public sealed class MySqlConsultationStore(DatabaseConnectionSettings settings, 
         var before = Snapshot(data);
         var now = time.GetUtcNow();
         var appliedInput = input;
+        if (input.Action is "Manual" or "Request" or "SaveEvent")
+            data.PublishedSite = await PaCT.Api.Management.MySqlSitePresentationStore.ReadPublished(connection, transaction, security, ct);
         if (input.Action == "LinkGuestRequest")
         {
             var guest = data.GuestRequests.SingleOrDefault(g => g.Id == input.Id) ?? throw new IdentityProblem(404, "Pedido não encontrado.");
@@ -178,6 +180,7 @@ public sealed class MySqlConsultationStore(DatabaseConnectionSettings settings, 
     }, ct);
     public Task<ConsultationResult> SubmitGuestAsync(GuestSubmission input, CancellationToken ct) => Write(async (connection, transaction, data) =>
     {
+        data.PublishedSite = await PaCT.Api.Management.MySqlSitePresentationStore.ReadPublished(connection, transaction, security, ct);
         var count = data.GuestRequests.Count;
         var before = Snapshot(data);
         var result = GuestConsultations.Submit(data, input, time.GetUtcNow(), Encrypt);
@@ -351,6 +354,9 @@ public sealed class MySqlConsultationStore(DatabaseConnectionSettings settings, 
             await Fill("credit_entries", data.Entries); await Fill("consultation_notices", data.Notices);
             await Fill("balance_notices", data.BalanceNotices);
             await Fill("session_packs", data.Packs); await Fill("pack_uses", data.PackUses); await Fill("pack_notices", data.PackNotices);
+            await using (var sales = Command(connection, transaction, "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name='financial_sales'"))
+                data.SalesReady = Convert.ToInt32(await sales.ExecuteScalarAsync(ct)) == 1;
+            if (data.SalesReady) await Fill("financial_sales", data.Sales);
             await Fill("event_participations", data.Participations); await Fill("event_cash_entries", data.EventCash);
             await Fill("event_notices", data.EventNotices);
             await Fill("consultation_messages", data.Messages); await Fill("consultation_message_reads", data.MessageReads);
@@ -370,6 +376,7 @@ public sealed class MySqlConsultationStore(DatabaseConnectionSettings settings, 
         .Concat(data.BalanceNotices.Select(x => ("balance_notices", x.Id, (object)x)))
         .Concat(data.GuestRequests.Select(x => ("guest_consultation_requests", x.Id, (object)x)))
         .Concat(data.Packs.Select(x => ("session_packs", x.Id, (object)x)))
+        .Concat(data.Sales.Select(x => ("financial_sales", x.Id, (object)x)))
         .Concat(data.PackUses.Select(x => ("pack_uses", x.Id, (object)x)))
         .Concat(data.PackNotices.Select(x => ("pack_notices", x.Id, (object)x)))
         .Concat(data.Messages.Select(x => ("consultation_messages", x.Id, (object)x)))
@@ -384,7 +391,7 @@ public sealed class MySqlConsultationStore(DatabaseConnectionSettings settings, 
             ProcessLifecycle.Validate(value);
             if (before.ContainsKey(id))
             {
-                if (table is "credit_entries" or "pack_uses" or "event_cash_entries" or "consultation_messages" or "consultation_message_reads") throw new InvalidOperationException("Historical entries are immutable.");
+                if (table is "credit_entries" or "financial_sales" or "pack_uses" or "event_cash_entries" or "consultation_messages" or "consultation_message_reads") throw new InvalidOperationException("Historical entries are immutable.");
                 var assignments = value is GuestConsultationRequest ? "data=@data,person_id=@person,consultation_id=@consultation" : value is EventParticipation ? "data=@data,person_id=@person" : "data=@data";
                 await using var update = Command(connection, transaction, "UPDATE " + table + " SET " + assignments + " WHERE id=@id", ("@data", json), ("@id", id));
                 if (value is GuestConsultationRequest linked) { update.Parameters.AddWithValue("@person", (object?)linked.PersonId ?? DBNull.Value); update.Parameters.AddWithValue("@consultation", (object?)linked.ConsultationId ?? DBNull.Value); }
@@ -401,6 +408,7 @@ public sealed class MySqlConsultationStore(DatabaseConnectionSettings settings, 
                 if (value is EventCashEntry cash) { columns += ",event_id,participation_id,amount"; parameters += ",@event,@participation,@amount"; values.Add(("@event", cash.EventId)); values.Add(("@participation", cash.ParticipationId)); values.Add(("@amount", cash.Amount)); }
                 if (value is EventNotice eventNotice) { columns += ",event_id,participation_id"; parameters += ",@event,@participation"; values.Add(("@event", eventNotice.EventId)); values.Add(("@participation", (object?)eventNotice.ParticipationId ?? DBNull.Value)); }
                 if (value is SessionPack pack) { columns += ",person_id"; parameters += ",@person"; values.Add(("@person", pack.PersonId)); }
+                if (value is FinancialSale sale) { columns += ",person_id"; parameters += ",@person"; values.Add(("@person", sale.PersonId)); }
                 if (value is PackUse usage) { columns += ",person_id,pack_id"; parameters += ",@person,@pack"; values.Add(("@person", usage.PersonId)); values.Add(("@pack", usage.PackId)); }
                 if (value is PackNotice packNotice) { columns += ",person_id,pack_id"; parameters += ",@person,@pack"; values.Add(("@person", packNotice.PersonId)); values.Add(("@pack", packNotice.PackId)); }
                 if (value is GuestConsultationRequest guest) { columns += ",operation_id,service_id,person_id,consultation_id"; parameters += ",@operation,@service,@person,@consultation"; values.Add(("@operation", guest.OperationId)); values.Add(("@service", guest.Service.Id)); values.Add(("@person", guest.PersonId)); values.Add(("@consultation", guest.ConsultationId)); }

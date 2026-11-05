@@ -10,6 +10,7 @@ import ConsultationHistoryPage from './ConsultationHistoryPage'
 import FinancePage from './FinancePage'
 import ConsultationAlerts from './ConsultationAlerts'
 import TestimonialManager from './TestimonialManager'
+import ManagementPage from './ManagementPage'
 import PublicPresentation from './PublicPresentation'
 import PublicTestimonials from './PublicTestimonials'
 import PublicPromotions from './PublicPromotions'
@@ -99,6 +100,7 @@ function WorkspaceContent({ profile: initialProfile, busy, perform, notify, erro
     ...(operational ? [{ id: 'Consultations', label: 'Consultas', icon: 'clock', active: page === 'Consultations' }, { id: 'Finance', label: 'Financeiro', icon: 'wallet', active: page === 'Finance' }] : []),
     ...(!client ? [{ id: 'Clients', label: 'Clientes', icon: 'people', active: page === 'Clients' }] : []),
     ...(operational ? [{ id: 'Testimonials', label: 'Testemunhos', icon: 'heart', active: page === 'Testimonials' }] : []),
+    ...(operational ? [{ id: 'Management', label: 'Gestão da aplicação', icon: 'settings', active: page === 'Management' }] : []),
     { id: client ? 'Profile' : 'Account', label: 'Meu perfil', icon: 'user', active: ['Profile', 'Account'].includes(page) },
   ]
   return <AppLayout authenticated onHome={client ? () => navigate('Home') : undefined} onResetCapture={event => dirty.current.delete(event.target)} onChangeCapture={event => { const form = event.target.closest('form[data-protect-draft]'); if (form) dirty.current.add(form) }}
@@ -130,6 +132,7 @@ function WorkspaceContent({ profile: initialProfile, busy, perform, notify, erro
       {client && page === 'Profile' && <PersonalProfile busy={busy} perform={perform} notify={notify} />}
       {(client || operational) && ['Agenda', 'Consultations', 'Finance'].includes(page) && <ActiveConsultationPage key={`${page}:${operational ? 'manager' : consultationEntry?.payments ? 'payments' : consultationEntry?.events ? 'events' : consultationEntry?.packs ? 'packs' : consultationEntry?.guests ? 'guests' : 'default'}`} manager={operational} initialEntry={consultationEntry} guard={guard} perform={perform} notify={notify} profileBusy={busy} onCreateClient={() => { setClientEntry(previous => ({ version: previous.version + 1, view: 'Create' })); setPage('Clients') }} />}
       {operational && page === 'Testimonials' && <TestimonialManager guard={guard} onPublic={onPublicTestimonials} />}
+      {operational && page === 'Management' && <ManagementPage guard={guard} busy={busy} />}
       {page === 'Account' && <AccountPage profile={profile} busy={busy} perform={perform} notify={notify} guard={guard} onPasskeyUpdated={onPasskeyUpdated} onSecuritySignedOut={onSecuritySignedOut} onAccountClosed={onAccountClosed} onForgetBrowser={onForgetBrowser} packEntry={packEntry} />}
   </AppLayout>
 }

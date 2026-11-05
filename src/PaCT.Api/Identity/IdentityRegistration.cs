@@ -27,7 +27,9 @@ public static class IdentityRegistration
         builder.Services.AddSingleton<IdentitySecurity>();
         builder.Services.AddSingleton<MySqlIdentityStore>();
         builder.Services.AddSingleton<IIdentityStore>(services => services.GetRequiredService<MySqlIdentityStore>());
+        builder.Services.AddSingleton<ISecurityEmailOperationsStore>(services => services.GetRequiredService<MySqlIdentityStore>());
         builder.Services.AddSingleton<ITherapistInvitationStore>(services => services.GetRequiredService<MySqlIdentityStore>());
+        builder.Services.AddSingleton<SecurityEmailHealth>();
         builder.Services.AddSingleton<ISecurityEmailTransport, SmtpSecurityEmailTransport>();
         builder.Services.AddSingleton<IdentityService>();
         builder.Services.AddSingleton<TherapistInvitationService>();

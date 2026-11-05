@@ -56,11 +56,15 @@ export async function submittedWrite(attempt, replaySafe = false) {
 }
 
 export function clientOperation(path) {
-  return /^(clients(?:\/[0-9a-f-]+(?:\/notes(?:\/[0-9a-f-]+)?)?|\/reviews\/[0-9a-f-]+)?|profile|identity\/client-registration)$/.test(path)
+  if (/^finance\/expenses(?:\/[0-9a-f-]+)?$/.test(path)) return true
+  if (/^management\/(Supplier|ExpenseCategory)(\/[0-9a-f-]+)?$/.test(path)) return true
+  if (/^management\/presentation\/(Home|Therapist|Places)\/publish$/.test(path)) return true
+  return /^(clients(?:\/[0-9a-f-]+(?:\/notes(?:\/[0-9a-f-]+)?)?|\/reviews\/[0-9a-f-]+)?|profile|identity\/client-registration|identity\/email-operations\/[0-9a-f-]+\/review)$/.test(path)
 }
 
 export function canReplay(path, body, operationKey) {
-  return !!operationKey && clientOperation(path) || ['consultations/manual-preview', 'consultations/publication-preview'].includes(path) || !!body?.operationId && (path === 'consultations/commands' || path === 'consultations/guests'
+  return !!operationKey && clientOperation(path) || ['consultations/manual-preview', 'consultations/publication-preview'].includes(path)
+    || /^consultations\/[0-9a-f-]+\/price-correction-preview$/.test(path) || !!body?.operationId && (path === 'consultations/commands' || path === 'consultations/guests'
     || /^consultations\/events\/[^/]+\/requests$/.test(path)
     || /^clients\/[^/]+\/access\/(email|reset-passkeys)$/.test(path)
     || path === 'identity/password-change')

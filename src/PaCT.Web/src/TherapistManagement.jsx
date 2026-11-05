@@ -39,7 +39,7 @@ export default function TherapistManagement({ busy, perform }) {
     {!state && !loadError && <p role="status">A consultar o estado…</p>}
     {state?.therapist ? <><div className="invitation-status"><strong>{state.therapist.displayName}</strong><p>{state.therapist.email}</p><span>{therapistStates[state.therapist.state]}</span></div><p className="field-help">Esta instalação tem uma única conta permanente de gestora-terapeuta. Um registo incompleto é retomado pela própria destinatária, sem criar outra conta.</p></> : state && <>
       <p>Convida a pessoa que será responsável pelo acompanhamento terapêutico. Ela define os seus dados e palavra-passe, confirma o email e regista uma Passkey.</p>
-      {invitation && <div className="invitation-status"><strong>{invitationStates[invitation.state]}</strong><p>{invitation.email}</p><p>Enviado em {date(invitation.createdAtUtc)} · Lisboa<br />Validade até {date(invitation.expiresAtUtc)} · Lisboa</p><p>{emailStates[invitation.emailState]}</p></div>}
+      {invitation && <div className="invitation-status"><strong>{invitationStates[invitation.state]}</strong><p>{invitation.email}</p><p>Enviado em {date(invitation.createdAtUtc)}<br />Validade até {date(invitation.expiresAtUtc)}</p><p>{emailStates[invitation.emailState]}</p></div>}
       <form key={invitation?.id || 'first-invitation'} onSubmit={invite}>
         <label>Email da gestora-terapeuta<input name="email" type="email" autoComplete="email" maxLength="256" defaultValue={invitation?.email || ''} required /></label>
         {replaceId && <label className="checkbox"><input type="checkbox" required />Compreendo que o convite anterior deixará de funcionar.</label>}

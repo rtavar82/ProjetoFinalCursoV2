@@ -38,7 +38,7 @@ internal static class ClientAggregation
 
     private static readonly (string Table, bool PersonColumn)[] Tables = [
         ("consultations", true), ("guest_consultation_requests", true), ("credit_entries", true),
-        ("session_packs", true), ("pack_uses", true), ("pack_notices", true), ("event_participations", true),
+        ("session_packs", true), ("financial_sales", true), ("pack_uses", true), ("pack_notices", true), ("event_participations", true),
         ("consultation_notices", false), ("event_notices", false), ("balance_notices", true), ("group_events", false)
     ];
 

@@ -17,7 +17,7 @@ function RequestDetails({ value, startsAt }) {
   return <dl className={styles.bookingDetails}>
     <div><dt>Consulta</dt><dd>{value.title}</dd></div>
     <div><dt>Data</dt><dd>{bookingDate(startsAt)}</dd></div>
-    <div><dt>Horário — Lisboa</dt><dd>{agendaClock(startsAt)} — {agendaClock(end)}</dd></div>
+    <div><dt>Horário</dt><dd>{agendaClock(startsAt)} — {agendaClock(end)}</dd></div>
     <div><dt>Modalidade</dt><dd>{value.modality === 'Remote' ? 'Remota' : 'Presencial'}</dd></div>
     {value.modality === 'InPerson' && <div><dt>Local</dt><dd>{value.publicLocation}</dd></div>}
     <div><dt>Valor</dt><dd>{servicePrice(value)}</dd></div>

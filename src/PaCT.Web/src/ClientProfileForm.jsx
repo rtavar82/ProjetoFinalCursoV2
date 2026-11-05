@@ -1,3 +1,4 @@
+import CalendarInput from './CalendarInput'
 import AdaptiveSelect from './AdaptiveSelect'
 import { useId, useRef, useState } from 'react'
 import PhoneFields from './PhoneFields'
@@ -34,7 +35,7 @@ export default function ClientProfileForm({ client, manual = false, registration
       <label>Localidade{!manual && !registration && ' — para completar a ficha'}<input name="locality" defaultValue={data.locality || ''} maxLength="150" autoComplete="address-level2" pattern={'.*\\S.*'} title="Preenche a localidade, não apenas espaços." required={manual || registration} /></label>
       <label>Email<input name="email" type="email" defaultValue={data.email || ''} maxLength="256" readOnly={client?.hasAccount} autoComplete="email" required={registration} /></label>
       <PhoneFields data={data} required={registration} />
-      <label>Data de nascimento — {requireBirthDate || registration ? 'obrigatória' : 'opcional'}<input name="birthDate" type="date" defaultValue={data.birthDate || ''} autoComplete="bday" required={requireBirthDate || registration} /></label>
+      <label>Data de nascimento — {requireBirthDate || registration ? 'obrigatória' : 'opcional'}<CalendarInput name="birthDate" type="date" defaultValue={data.birthDate || ''} autoComplete="bday" required={requireBirthDate || registration} /></label>
       <label>Género{!registration && ' — para completar a ficha'}<AdaptiveSelect name="gender" defaultValue={data.gender || ''} required={registration}><option value="">{registration ? 'Seleciona o género' : 'Não indicado'}</option><option value="Female">Feminino</option><option value="Male">Masculino</option></AdaptiveSelect></label>
       <label>Número de filhos — opcional<input name="childrenCount" type="number" min="0" max="65535" step="1" defaultValue={data.childrenCount ?? ''} /></label>
       <label>Estado civil — opcional<AdaptiveSelect name="relationshipStatus" defaultValue={data.relationshipStatus || ''}>

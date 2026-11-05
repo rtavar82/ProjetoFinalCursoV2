@@ -1,3 +1,4 @@
+import CalendarInput from './CalendarInput'
 import { useCallback, useState } from 'react'
 import { apiRequest } from './identityApi'
 import useLiveResource from './useLiveResource'
@@ -57,7 +58,7 @@ export default function ManagerAgenda({ enabled, disabled, onSetup, onBooking, o
       {section === 'Upcoming' && <section className={styles.period} aria-label="Período das marcações">
         <nav className={styles.periodModes} aria-label="Duração do período">{[['Day', 'Dia'], ['Week', 'Semana'], ['Month', 'Mês']].map(([key, label]) => <button key={key} className="secondary" aria-pressed={mode === key} disabled={disabled} onClick={() => { setMode(key); setPage(1) }}>{label}</button>)}</nav>
         <details className={styles.periodDetails}><summary>{mode === 'Month' ? 'Ajustar período de 30 dias' : 'Ajustar período'}</summary>
-          <label>{mode === 'Day' ? 'Data do dia' : 'Data inicial'}<input type="date" value={anchor} disabled={disabled} onChange={event => chooseDate(event.target.value)} /></label>
+          <label>{mode === 'Day' ? 'Data do dia' : 'Data inicial'}<CalendarInput type="date" value={anchor} disabled={disabled} onChange={event => chooseDate(event.target.value)} /></label>
           <div className={styles.periodNavigation}><button className="text-button" disabled={disabled} onClick={() => move(-1)}>{mode === 'Month' ? '‹ 30 dias anteriores' : `‹ ${unit === 'dia' ? 'Dia' : 'Semana'} anterior`}</button><button className="text-button" disabled={disabled} onClick={() => chooseDate(dayKey(list.data?.serverTime || new Date()))}>Hoje</button><button className="text-button" disabled={disabled} onClick={() => move(1)}>{mode === 'Month' ? '30 dias seguintes ›' : `${unit === 'dia' ? 'Dia' : 'Semana'} seguinte ›`}</button></div>
           <p>{range.from === addDays(range.to, -1) ? dateText(range.from) : dateText(range.from) + ' — ' + dateText(addDays(range.to, -1))} · Hora de Lisboa</p>
         </details>
