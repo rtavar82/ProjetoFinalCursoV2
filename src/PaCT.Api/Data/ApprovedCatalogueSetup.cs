@@ -18,10 +18,10 @@ public static class ApprovedCatalogueSetup
     ];
 
     private static ConsultationService Service(string title, int minutes, decimal? price, string payment, int? pack = null, decimal? remotePrice = null) =>
-        new("", title, minutes, price, payment, "InPerson", "Montijo", "",
-            BookingOptions: [new("montijo", "InPerson", "Montijo", ""), new("vila-nova", "InPerson", "Vila Nova de São Bento", ""),
-                new("online", "Remote", "", "", remotePrice ?? price)],
-            Presentation: PublicPresentationContent.ServiceText(title)! with { PackSessions = pack });
+        new("", title, minutes, price, payment, "Remote", "", "",
+            BookingOptions: [new("online", "Remote", "", "", remotePrice ?? price)],
+            Presentation: PublicPresentationContent.ServiceText(title)! with { PackSessions = pack },
+            OffersAtManagedLocations: true);
 
     internal static ConsultationService[] Plan(IEnumerable<ConsultationService> current)
     {
@@ -33,7 +33,15 @@ public static class ApprovedCatalogueSetup
             if (matches.Length > 1) throw new InvalidOperationException("Duplicate catalogue titles require review. Existing records were not replaced.");
             if (matches.Length == 1)
             {
-                var normalized = matches[0] with { Id = "", Version = 1, Title = definition.Title };
+                var currentService = matches[0];
+                var normalized = currentService with
+                {
+                    Id = "", Version = 1, Title = definition.Title,
+                    Modality = "Remote", PublicLocation = "",
+                    BookingOptions = currentService.BookingOptions?.Where(option => option.Modality == "Remote").ToArray(),
+                    OffersAtManagedLocations = currentService.OffersAtManagedLocations
+                        || currentService.BookingOptions?.Any(option => option.Modality == "InPerson") == true
+                };
                 if (JsonSerializer.Serialize(normalized) != JsonSerializer.Serialize(definition))
                     throw new InvalidOperationException("An approved service already has different configuration. No existing service was overwritten.");
                 continue;

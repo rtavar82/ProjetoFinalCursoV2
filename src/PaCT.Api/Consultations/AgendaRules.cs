@@ -24,7 +24,7 @@ public static class AgendaRules
             .Concat(data.Consultations.OrderBy(c => c.Id, StringComparer.Ordinal).Select(c => $"c:{c.Id}:{c.Version}"))
             .Concat(data.GuestRequests.OrderBy(c => c.Id, StringComparer.Ordinal).Select(c => $"g:{c.Id}:{c.Version}"))
             .Concat(data.Events.OrderBy(e => e.Id, StringComparer.Ordinal).Select(e => $"e:{e.Id}:{e.Version}"));
-        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(string.Join('\n', parts))));
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(string.Join('\n', parts.Prepend($"site:{data.PublishedSite.Version}")))));
     }
 
     public static void ValidateWindow(DateTimeOffset start, DateTimeOffset end, DateTimeOffset now)
@@ -59,7 +59,7 @@ public static class AgendaRules
         Require(r.ServiceId is null || r.Modality is not null && (r.Modality == "Remote" || r.PublicLocation is not null) || r.ClientChoicesConfirmed,
             "Este bloco tem modalidade ou local livres. Confirma que pretendes deixar essas escolhas ao cliente.");
         if (r.Modality is not null || r.PublicLocation is not null)
-            Require(services.SelectMany(s => ClientBooking.Options(s).Select(o => ClientBooking.Snapshot(s, o)))
+            Require(services.SelectMany(s => ClientBooking.Options(s, data.PublishedSite).Select(o => ClientBooking.Snapshot(s, o)))
                 .Any(s => (r.Modality is null || s.Modality == r.Modality) && (r.PublicLocation is null || s.PublicLocation == r.PublicLocation)),
                 "A combinação de consulta, modalidade e local não está publicada.");
     }

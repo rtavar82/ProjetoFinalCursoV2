@@ -1,6 +1,8 @@
 using MailKit.Security;
 using MimeKit;
 using System.Text.Json;
+using System.Text.Json.Nodes;
+using PaCT.Api.Management;
 
 namespace PaCT.Api.Identity;
 
@@ -11,7 +13,8 @@ public interface ISecurityEmailTransport
     Task<string> SendAsync(EmailPayload payload, CancellationToken ct);
 }
 
-public sealed class SmtpSecurityEmailTransport(IConfiguration configuration, IInstallationSecrets installation) : ISecurityEmailTransport
+public sealed class SmtpSecurityEmailTransport(IConfiguration configuration, IInstallationSecrets installation,
+    MySqlSitePresentationStore? presentation = null) : ISecurityEmailTransport
 {
     public SecurityEmailTransportStatus GetConfigurationStatus()
     {
@@ -37,7 +40,9 @@ public sealed class SmtpSecurityEmailTransport(IConfiguration configuration, IIn
     public async Task<string> SendAsync(EmailPayload payload, CancellationToken ct)
     {
         CheckConfiguration();
-        var content = SecurityEmailContent.Create(payload, installation.PublicWebUrl);
+        var payment = payload.Kind is "PrepaymentApproval" or "GroupAcceptanceSummary" && presentation is not null
+            ? SitePresentation.PublicPayment(await presentation.PublishedAsync(ct)) : null;
+        var content = SecurityEmailContent.Create(payload, installation.PublicWebUrl, payment);
         var sending = false;
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
         timeout.CancelAfter(TimeSpan.FromSeconds(25));
@@ -64,10 +69,10 @@ public sealed class SmtpSecurityEmailTransport(IConfiguration configuration, IIn
 
 internal static class SecurityEmailContent
 {
-    internal static (string Subject, string Body) Create(EmailPayload payload, string publicWebUrl) => payload.Kind switch
+    internal static (string Subject, string Body) Create(EmailPayload payload, string publicWebUrl, JsonObject? payment = null) => payload.Kind switch
     {
-        "GroupAcceptanceSummary" or "GroupConfirmation" or "EventCancelled" or "EventParticipationClosed" or "EventReminder24" => GroupSummary(payload, publicWebUrl),
-        "PrepaymentApproval" or "BookingConfirmation" or "AppointmentReminder" or "AppointmentSharedInformation" => AppointmentContent(payload, publicWebUrl),
+        "GroupAcceptanceSummary" or "GroupConfirmation" or "EventCancelled" or "EventParticipationClosed" or "EventReminder24" => GroupSummary(payload, publicWebUrl, payment),
+        "PrepaymentApproval" or "BookingConfirmation" or "AppointmentReminder" or "AppointmentSharedInformation" => AppointmentContent(payload, publicWebUrl, payment),
         "ConfirmEmail" => ("PaCT — confirma o teu email", "Confirma o email da tua conta de gestão PaCT.\n\n"
             + publicWebUrl + "/#confirm-email=" + Uri.EscapeDataString(payload.Token)
             + "\n\nO link é pessoal e válido durante 24 horas. Abri-lo não confirma a ação. Se não fizeste este pedido, ignora esta mensagem."),
@@ -89,7 +94,7 @@ internal static class SecurityEmailContent
             + publicWebUrl + "/#inicio\n\nAs sessões não são retiradas nem bloqueadas automaticamente por esta data."),
         _ => throw new InvalidOperationException("Unknown security email kind.")
     };
-    private static (string Subject, string Body) GroupSummary(EmailPayload payload, string publicWebUrl)
+    private static (string Subject, string Body) GroupSummary(EmailPayload payload, string publicWebUrl, JsonObject? payment)
     {
         var summary = payload.Appointment ?? throw new InvalidOperationException("Missing group acceptance summary.");
         var zone = TimeZoneInfo.FindSystemTimeZoneById("Europe/Lisbon");
@@ -110,11 +115,14 @@ internal static class SecurityEmailContent
             : "Aceitaste as condições. O pagamento é feito depois da consulta.";
         return ("PaCT — resumo da inscrição e das condições aceites", "A tua inscrição ficou confirmada.\n\n"
             + summary.Service + "\n" + date + " — " + end + " (hora de Lisboa)\n" + summary.Instructions + "\nValor: " + amount
-            + "\n\n" + next + "\nForma de pagamento\n- Transferência bancária\n- MB WAY\n- Dinheiro, combinado com a terapeuta."
+            + "\n\n" + next + "\nForma de pagamento"
+            + (payment is null || payment["iban"]?.GetValue<string>() is { Length: > 0 } ? "\n- Transferência bancária" : "")
+            + (payment is null || payment["mbWay"]?.GetValue<string>() is { Length: > 0 } ? "\n- MB WAY" : "")
+            + "\n- Dinheiro, combinado com a terapeuta."
             + "\nOs meios e as condições que aceitaste estão disponíveis na tua inscrição na PaCT."
             + "\n\n" + publicWebUrl + "/#agenda");
     }
-    private static (string Subject, string Body) AppointmentContent(EmailPayload payload, string publicWebUrl)
+    private static (string Subject, string Body) AppointmentContent(EmailPayload payload, string publicWebUrl, JsonObject? payment)
     {
         var summary = payload.Appointment ?? throw new InvalidOperationException("Missing appointment summary.");
         var zone = TimeZoneInfo.FindSystemTimeZoneById("Europe/Lisbon");
@@ -130,11 +138,17 @@ internal static class SecurityEmailContent
             if (summary.Price is { } price) body += "\nValor de referência: " + price.ToString("0.00", System.Globalization.CultureInfo.GetCultureInfo("pt-PT")) + " €";
             body += "\n\nCondições de pagamento\n" + string.Join("\n", PaCT.Api.Consultations.PublicPresentationContent.PrepaymentConditions.Select(line => "- " + line))
                 + "\n\nCancelamentos ou faltas\n" + string.Join("\n", PaCT.Api.Consultations.PublicPresentationContent.PrepaymentCancellations.Select(line => "- " + line));
-            var methods = JsonSerializer.SerializeToElement(PaCT.Api.Consultations.PublicPresentationContent.PaymentInformation);
-            body += "\n\nForma de pagamento\nTransferência bancária\nIBAN: " + methods.GetProperty("iban").GetString()
-                + "\nBIC/SWIFT: " + methods.GetProperty("bic").GetString()
-                + "\nMB WAY: " + methods.GetProperty("mbWay").GetString()
-                + "\nDinheiro: combinado com a terapeuta antes da consulta.\n" + methods.GetProperty("transferNote").GetString();
+            var methods = payment ?? SitePresentation.PublicPayment(SitePresentation.Default);
+            body += "\n\nForma de pagamento";
+            if (methods["iban"]?.GetValue<string>() is { Length: > 0 } iban)
+            {
+                body += "\nTransferência bancária\nIBAN: " + iban;
+                if (methods["bic"]?.GetValue<string>() is { Length: > 0 } bic) body += "\nBIC/SWIFT: " + bic;
+                body += "\n" + methods["transferNote"]?.GetValue<string>();
+            }
+            if (methods["mbWay"]?.GetValue<string>() is { Length: > 0 } mbWay)
+                body += "\nMB WAY: " + mbWay + "\n" + methods["mbWayNote"]?.GetValue<string>();
+            body += "\nDinheiro: " + methods["advanceCashNote"]?.GetValue<string>();
         }
         else body += "\n\n" + summary.Instructions;
         return (subject, body + "\n\n" + publicWebUrl + "/#agenda");

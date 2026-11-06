@@ -1,6 +1,9 @@
 using MySql.Data.MySqlClient;
+using Microsoft.AspNetCore.DataProtection;
+using PaCT.Api.Infrastructure;
 using PaCT.Api.Configuration;
 using PaCT.Api.Identity;
+using PaCT.Api.Finance;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -10,10 +13,16 @@ namespace PaCT.Api.Consultations;
 public interface IConsultationStore
 {
     Task<T> ReadAsync<T>(Func<ConsultationData, T> read, CancellationToken ct);
+    Task<T> ReadFinancialReportAsync<T>(Func<ConsultationData, IReadOnlyList<Expense>?, T> read, CancellationToken ct)
+        => ReadAsync(data => read(data, null), ct);
     Task<ConversationPage> ReadConversationAsync(string id, ConsultationActor actor, long? before, CancellationToken ct) => ReadAsync(data => ConsultationConversation.Page(data, id, actor, before), ct);
     Task<T> ReadAgendaAsync<T>(Func<ConsultationData, T> read, CancellationToken ct) => ReadAsync(read, ct);
     Task<T> ReadEventCatalogueAsync<T>(Func<ConsultationData, T> read, CancellationToken ct) => ReadAsync(read, ct);
     Task<ConsultationResult> ExecuteAsync(ConsultationCommand input, ConsultationActor actor, CancellationToken ct);
+    Task<ConsultationResult> ExecuteAudioMessageAsync(ConsultationCommand input, ConsultationActor actor, AudioAttachment audio, CancellationToken ct)
+        => throw new IdentityProblem(503, "O envio de áudio não está disponível.");
+    Task<AudioAttachment?> ReadMessageAudioAsync(string targetId, string messageId, ConsultationActor actor, CancellationToken ct)
+        => Task.FromResult<AudioAttachment?>(null);
     Task<ConsultationResult> SubmitGuestAsync(GuestSubmission input, CancellationToken ct) => throw new IdentityProblem(503, "Não foi possível enviar o pedido. Tenta novamente.");
     Task<ConsultationResult> SubmitEventGuestAsync(string eventId, GuestSubmission input, CancellationToken ct) => throw new IdentityProblem(503, "Não foi possível enviar o pedido. Tenta novamente.");
     Task AdvanceAsync(CancellationToken ct);
@@ -21,11 +30,19 @@ public interface IConsultationStore
     Task<bool> UpdateConsultationPushAsync(string id, string state, CancellationToken ct) => Task.FromResult(false);
 }
 
-public sealed class MySqlConsultationStore(DatabaseConnectionSettings settings, IdentitySecurity security, TimeProvider time) : IConsultationStore
+public sealed class MySqlConsultationStore(DatabaseConnectionSettings settings, IdentitySecurity security, TimeProvider time, IDataProtectionProvider? protection = null) : IConsultationStore
 {
     private string Encrypt(string id, string field, string value) => Convert.ToBase64String(security.Encrypt(id, "consultation-" + field, value));
     public Task<T> ReadAsync<T>(Func<ConsultationData, T> read, CancellationToken ct) => ReadCore(read, false, ct);
     public Task<T> ReadAgendaAsync<T>(Func<ConsultationData, T> read, CancellationToken ct) => ReadCore(read, true, ct);
+    public Task<T> ReadFinancialReportAsync<T>(Func<ConsultationData, IReadOnlyList<Expense>?, T> read, CancellationToken ct)
+        => Write(async (connection, transaction, data) =>
+        {
+            await using var table = Command(connection, transaction, "SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='financial_expenses'");
+            var expenses = Convert.ToInt32(await table.ExecuteScalarAsync(ct)) == 1
+                ? await MySqlExpenseStore.ReadExpenses(connection, transaction, security, ct) : null;
+            return read(data, expenses);
+        }, ct, synchronizeClock: true);
     public async Task<ConversationPage> ReadConversationAsync(string id, ConsultationActor actor, long? before, CancellationToken ct)
     {
         await using var connection = settings.CreateConnection(); await connection.OpenAsync(ct);
@@ -115,14 +132,54 @@ public sealed class MySqlConsultationStore(DatabaseConnectionSettings settings, 
         var before = Snapshot(data); ProcessLifecycle.Advance(data, now);
         await Save(connection, transaction, data, before, ct);
     }
-    public Task<ConsultationResult> ExecuteAsync(ConsultationCommand input, ConsultationActor actor, CancellationToken ct) => Write(async (connection, transaction, data) =>
+    public Task<ConsultationResult> ExecuteAsync(ConsultationCommand input, ConsultationActor actor, CancellationToken ct) =>
+        Execute(input, actor, null, ct);
+
+    public Task<ConsultationResult> ExecuteAudioMessageAsync(ConsultationCommand input, ConsultationActor actor, AudioAttachment audio, CancellationToken ct) =>
+        Execute(input, actor, audio, ct);
+
+    private IDataProtector AudioProtector(string messageId, string contentType) =>
+        (protection ?? throw new InvalidOperationException("A proteção de áudio não está disponível."))
+            .CreateProtector("PaCT0.2.ConsultationMessageAudio.v1", messageId, contentType);
+
+    public async Task<AudioAttachment?> ReadMessageAudioAsync(string targetId, string messageId, ConsultationActor actor, CancellationToken ct)
+    {
+        await using var connection = settings.CreateConnection();
+        await connection.OpenAsync(ct);
+        await using var transaction = await connection.BeginTransactionAsync(System.Data.IsolationLevel.RepeatableRead, ct);
+        var data = new ConsultationData();
+        await using (var target = Command(connection, transaction, "SELECT data FROM consultations WHERE id=@id", ("@id", targetId)))
+            if (await target.ExecuteScalarAsync(ct) is string json) data.Consultations.Add(JsonSerializer.Deserialize<Consultation>(json)!);
+        if (data.Consultations.Count == 0)
+        {
+            await using var target = Command(connection, transaction, "SELECT data FROM event_participations WHERE id=@id", ("@id", targetId));
+            if (await target.ExecuteScalarAsync(ct) is string json) data.Participations.Add(JsonSerializer.Deserialize<EventParticipation>(json)!);
+        }
+        var authorized = ConsultationConversation.Authorized(data, targetId, actor);
+        var column = authorized.IsParticipation ? "participation_id" : "consultation_id";
+        await using var command = Command(connection, transaction, $"""
+            SELECT m.data,a.content FROM consultation_messages m
+            JOIN consultation_message_audio a ON a.message_id=m.id
+            WHERE m.id=@message AND m.{column}=@target
+            """, ("@message", messageId), ("@target", targetId));
+        await using var reader = await command.ExecuteReaderAsync(ct);
+        if (!await reader.ReadAsync(ct)) return null;
+        var type = JsonSerializer.Deserialize<ConsultationMessage>(reader.GetString(0))?.AudioType;
+        if (type is null || !AudioAttachment.IsAudio(type)) return null;
+        return new(type, AudioProtector(messageId, type).Unprotect((byte[])reader.GetValue(1)));
+    }
+
+    private Task<ConsultationResult> Execute(ConsultationCommand input, ConsultationActor actor, AudioAttachment? audio, CancellationToken ct) => Write(async (connection, transaction, data) =>
     {
         if (!Guid.TryParse(input.OperationId, out _)) throw new IdentityProblem(400, "A operação precisa de identificação válida.");
         await using (var account = Command(connection, transaction,
             "SELECT COUNT(*) FROM accounts a JOIN people p ON p.id=a.origin_person_id WHERE a.id=@account AND a.origin_person_id=@person AND a.closed_at IS NULL AND p.is_active=1 AND ((@manager=0 AND a.role='Client') OR (@manager=1 AND a.role IN ('TechnicalManager','TherapistManager')))",
             ("@account", actor.AccountId), ("@person", actor.PersonId), ("@manager", actor.IsManager)))
             if (Convert.ToInt32(await account.ExecuteScalarAsync(ct)) != 1) throw new IdentityProblem(401, "A conta mudou. Inicia sessão novamente.");
-        var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(input))));
+        if (input.MessageAudioType != audio?.ContentType || audio is not null && (input.Action != "SendMessage" || !actor.IsManager))
+            throw new IdentityProblem(400, "O áudio não corresponde ao envio.");
+        var payload = JsonSerializer.Serialize(input);
+        var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(audio is null ? payload : payload + ":" + audio.Hash)));
         await using (var previous = Command(connection, transaction, "SELECT author_id,request_hash,result FROM consultation_commands WHERE id=@id", ("@id", input.OperationId)))
         await using (var reader = await previous.ExecuteReaderAsync(ct))
             if (await reader.ReadAsync(ct))
@@ -144,8 +201,6 @@ public sealed class MySqlConsultationStore(DatabaseConnectionSettings settings, 
         var before = Snapshot(data);
         var now = time.GetUtcNow();
         var appliedInput = input;
-        if (input.Action is "Manual" or "Request" or "SaveEvent")
-            data.PublishedSite = await PaCT.Api.Management.MySqlSitePresentationStore.ReadPublished(connection, transaction, security, ct);
         if (input.Action == "LinkGuestRequest")
         {
             var guest = data.GuestRequests.SingleOrDefault(g => g.Id == input.Id) ?? throw new IdentityProblem(404, "Pedido não encontrado.");
@@ -153,7 +208,8 @@ public sealed class MySqlConsultationStore(DatabaseConnectionSettings settings, 
                 PaCT.Api.Clients.MySqlClientStore.InTransaction(connection, transaction, ct), guest, input, actor, now, security);
             appliedInput = input with { PersonId = personId, ConditionsAccepted = true };
             // The verified identity decision may have reassigned existing records in this transaction.
-            data = await Load(connection, transaction, ct); before = Snapshot(data);
+            var published = data.PublishedSite;
+            data = await Load(connection, transaction, ct); data.PublishedSite = published; before = Snapshot(data);
             appliedInput = appliedInput with { Version = data.GuestRequests.Single(g => g.Id == input.Id).Version };
         }
         // Compare the reviewed revision with the locked snapshot before housekeeping can
@@ -174,13 +230,19 @@ public sealed class MySqlConsultationStore(DatabaseConnectionSettings settings, 
         await QueueGroupSummaries(connection, transaction, data, ct);
         await QueueAppointmentEmails(connection, transaction, data, ct);
         await Save(connection, transaction, data, before, ct);
+        if (audio is not null)
+        {
+            await using var attachment = Command(connection, transaction,
+                "INSERT INTO consultation_message_audio(message_id,content) VALUES(@id,@content)",
+                ("@id", input.OperationId), ("@content", AudioProtector(input.OperationId, audio.ContentType).Protect(audio.Bytes)));
+            await attachment.ExecuteNonQueryAsync(ct);
+        }
         await using var record = Command(connection, transaction, "INSERT INTO consultation_commands(id,author_id,request_hash,result,created_at) VALUES(@id,@author,@hash,@result,@now)",
             ("@id", input.OperationId), ("@author", actor.AccountId), ("@hash", hash), ("@result", JsonSerializer.Serialize(result)), ("@now", time.GetUtcNow().UtcDateTime));
         await record.ExecuteNonQueryAsync(ct); return result;
     }, ct);
     public Task<ConsultationResult> SubmitGuestAsync(GuestSubmission input, CancellationToken ct) => Write(async (connection, transaction, data) =>
     {
-        data.PublishedSite = await PaCT.Api.Management.MySqlSitePresentationStore.ReadPublished(connection, transaction, security, ct);
         var count = data.GuestRequests.Count;
         var before = Snapshot(data);
         var result = GuestConsultations.Submit(data, input, time.GetUtcNow(), Encrypt);
@@ -230,6 +292,7 @@ public sealed class MySqlConsultationStore(DatabaseConnectionSettings settings, 
             await using var transaction = await connection.BeginTransactionAsync(ct);
             if (synchronizeClock) await PersistLifecycle(connection, transaction, time.GetUtcNow(), ct);
             var data = eventCatalogue ? await LoadEventCatalogue(connection, transaction, ct) : await Load(connection, transaction, ct, agendaOnly);
+            data.PublishedSite = await PaCT.Api.Management.MySqlSitePresentationStore.ReadPublished(connection, transaction, security, ct);
             var result = await action(connection, transaction, data);
             await transaction.CommitAsync(ct); return result;
         }
@@ -251,7 +314,8 @@ public sealed class MySqlConsultationStore(DatabaseConnectionSettings settings, 
             var item = data.Events.Single(e => e.Id == notice.EventId);
             if (!extra && (participation.State != "Confirmed"
                 || (freeConfirmation ? !GroupEvents.IsFree(item.Service) : GroupEvents.IsFree(item.Service) || participation.AcceptedAt is null))) continue;
-            var summary = AppointmentCommunications.Summary(item.Service, item.Definition.StartsAt, item.Definition.EndsAt,
+            var service = PaCT.Api.Management.SitePresentation.WithAddress(data.PublishedSite, item.Service, item.Definition.PublicLocation);
+            var summary = AppointmentCommunications.Summary(service, item.Definition.StartsAt, item.Definition.EndsAt,
                 item.Definition.PublicLocation, GroupPaymentConditions.Mode(item));
             if (notice.Kind != "EventCancelled" && string.IsNullOrWhiteSpace(summary.Instructions)) continue;
             if (notice.Kind == "EventCancelled")
@@ -275,7 +339,8 @@ public sealed class MySqlConsultationStore(DatabaseConnectionSettings settings, 
             var c = data.Consultations.Single(c => c.Id == notice.ConsultationId);
             var kind = AppointmentCommunications.EmailKind(notice, c, time.GetUtcNow());
             if (kind is null) continue;
-            var summary = AppointmentCommunications.Summary(c.Service, c.StartsAt, c.EndsAt, mode: c.FinancialChoice);
+            var service = PaCT.Api.Management.SitePresentation.WithAddress(data.PublishedSite, c.Service, c.Service.PublicLocation);
+            var summary = AppointmentCommunications.Summary(service, c.StartsAt, c.EndsAt, mode: c.FinancialChoice);
             if (AppointmentCommunications.NeedsInstructions(kind) && string.IsNullOrWhiteSpace(summary.Instructions)) continue;
             if (await QueueClientEmail(connection, transaction, notice.PersonId, notice.Id, kind, summary, ct))
                 data.Notices[i] = notice with { EmailPending = false, EmailQueuedAt = time.GetUtcNow() };

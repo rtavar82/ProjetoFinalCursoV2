@@ -24,7 +24,7 @@ export default function PublicPaymentDialog({ service, information, person, onCl
         {policy === 'Prepayment' && <><h4>Condições de pagamento</h4><ul>{information.prepayment.payments.map(text => <li key={text}>{text}</li>)}</ul><h4>Cancelamentos ou faltas</h4><ul>{information.prepayment.cancellations.map(text => <li key={text}>{text}</li>)}</ul></>}
       </section>)}
       {payable && <PublicPaymentMethods information={information} advance={advance} mixedModes={policies.size > 1} nonAdvance={[...policies.keys()].some(policy => policy === 'Postpayment' || policy === 'Contribution')} />}
-      <footer className={styles.contact}><p>{information.contactNote}</p><a href={person.whatsapp} target="_blank" rel="noopener noreferrer"><AppIcon name="whatsapp" />Mensagem no WhatsApp</a><a href={person.telephone}><AppIcon name="phone" />Ligar à Denise</a></footer>
+      <footer className={styles.contact}><p>{information.contactNote}</p>{person.whatsapp && <a href={person.whatsapp} target="_blank" rel="noopener noreferrer"><AppIcon name="whatsapp" />Mensagem no WhatsApp</a>}{person.telephone && <a href={person.telephone}><AppIcon name="phone" />Ligar à {person.name.trim().split(/\s+/)[0]}</a>}</footer>
     </div>
   </ConsultationDialog>
 }

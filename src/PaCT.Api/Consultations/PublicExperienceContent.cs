@@ -10,6 +10,8 @@ public static class PublicExperienceContent
 {
     public static bool IsSentir(string title) => title.Replace('“', '"').Replace('”', '"').Trim()
         .Equals("Consultas \"Sentir Além do Olhar\"", StringComparison.OrdinalIgnoreCase);
+    public static bool OffersNegotiatedPack(ConsultationService service) =>
+        service.Presentation?.NegotiatedPackOffer ?? IsSentir(service.Title);
 
     public static readonly PublicPackOffer NegotiatedPack = new(
         "Podes combinar um pack diretamente com a terapeuta. O número de sessões, os serviços abrangidos e o preço promocional são acordados individualmente.",

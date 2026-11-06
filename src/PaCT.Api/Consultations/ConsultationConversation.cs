@@ -74,12 +74,14 @@ public static class ConsultationConversation
             if (photoIds.Length > 0 && !actor.IsManager) throw new IdentityProblem(403, "O envio de imagens nesta conversa pertence à gestão.");
             if (photoIds.Length > 20 || photoIds.Distinct(StringComparer.Ordinal).Count() != photoIds.Length || photoIds.Any(id => !Guid.TryParse(id, out _)))
                 throw new IdentityProblem(400, "Seleciona até 20 fotografias diferentes.");
+            if (input.MessageAudioType is not null && !actor.IsManager) throw new IdentityProblem(403, "O envio de áudio nesta conversa pertence à gestão.");
+            if (input.MessageAudioType is not null && !PaCT.Api.Infrastructure.AudioAttachment.IsAudio(input.MessageAudioType)) throw new IdentityProblem(400, "O formato do áudio não é válido.");
             var text = input.MessageText ?? "";
-            if (string.IsNullOrWhiteSpace(text) && photoIds.Length == 0 || text.Length > 8000 || text.Any(ch => char.IsControl(ch) && ch is not ('\r' or '\n' or '\t')))
-                throw new IdentityProblem(400, "Escreve uma mensagem até 8000 caracteres ou seleciona imagens para partilhar.");
+            if (string.IsNullOrWhiteSpace(text) && photoIds.Length == 0 && input.MessageAudioType is null || text.Length > 8000 || text.Any(ch => char.IsControl(ch) && ch is not ('\r' or '\n' or '\t')))
+                throw new IdentityProblem(400, "Escreve uma mensagem até 8000 caracteres ou seleciona um anexo permitido.");
             var sequence = data.Messages.Where(m => m.TargetId == c.Id).Select(m => m.Sequence).DefaultIfEmpty().Max() + 1;
             data.Messages.Add(new(input.OperationId, c.IsParticipation ? null : c.Id, actor.AccountId, actor.IsManager, sequence, now,
-                encrypt(input.OperationId, "message", text), photoIds.Length > 0 ? photoIds : null, c.IsParticipation ? c.Id : null));
+                encrypt(input.OperationId, "message", text), photoIds.Length > 0 ? photoIds : null, c.IsParticipation ? c.Id : null, input.MessageAudioType));
             if (c.IsParticipation)
             {
                 var participant = data.Participations.Single(p => p.Id == c.Id);

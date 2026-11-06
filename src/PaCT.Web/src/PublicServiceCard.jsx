@@ -20,7 +20,8 @@ export default function PublicServiceCard({ service, onPayment, onAgenda }) {
     const entry = prices.get(value) || new Set()
     entry.add(`${publicMode(option)}${modePrices.get(option.modality).size > 1 && option.publicLocation ? ` · ${option.publicLocation}` : ''}`); prices.set(value, entry)
   }
-  const locations = publicLocations(service.options.filter(option => option.modality === 'InPerson' && option.publicLocation.trim() === 'Vila Nova de São Bento'))
+  const locations = publicLocations(service.options.filter(option => option.modality === 'InPerson'
+    && option.locationDescription !== 'Sessões presenciais, mediante marcação.'))
   const icon = service.packOffer ? 'user' : service.title === 'Sessão de Reiki & Alinhamento Energético' ? 'heart' : 'leaf'
   return <article className={`ui-card ${styles.card}`} aria-labelledby={`service-${service.id}`}>
     <div className={styles.icon}><AppIcon name={icon} /></div>

@@ -1,4 +1,4 @@
-import { availableStarts } from './agendaTime.js'
+import { availableStarts, dayKey } from './agendaTime.js'
 
 export const canBookForClient = person => person.isActive !== false && person.identityReviewStatus !== 'Pending'
 
@@ -8,12 +8,23 @@ export function validBookingCatalogue(value) {
     && (s.bookingOptions == null || Array.isArray(s.bookingOptions) && s.bookingOptions.every(o => typeof o.id === 'string' && ['InPerson', 'Remote'].includes(o.modality))))
 }
 
+export function physicalLocations(setup) {
+  return setup?.physicalLocations ?? [...new Set([
+    ...bookingVariants(setup?.services).filter(option => option.modality === 'InPerson').map(option => option.publicLocation),
+    ...(setup?.services ?? []).filter(service => service.serviceKind && service.modality === 'InPerson').map(service => service.publicLocation)
+  ].filter(Boolean))]
+}
+
 export function bookingVariants(services = []) {
-  return services.filter(service => !service.serviceKind).flatMap(service => (service.bookingOptions || [{ id: 'standard', modality: service.modality, publicLocation: service.publicLocation }]).map(option => ({
-    ...service, ...option, id: service.id, optionId: option.id, version: service.version || 1,
-    durationMinutes: option.durationMinutes ?? service.durationMinutes, referencePrice: option.referencePrice === undefined ? service.referencePrice : option.referencePrice,
-    paymentMode: option.paymentMode || service.paymentMode, publicLocation: option.modality === 'Remote' ? '' : option.publicLocation,
-  })))
+  return services.filter(service => !service.serviceKind && service.active !== false).flatMap(service => (service.bookingOptions || [{ id: 'standard', modality: service.modality, publicLocation: service.publicLocation }]).map(option => {
+    const paymentMode = option.paymentMode || service.paymentMode
+    return {
+      ...service, ...option, id: service.id, optionId: option.id, version: service.version || 1,
+      durationMinutes: option.durationMinutes ?? service.durationMinutes,
+      referencePrice: paymentMode === 'Free' ? 0 : paymentMode === 'Contribution' ? null : option.referencePrice ?? service.referencePrice,
+      paymentMode, publicLocation: option.modality === 'Remote' ? '' : option.publicLocation,
+    }
+  }))
 }
 export const variantKey = value => value ? `${value.id}:${value.optionId}` : ''
 export function bookableSlots(calendar, day, variants) {
@@ -22,15 +33,21 @@ export function bookableSlots(calendar, day, variants) {
   for (const variant of variants) for (const window of windows) {
     const source = window ? { ...calendar, bookingWindows: [window] } : calendar
     for (const start of availableStarts(source, day, variant)) {
-      if (!starts.has(start)) starts.set(start, { choices: new Map(), publications: new Map() })
+      if (!starts.has(start)) starts.set(start, { choices: new Map(), publications: new Map(), windowIds: new Set() })
       const slot = starts.get(start)
       slot.choices.set(variantKey(variant), variant)
+      if (window?.id) slot.windowIds.add(window.id)
       const fields = { serviceId: window?.rules?.serviceId || null, modality: window?.rules?.modality || null,
         publicLocation: window?.rules?.publicLocation || null, audience: window?.rules?.audience || 'All' }
       slot.publications.set(JSON.stringify(fields), fields)
     }
   }
-  return [...starts].sort(([a], [b]) => a.localeCompare(b)).map(([startsAt, slot]) => ({ startsAt, choices: [...slot.choices.values()], publications: [...slot.publications.values()] }))
+  return [...starts].sort(([a], [b]) => a.localeCompare(b)).map(([startsAt, slot]) => ({ startsAt, choices: [...slot.choices.values()], publications: [...slot.publications.values()], windowIds: [...slot.windowIds].sort() }))
+}
+
+export function findBookingSlot(calendar, startsAt, windowId) {
+  const source = windowId ? { ...calendar, bookingWindows: (calendar.bookingWindows || []).filter(window => window.id === windowId) } : calendar
+  return bookableSlots(source, dayKey(startsAt), bookingVariants(calendar.services)).find(item => Date.parse(item.startsAt) === Date.parse(startsAt))
 }
 
 export function publishedSlotDetails(slot, services) {

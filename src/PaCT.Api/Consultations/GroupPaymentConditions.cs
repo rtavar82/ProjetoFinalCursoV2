@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using PaCT.Api.Identity;
+using PaCT.Api.Management;
 
 namespace PaCT.Api.Consultations;
 
@@ -11,13 +12,13 @@ public static class GroupPaymentConditions
         ? item.Definition.BillingMode ?? item.Service.PaymentMode : item.Service.PaymentMode;
     public static bool Pending(GroupEvent item, EventParticipation participation, DateTimeOffset now) => participation.RequiresClientAcceptance
         && participation.AcceptedAt is null && participation.State == "Confirmed" && item.State != "Cancelled" && participation.Attendance is null;
-    public static ConsultationConditionSet Describe(GroupEvent item)
+    public static ConsultationConditionSet Describe(GroupEvent item, SitePublication? site = null)
     {
         var fingerprint = JsonSerializer.Serialize(new { item.Id, item.ScheduleVersion, item.Service.Version,
             Mode = Mode(item), item.Definition.TotalPrice, item.Service.ReferencePrice, item.Definition.Program, item.Definition.CancellationConditions,
             item.Definition.StartsAt, item.Definition.EndsAt, item.Definition.PublicLocation });
         var version = ConsultationRules.TermsVersion + ":group:" + Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(fingerprint)));
-        var common = ConsultationConditions.DescribeMode(Mode(item), version);
+        var common = ConsultationConditions.DescribeMode(Mode(item), version, site);
         string Wording(string text) => text.Replace("consulta", item.Service.ServiceKind == "Retreat" ? "retiro" : "grupo", StringComparison.Ordinal);
         var sections = common.Sections.Select(section => new ConditionSection(Wording(section.Title), section.Paragraphs.Select(Wording).ToArray(), section.Bullets.Select(Wording).ToArray())).ToList();
         if (item.Service.ServiceKind == "Retreat")

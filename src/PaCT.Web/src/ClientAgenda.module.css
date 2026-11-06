@@ -90,3 +90,7 @@
 @media (min-width: 480px) { .visitorCalendar .filterFields { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 @media (min-width: 640px) { .visitorCalendar .calendar { padding: 1.3rem; } }
 @media (max-width: 359px) { .visitorCalendar .calendar { padding-inline: .3rem; } }
+
+.shareRow {
+  min-width: 0;
+}

@@ -37,10 +37,11 @@ public sealed class GroupEventsController(IConsultationStore store, IIdentitySto
             var e = data.Events.SingleOrDefault(e => e.Id == id && (manager || e.Definition.Published || data.Participations.Any(p => p.EventId == e.Id && p.PersonId == account.PersonId))) ?? throw new IdentityProblem(404, "Evento não encontrado.");
             return new { summary = Public(e, data, account), definition = manager ? e.Definition : null, e.ActualStartsAt, e.ActualEndsAt,
                 balance = manager ? (decimal?)null : data.Balance(account.PersonId),
-                paymentConditions = !GroupEvents.IsFree(e.Service) ? GroupPaymentConditions.Describe(e) : null,
+                paymentConditions = !GroupEvents.IsFree(e.Service) ? GroupPaymentConditions.Describe(e, data.PublishedSite) : null,
                 instructions = manager || data.Participations.Any(p => p.EventId == e.Id && p.PersonId == account.PersonId && p.State == "Confirmed"
                     && (GroupPaymentConditions.Mode(e) != "Prepayment" || p.AdvanceSatisfiedAt is not null))
-                    ? AppointmentCommunications.Instructions(e.Service.Modality, e.Definition.PublicLocation, e.Service.Instructions) : null,
+                    ? AppointmentCommunications.Instructions(e.Service.Modality,
+                        PaCT.Api.Management.SitePresentation.WithAddress(data.PublishedSite, e.Service, e.Definition.PublicLocation).Instructions) : null,
                 ownParticipations = !manager ? data.Participations.Where(p => p.EventId == e.Id && p.PersonId == account.PersonId).Select(p => Participation(p, data, false)).ToArray() : [],
                 history = manager ? e.History ?? [] : [], e.KeepBlocked };
         }, ct));
@@ -78,7 +79,7 @@ public sealed class GroupEventsController(IConsultationStore store, IIdentitySto
         remaining = EventLifecycle.RegistrationOpen(e, time.GetUtcNow()) ? Math.Max(0, e.Definition.Capacity - GroupEvents.Seats(data, e.Id)) : 0, restricted = false,
         eligible = account?.Role == Roles.Client && GroupEvents.Eligible(e, account.PersonId),
         e.Service.ReferencePrice, paymentMode = GroupPaymentConditions.Mode(e), isFree = GroupEvents.IsFree(e.Service),
-        requestConditions = !GroupEvents.IsFree(e.Service) ? GroupPaymentConditions.Describe(e) : null,
+        requestConditions = !GroupEvents.IsFree(e.Service) ? GroupPaymentConditions.Describe(e, data.PublishedSite) : null,
         hasParticipation = account is not null && data.Participations.Any(p => p.EventId == e.Id && p.PersonId == account.PersonId && p.State is "Confirmed" or "Waiting")
     };
     private object Participation(EventParticipation p, ConsultationData data, bool manager) => new

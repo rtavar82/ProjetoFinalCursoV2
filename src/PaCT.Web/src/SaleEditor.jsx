@@ -14,6 +14,7 @@ import SaleDetails from './SaleDetails'
 import useLiveResource from './useLiveResource'
 import useRecoveryState from './useRecoveryState'
 import { apiRequest } from './identityApi'
+import { physicalLocations } from './clientBookingOptions'
 import { agendaMoney } from './agendaTime'
 import { saleKinds, saleMethods, newSaleDraft, newSaleLine, saleCommand, saleTotal } from './financialSales'
 
@@ -59,7 +60,7 @@ export default function SaleEditor({ send, disabled, guard, feedback, onClose, p
             {line.kind === 'Product' && <><label>Peso (opcional)<input maxLength="100" value={line.weight} onChange={e => changeLine(line.key, { weight: e.target.value })} /></label><label>Tamanho (opcional)<input maxLength="100" value={line.size} onChange={e => changeLine(line.key, { size: e.target.value })} /></label></>}
             {line.kind === 'Pack' && <><label>Sessões por pack<input type="number" min="1" max="1000" step="1" required value={line.sessions} onChange={e => changeLine(line.key, { sessions: e.target.value })} /></label><label>Valor das mesmas sessões avulso<input type="number" min="0.01" max="1000000" step="0.01" required value={line.regularTotal} onChange={e => changeLine(line.key, { regularTotal: e.target.value })} /></label></>}
             {line.kind === 'CompletedConsultation' && <><label>Tipo de consulta<AdaptiveSelect value={line.serviceIds[0] || ''} required onChange={e => changeLine(line.key, { serviceIds: [e.target.value], name: services.find(s => s.id === e.target.value)?.title || line.name })}><option value="">Escolhe a consulta</option>{services.filter(s => s.active).map(s => <option key={s.id} value={s.id}>{s.title}</option>)}</AdaptiveSelect></label><label>Modalidade<AdaptiveSelect value={line.modality} onChange={e => changeLine(line.key, { modality: e.target.value })}><option value="InPerson">Presencial</option><option value="Remote">Online</option></AdaptiveSelect></label>
-              {line.modality === 'InPerson' && <label>Local<AdaptiveSelect required value={line.location} onChange={e => changeLine(line.key, { location: e.target.value })}><option value="">Escolhe o local</option><option>Montijo</option><option>Vila Nova de São Bento</option></AdaptiveSelect></label>}
+              {line.modality === 'InPerson' && <label>Local<AdaptiveSelect required value={line.location} onChange={e => changeLine(line.key, { location: e.target.value })}><option value="">Escolhe o local</option>{physicalLocations(catalogue.data).map(place => <option key={place}>{place}</option>)}</AdaptiveSelect></label>}
               <DateRangeFields startLabel="Início efetivo" endLabel="Fim efetivo" required exclusive value={{ start: line.start, end: line.end }} onChange={range => changeLine(line.key, { start: range.start, end: range.end })} />
             </>}
             <label className="full-width">Descrição (opcional)<textarea maxLength="1000" value={line.description} onChange={e => changeLine(line.key, { description: e.target.value })} /></label>

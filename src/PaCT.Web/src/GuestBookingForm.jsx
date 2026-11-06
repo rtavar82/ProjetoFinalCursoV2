@@ -7,7 +7,7 @@ import ConsultationDialog from './ConsultationDialog'
 import PhoneFields from './PhoneFields'
 import AppIcon from './AppIcon'
 import { agendaClock, dayKey, servicePrice } from './agendaTime'
-import { bookingVariants, bookableSlots, variantKey } from './clientBookingOptions'
+import { findBookingSlot, variantKey } from './clientBookingOptions'
 import { durationText, readPublicEvent } from './publicAgendaData'
 import BookingRequestNotice from './BookingRequestNotice'
 import styles from './VisitorAgenda.module.css'
@@ -20,7 +20,7 @@ const bookingDates = (start, end) => dayKey(start) === dayKey(end) ? bookingDate
 
 export default function GuestBookingForm({ selection, onBack, onSignIn, previewOnly = false }) {
   const seedChoices = useMemo(() => selection.choices || [{ ...selection.service, id: selection.serviceId || selection.service.id, version: selection.serviceVersion || selection.service.version || 1, optionId: selection.deliveryOptionId || 'standard' }], [selection])
-  const currentSlot = useBookingSlot(selection.startsAt, { enabled: !selection.eventId, publicOnly: previewOnly })
+  const currentSlot = useBookingSlot(selection.startsAt, { enabled: !selection.eventId, publicOnly: previewOnly, windowId: selection.windowId })
   const choices = currentSlot.slot?.choices || seedChoices
   const [selected, setSelected] = useState(seedChoices[0]), [review, setReview] = useState(null)
   const [busy, setBusy] = useState(false), [checking, setChecking] = useState(false), [error, setError] = useState(''), [receipt, setReceipt] = useState(null), [uncertain, setUncertain] = useState(false)
@@ -73,7 +73,7 @@ export default function GuestBookingForm({ selection, onBack, onSignIn, previewO
         if (needsAcceptance && current.requestConditions?.version !== acceptedVersion) throw new Error('As condições mudaram. Atualiza a Agenda para ler e aceitar as condições atuais.')
       } else {
         const calendar = await readAgendaCalendar(dayKey(selection.startsAt).slice(0, 7), { publicOnly: previewOnly })
-        const latest = bookableSlots(calendar, dayKey(selection.startsAt), bookingVariants(calendar.services)).find(slot => Date.parse(slot.startsAt) === Date.parse(selection.startsAt))
+        const latest = findBookingSlot(calendar, selection.startsAt, selection.windowId)
         if (!latest?.choices.some(choice => signature(choice) === signature(selected))) throw new Error('O horário ou as opções mudaram. Atualiza a Agenda antes de continuar. Os teus dados foram mantidos.')
         if (needsAcceptance && latest.choices.find(choice => signature(choice) === signature(selected))?.requestConditions?.version !== acceptedVersion) {
           setAcceptedVersion(null); currentSlot.refresh(); throw new Error('As condições mudaram. Lê e aceita as condições atuais antes de continuar.')

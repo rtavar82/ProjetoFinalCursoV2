@@ -78,7 +78,7 @@ public static class GroupEvents
         var id = Guid.NewGuid().ToString();
         data.Participations.Add(new(id, eventId, Guid.NewGuid().ToString(), waiting ? "Waiting" : "Requested", now, GuestContactCiphertext: encrypt(id, "event-contact", JsonSerializer.Serialize(new GuestContact(input.FirstName, input.LastName, input.DialCode, input.Phone, input.Email, input.Locality))), GuestOperationId: input.OperationId, GuestRequestHash: hash,
             AcceptedAt: requestAcceptance ? now : null, AcceptedTermsVersion: requestAcceptance ? input.TermsVersion : null,
-            AcceptedConditions: requestAcceptance ? GroupPaymentConditions.Describe(item) : null));
+            AcceptedConditions: requestAcceptance ? GroupPaymentConditions.Describe(item, data.PublishedSite) : null));
         Touch(data, item); return new(id, waiting ? "Pedido recebido na fila de desistências. Aguarda o contacto da terapeuta." : "Pedido recebido. Aguarda o contacto da terapeuta.");
     }
     public static ConsultationResult Apply(ConsultationData data, ConsultationCommand input, ConsultationActor actor, DateTimeOffset now, Func<string, string, string, string> encrypt)
@@ -101,7 +101,8 @@ public static class GroupEvents
             Require(definition.MinimumParticipants is >= 1 && definition.MinimumParticipants <= definition.Capacity, "Indica o mínimo de participantes, até à lotação.");
             definition = definition with { StartsAt = definition.StartsAt.ToUniversalTime(), EndsAt = definition.EndsAt.ToUniversalTime(),
                 PublicLocation = IdentityValidation.Required(definition.PublicLocation, 300, "o local do evento"), Published = true, AllowedPersonIds = null };
-            Require(definition.PublicLocation is "Montijo" or "Vila Nova de São Bento", "Escolhe Montijo ou Vila Nova de São Bento para o local do evento.");
+            Require(existing?.Definition.PublicLocation == definition.PublicLocation
+                || PaCT.Api.Management.SiteLocations.PhysicalNames(data).Contains(definition.PublicLocation), "Escolhe um local ativo para o evento.");
             Require(service.PaymentMode != "Free" || definition.TotalPrice is null or 0, "A participação gratuita não tem preço nem contribuição.");
             if (service.ServiceKind == "Group")
             {
@@ -202,7 +203,7 @@ public static class GroupEvents
                 FinalAmount: !waiting && item.Service.ServiceKind == "Retreat" ? RetreatFinance.Price(item) : null,
                 AcceptedAt: financialAcceptance ? now : null, AcceptedBy: financialAcceptance ? actor.AccountId : null,
                 AcceptedTermsVersion: financialAcceptance ? GroupPaymentConditions.Describe(item).Version : null,
-                AcceptedConditions: financialAcceptance ? GroupPaymentConditions.Describe(item) : null,
+                AcceptedConditions: financialAcceptance ? GroupPaymentConditions.Describe(item, data.PublishedSite) : null,
                 RequiresClientAcceptance: !IsFree(item.Service) && person is not null && ConsultationConditions.HasClientAccount(data, person),
                 ExpectationOpen: !waiting && GroupPaymentConditions.Mode(item) == "Prepayment" && !IsFree(item.Service));
             if (!waiting) p = ParticipationCredit.Authorize(data, item, p, item.CreatedBy, now);
@@ -237,7 +238,7 @@ public static class GroupEvents
             Require(GroupPaymentConditions.Pending(ev, current, now), "Não existem condições desta inscrição por aceitar.", 409);
             GroupPaymentConditions.ValidateAcceptance(ev, input);
             next = current with { AcceptedAt = now, AcceptedBy = actor.AccountId, AcceptedTermsVersion = GroupPaymentConditions.Describe(ev).Version,
-                AcceptedConditions = GroupPaymentConditions.Describe(ev) };
+                AcceptedConditions = GroupPaymentConditions.Describe(ev, data.PublishedSite) };
             GroupPaymentConditions.AcceptanceNotice(data, ev, next, now);
         }
         else if (input.Action == "RejectEventGuest")

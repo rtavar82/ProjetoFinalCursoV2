@@ -10,7 +10,7 @@ export async function readPublicPresentation(signal) {
     || ![person.heroImage, person.signatureImage, ...person.gallery.map(p => p.image)].every(path => typeof path === 'string' && /^\/presentation\/[a-z-]+\.png$/.test(path))
     || person.sections.some(s => typeof s.heading !== 'string' || typeof s.text !== 'string')
     || person.gallery.some(p => typeof p.alt !== 'string' || typeof p.caption !== 'string')
-    || !/^https:\/\/wa\.me\/\d+$/.test(person.whatsapp) || !/^tel:\+\d+$/.test(person.telephone) || !/^https:\/\/www\.instagram\.com\/[a-zA-Z0-9_.]+\/$/.test(person.instagram)
+    || !/^(https:\/\/wa\.me\/\d+)?$/.test(person.whatsapp) || !/^(tel:\+\d+)?$/.test(person.telephone) || !/^(https:\/\/www\.instagram\.com\/[a-zA-Z0-9_.]+\/)?$/.test(person.instagram)
     || !Array.isArray(data.locations) || data.locations.some(location => typeof location.name !== 'string' || typeof location.description !== 'string' || !['Remote', 'InPerson'].includes(location.modality))
     || !Array.isArray(data.experiences) || data.experiences.some(title => typeof title !== 'string')
     || data.experiencePresentations != null && (!Array.isArray(data.experiencePresentations) || data.experiencePresentations.some(item => !['key', 'title', 'introduction', 'description', 'durationText', 'priceText'].every(key => typeof item[key] === 'string')
@@ -23,7 +23,7 @@ export async function readPublicPresentation(signal) {
         || typeof s.presentation.recommendations !== 'string' || s.presentation.packSessions != null && (!Number.isInteger(s.presentation.packSessions) || s.presentation.packSessions < 2)) || !Array.isArray(s.options)
       || s.options.some(o => !['Remote', 'InPerson'].includes(o.modality) || typeof o.publicLocation !== 'string' || typeof o.locationDescription !== 'string' || !Number.isInteger(o.durationMinutes)
         || !['Prepayment', 'Postpayment', 'Contribution', 'Free'].includes(o.paymentMode) || (o.referencePrice !== null && !Number.isFinite(o.referencePrice)) || o.packTotal != null && (!Number.isFinite(o.packTotal) || Math.round(o.packTotal * 100) !== Math.round(o.referencePrice * s.presentation?.packSessions * 100))))
-    || !payment || !/^PT\d{23}$/.test(payment.iban) || !/^[A-Z0-9]{8}([A-Z0-9]{3})?$/.test(payment.bic) || !/^\d{3} \d{3} \d{3}$/.test(payment.mbWay)
+    || !payment || !/^(PT\d{23})?$/.test(payment.iban) || !/^([A-Z0-9]{8}([A-Z0-9]{3})?)?$/.test(payment.bic) || !/^(\d{3} \d{3} \d{3})?$/.test(payment.mbWay)
     || !['transferNote', 'mbWayNote', 'cashNote', 'advanceCashNote', 'contributionText', 'contributionTiming', 'contactNote'].every(key => typeof payment[key] === 'string')
     || !payment.prepayment || !['termsVersion', 'terms', 'waitNote', 'cancellation'].every(key => typeof payment.prepayment[key] === 'string')
     || !Array.isArray(payment.prepayment.payments) || payment.prepayment.payments.some(text => typeof text !== 'string')
@@ -44,6 +44,6 @@ export function publicLocations(options) {
 export function publicRoute() {
   const [path, query] = window.location.hash.slice(1).split('?')
   const service = new URLSearchParams(query).get('servico')
-  return { stage: path === 'entrar' ? 'SignIn' : path === 'terapeuta' ? 'PublicTherapist' : path === 'testemunhos' ? 'PublicTestimonials' : path === 'partilhas' ? 'PublicPromotions' : path === 'agenda' ? 'PublicAgenda' : 'PublicHome',
+  return { stage: path === 'entrar' ? 'SignIn' : path === 'terapeuta' ? 'PublicTherapist' : path === 'testemunhos' ? 'PublicTestimonials' : path === 'partilhas' ? 'PublicSharing' : path === 'agenda' ? 'PublicAgenda' : 'PublicHome',
     serviceId: service && /^[0-9a-f-]{36}$/i.test(service) ? service : '' }
 }

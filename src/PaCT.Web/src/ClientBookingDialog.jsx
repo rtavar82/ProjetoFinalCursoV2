@@ -27,7 +27,7 @@ function RequestDetails({ value, startsAt }) {
 export default function ClientBookingDialog({ seed, send, disabled, guard, onClose, onConfirmed }) {
   const editor = useEditorState({ startsAt: seed.startsAt, selected: seed.choices?.[0] || null, review: null, pending: null, acceptedTermsVersion: null }, 1)
   const [error, setError] = useState(''), [checking, setChecking] = useState(false)
-  const catalogue = useBookingSlot(seed.startsAt)
+  const catalogue = useBookingSlot(seed.startsAt, { windowId: seed.windowId })
   const fields = editor.fields, selected = fields?.selected
   const variants = catalogue.slot?.choices || seed.choices || []
   const latest = variants.find(v => variantKey(v) === variantKey(selected))

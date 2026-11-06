@@ -39,6 +39,7 @@ export default function SitePresentationPanel({ section, title, guard, busy }) {
       error={resource.error || error} onRetry={resource.error ? resource.refresh : undefined}
       actions={<ActionButton disabled={busy || opening || !resource.data || !!resource.error} onClick={() => guard(open)}>Editar</ActionButton>}>
       <p>{section === 'Places' ? 'As descrições são públicas. A morada completa segue as regras de acesso da Agenda e será usada nos novos registos.' : 'Revê as alterações antes de as publicar na apresentação da PaCT.'}</p>
+      {section === 'Payment' && <p>Para retirar a transferência bancária, limpa o IBAN e o BIC/SWIFT. Para retirar o MB WAY, limpa o número.</p>}
       {resource.data && <p>{resource.data.version ? `Versão publicada ${resource.data.version}` : 'Conteúdo inicial'}</p>}
     </InformationCard>
     {session && <SiteEditor title={title} session={session} path={path} guard={guard} busy={busy} onClose={close} />}
@@ -51,11 +52,15 @@ function release(editor) {
 }
 
 function SiteEditor({ title, session, path, guard, busy, onClose }) {
-  const { editor, fields, version } = session
+  const { editor, fields, version, places: publishedPlaces } = session
   const [draft, setDraft] = useState(() => Object.fromEntries(fields.map(field => [field.key, field.value])))
+  const [places, setPlaces] = useState(() => (publishedPlaces ?? []).map(place => ({ ...place, key: place.name, existing: true })))
   const [review, setReview] = useState(null), [sending, setSending] = useState(false), [error, setError] = useState('')
   const disabled = busy || sending
   const dirty = fields.some(field => draft[field.key].trim() !== field.value)
+    || places.length !== (publishedPlaces?.length ?? 0)
+    || places.some((place, index) => !place.existing || ['description', 'address'].some(key => place[key].trim() !== publishedPlaces?.[index]?.[key]))
+  const editPlace = (key, change) => setPlaces(current => current.map(place => place.key === key ? { ...place, ...change } : place))
 
   useEffect(() => {
     let renewing = false
@@ -72,14 +77,17 @@ function SiteEditor({ title, session, path, guard, busy, onClose }) {
   function prepare(event) {
     event.preventDefault()
     setError('')
-    setReview(Object.fromEntries(fields.map(field => [field.key, draft[field.key].trim()])))
+    setReview({
+      values: Object.fromEntries(fields.map(field => [field.key, draft[field.key].trim()])),
+      ...(publishedPlaces ? { places: places.map(({ name, description, address }) => ({ name: name.trim(), description: description.trim(), address: address.trim() })) } : {})
+    })
   }
 
   async function publish() {
     setSending(true)
     setError('')
     try {
-      await apiRequest(`${path}/publish`, { editor, version, values: review })
+      await apiRequest(`${path}/publish`, { editor, version, ...review })
       showSuccess('Alterações publicadas.')
       onClose()
     } catch (failure) { setError(failure.message) }
@@ -90,7 +98,11 @@ function SiteEditor({ title, session, path, guard, busy, onClose }) {
     {error && <p className="notice error" role="alert">{error}</p>}
     {review ? <>
       <InformationCard title="Alterações a publicar" headingLevel={3}>
-        <dl>{fields.filter(field => review[field.key] !== field.value).map(field => <div key={field.key}><dt><strong>{field.label}</strong></dt><dd>{review[field.key]}</dd></div>)}</dl>
+        {fields.filter(field => review.values[field.key] !== field.value).map(field => <p key={field.key}><strong>{field.label}</strong> · {review.values[field.key] || 'Retirar da apresentação'}</p>)}
+        {review.places?.filter(place => !publishedPlaces.some(old => old.name === place.name && old.description === place.description && old.address === place.address))
+          .map(place => <div key={place.name}><p><strong>{place.name}</strong> · {place.description}</p><p>{place.address}</p></div>)}
+        {publishedPlaces?.filter(place => !review.places.some(value => value.name === place.name)).map(place =>
+          <p key={place.name}><strong>Apagar {place.name}</strong> · Sai das novas escolhas. Os registos existentes são conservados.</p>)}
       </InformationCard>
       <div className="button-row">
         <ActionButton variant="secondary" disabled={disabled} onClick={() => setReview(null)}>Voltar à edição</ActionButton>
@@ -100,9 +112,23 @@ function SiteEditor({ title, session, path, guard, busy, onClose }) {
       <fieldset className={formStyles.fields} disabled={disabled}>
         {fields.map(field => {
           const Control = field.multiline ? 'textarea' : 'input'
-          return <label key={field.key}>{field.label}<Control required maxLength={field.maximum} value={draft[field.key]}
+          return <label key={field.key}>{field.label}{field.optional && ' (opcional)'}<Control required={!field.optional} maxLength={field.maximum} value={draft[field.key]}
             onChange={event => setDraft(current => ({ ...current, [field.key]: event.target.value }))} /></label>
         })}
+        {publishedPlaces && <>
+          {places.map(place => <InformationCard key={place.key} title={place.existing ? place.name : 'Novo local'} headingLevel={3}
+            actions={<ActionButton variant="text" aria-label={`Apagar ${place.name || 'novo local'}`}
+              onClick={() => setPlaces(current => current.filter(value => value.key !== place.key))}>Apagar</ActionButton>}>
+            {!place.existing && <label>Nome do local<input value={place.name} required maxLength={120}
+              onChange={event => editPlace(place.key, { name: event.target.value })} /></label>}
+            <label>Descrição pública<textarea value={place.description} required maxLength={600}
+              onChange={event => editPlace(place.key, { description: event.target.value })} /></label>
+            <label>Morada completa<input value={place.address} required maxLength={500}
+              onChange={event => editPlace(place.key, { address: event.target.value })} /></label>
+          </InformationCard>)}
+          <ActionButton variant="secondary" disabled={places.length >= 50} onClick={() =>
+            setPlaces(current => [...current, { key: crypto.randomUUID(), name: '', description: '', address: '' }])}>Novo local</ActionButton>
+        </>}
         <div className="button-row">
           <ActionButton variant="secondary" onClick={() => guard(onClose)}>Voltar à gestão</ActionButton>
           <ActionButton type="submit" disabled={!dirty}>Rever antes de publicar</ActionButton>

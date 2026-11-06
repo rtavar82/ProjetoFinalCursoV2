@@ -199,9 +199,37 @@ public static class ConsultationRules
         { var result = GroupEvents.Apply(data, input, actor, now, encrypt); GroupEvents.Advance(data, now); return result; }
         if (input.Action == "PublishAvailability")
             return AgendaRules.Publish(data, input.Publication ?? throw new IdentityProblem(400, "Indica a publicação da agenda."), actor, input.OperationId, now, encrypt);
-        if (input.Action == "SaveService")
+        if (input.Action is "SaveService" or "UpdateServiceRates" or "PublishCatalogueConsultation" or "RetireCatalogueConsultation")
         {
-            Manager(actor); var s = input.Service ?? throw new IdentityProblem(400, "Indica o serviço.");
+            Manager(actor);
+            var catalogueEdit = input.Action is "PublishCatalogueConsultation" or "RetireCatalogueConsultation";
+            var ratesOnly = input.Action == "UpdateServiceRates";
+            ConsultationService s;
+            if (catalogueEdit && input.Action == "PublishCatalogueConsultation" && input.Id is null)
+                s = ConsultationRates.Edit(data, null, input.CatalogueConsultation ?? throw new IdentityProblem(400, "Indica os dados da consulta."));
+            else if (ratesOnly || catalogueEdit)
+            {
+                var currentService = data.Services.SingleOrDefault(service => service.Id == input.Id && service.Active && service.ServiceKind is null)
+                    ?? throw new IdentityProblem(404, "Consulta individual não encontrada.");
+                Require(currentService.Version == input.Version, "A consulta mudou. Volta a abrir antes de guardar.", 409);
+                if (input.Action == "RetireCatalogueConsultation")
+                {
+                    Require(!data.GuestRequests.Any(request => request.Service.Id == currentService.Id
+                        && request.StartsAt > now && request.State is "Requested" or "InTreatment"),
+                        "Trata primeiro os pedidos sem conta que ainda aguardam decisão para esta consulta.", 409);
+                    Require(!data.Packs.Any(pack => pack.ServiceIds.Contains(currentService.Id) && SessionPacks.IsPaid(pack)
+                        && SessionPacks.Remaining(data, pack.Id) > 0
+                        && !ActivityCatalogue.Complete(data.Services).Any(other => other.Id != currentService.Id && other.Active
+                            && other.ServiceKind != "Retreat" && !GroupEvents.IsFree(other) && pack.ServiceIds.Contains(other.Id))),
+                        "Há packs com sessões disponíveis que dependem desta consulta. Trata esses packs antes de a retirar.", 409);
+                    data.Services[data.Services.IndexOf(currentService)] = currentService with { Active = false, Version = currentService.Version + 1 };
+                    return new(currentService.Id, "Consulta retirada do catálogo.");
+                }
+                s = catalogueEdit
+                    ? ConsultationRates.Edit(data, currentService, input.CatalogueConsultation ?? throw new IdentityProblem(400, "Indica os dados da consulta."))
+                    : ConsultationRates.Update(currentService, input.Rates ?? throw new IdentityProblem(400, "Indica a duração e o preço."));
+            }
+            else s = input.Service ?? throw new IdentityProblem(400, "Indica o serviço.");
             Require(!s.DefinedPerEvent || s.ServiceKind is "Group" or "Retreat", "Só grupos e retiros podem ser definidos por ocorrência.");
             Require(!string.IsNullOrWhiteSpace(s.Title) && s.Title.Length <= 200 && (s.DefinedPerEvent ? s.DurationMinutes == 0 : s.DurationMinutes is >= 15 and <= 720), "Indica título e duração válida; nos tipos definidos por ocorrência, a duração é indicada no evento.");
             Require(s.Modality is "InPerson" or "Remote" && (s.Modality == "Remote" || s.DefinedPerEvent || !string.IsNullOrWhiteSpace(s.PublicLocation)), "Indica modalidade e local presencial.");
@@ -218,7 +246,7 @@ public static class ConsultationRules
             if (index >= 0 && s.BookingOptions is null) s = s with { BookingOptions = data.Services[index].BookingOptions };
             if (index >= 0 && s.Presentation is null) s = s with { Presentation = data.Services[index].Presentation };
             var previousService = index < 0 ? null : data.Services[index];
-            Require(s.Presentation?.PackPromotionPublished != true || input.ConditionsAccepted, "Confirma expressamente a publicação da divulgação revista.");
+            Require(ratesOnly || catalogueEdit || s.Presentation?.PackPromotionPublished != true || input.ConditionsAccepted, "Confirma expressamente a publicação da divulgação revista.");
             s = s with { PromotionHistory = previousService?.PromotionHistory };
             if (s.Presentation?.PackPromotion != previousService?.Presentation?.PackPromotion
                 || (s.Presentation?.PackPromotionPublished ?? false) != (previousService?.Presentation?.PackPromotionPublished ?? false))

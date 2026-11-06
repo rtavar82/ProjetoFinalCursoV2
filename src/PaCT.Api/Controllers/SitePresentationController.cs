@@ -8,7 +8,7 @@ using PaCT.Api.Management;
 namespace PaCT.Api.Controllers;
 
 [ApiController, Route("api/management/presentation"), Authorize(Roles = Roles.Managers)]
-[ResponseCache(NoStore = true, Location = ResponseCacheLocation.None), RequestSizeLimit(150000)]
+[ResponseCache(NoStore = true, Location = ResponseCacheLocation.None), RequestSizeLimit(250000)]
 public sealed class SitePresentationController(MySqlSitePresentationStore store) : ControllerBase
 {
     private string Author => User.FindFirstValue(ClaimTypes.NameIdentifier)!;

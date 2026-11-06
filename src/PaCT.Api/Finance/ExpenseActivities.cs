@@ -9,7 +9,7 @@ public sealed record ExpenseActivityPage(int Total, int Page, int PageSize, Expe
 
 internal static class ExpenseActivities
 {
-    internal static readonly string[] Locations = PublicPresentationContent.Places.Select(p => p.Name).ToArray();
+    internal static string[] Locations(ConsultationData data) => [.. SiteLocations.PhysicalNames(data), SiteLocations.Online];
 
     internal static ExpenseActivity? From(Consultation c) => c.Stage == ProcessStage.Request ? null
         : new("Consultation", c.Id, c.Service.Title, c.StartsAt, c.Service.Modality == "Remote" ? "Online" : c.Service.PublicLocation);
@@ -26,6 +26,6 @@ internal static class ExpenseActivities
         var matches = candidates.OfType<ExpenseActivity>()
             .Where(item => ManagementDirectory.Normalize(item.Title + " " + item.Location).Contains(query))
             .OrderByDescending(item => item.StartsAt).ThenBy(item => item.Id).ToArray();
-        return new(matches.Length, page, 8, matches.Skip((page - 1) * 8).Take(8).ToArray(), Locations);
+        return new(matches.Length, page, 8, matches.Skip((page - 1) * 8).Take(8).ToArray(), Locations(data));
     }
 }

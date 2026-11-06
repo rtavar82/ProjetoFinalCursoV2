@@ -1,4 +1,7 @@
 using PaCT.Api.Identity;
+using PaCT.Api.Management;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace PaCT.Api.Consultations;
 
@@ -6,6 +9,18 @@ public static class ClientBooking
 {
     public static ConsultationDelivery[] Options(ConsultationService service) => service.BookingOptions
         ?? [new("standard", service.Modality, service.Modality == "Remote" ? "" : service.PublicLocation, service.Instructions)];
+    public static ConsultationDelivery[] Options(ConsultationService service, SitePublication site)
+    {
+        var options = Options(service);
+        var available = options.Where(option => option.Modality == "Remote" || !SiteLocations.Removed(site, option.PublicLocation));
+        if (service.ServiceKind is not null || !service.OffersAtManagedLocations && !options.Any(option => option.Modality == "InPerson"))
+            return available.ToArray();
+        var additional = SiteLocations.Published(site).Where(place => !options.Any(option => option.Modality == "InPerson" && option.PublicLocation == place.Name))
+            .Select(place => new ConsultationDelivery(
+                "place-" + Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(place.Name))).ToLowerInvariant(),
+                "InPerson", place.Name, ""));
+        return available.Concat(additional).ToArray();
+    }
     public static ConsultationService Snapshot(ConsultationService service, ConsultationDelivery option) => service with
     {
         Modality = option.Modality, PublicLocation = option.PublicLocation, Instructions = option.Instructions, BookingOptions = null,
@@ -35,7 +50,7 @@ public static class ClientBooking
         var service = data.Services.SingleOrDefault(s => s.Id == serviceId && s.Active && s.ServiceKind is null)
             ?? throw new IdentityProblem(400, "Esta consulta não está disponível.");
         if (version is not null && service.Version != version) throw new IdentityProblem(409, "As opções desta consulta mudaram. Revê a seleção antes de enviar.");
-        var options = Options(service);
+        var options = Options(service, data.PublishedSite);
         var option = optionId is null && options.Length == 1 ? options[0] : options.SingleOrDefault(o => o.Id == optionId)
             ?? throw new IdentityProblem(400, "Escolhe uma modalidade e um local disponíveis para esta consulta.");
         service = Snapshot(service, option);

@@ -1,33 +1,20 @@
-import { useCallback, useState } from 'react'
+import { useState } from 'react'
 import ActionButton from './ActionButton'
 import AdaptiveSelect from './AdaptiveSelect'
 import InformationCard from './InformationCard'
-import Pagination from './Pagination'
-import SearchInput from './SearchInput'
+import ExpenseActivitySearch from './ExpenseActivitySearch'
 import { agendaDate, agendaMoney } from './agendaTime'
 import { cents } from './financialSales'
-import { apiRequest } from './identityApi'
-import useLiveResource from './useLiveResource'
+import useExpenseActivitySearch from './useExpenseActivitySearch'
 
 export default function ExpenseAllocationFields({ allocations, total, onChange, disabled }) {
   const [open, setOpen] = useState(false)
   const [picking, setPicking] = useState(null)
-  const [kind, setKind] = useState('Consultation')
-  const [term, setTerm] = useState('')
-  const [search, setSearch] = useState('')
-  const [page, setPage] = useState(1)
-  const query = new URLSearchParams({ kind, term: search, page }).toString()
-  const read = useCallback(signal => apiRequest('finance/expenses/activities?' + query, undefined, { signal }), [query])
-  const activities = useLiveResource('consultations', 'expense-activities:' + query, read, open)
+  const activities = useExpenseActivitySearch(open)
   const locations = activities.data?.locations || []
   const general = (cents(total) - allocations.reduce((sum, allocation) => sum + cents(allocation.amount), 0)) / 100
   function edit(key, change) {
     onChange(allocations.map(allocation => allocation.key === key ? { ...allocation, ...change } : allocation))
-  }
-  function searchFor(value) {
-    setSearch(value)
-    setPage(1)
-    if (value === search && page === 1) activities.refresh()
   }
   return <details onToggle={event => setOpen(event.currentTarget.open)}>
     <summary>Repartir a linha (opcional)</summary>
@@ -54,29 +41,12 @@ export default function ExpenseAllocationFields({ allocations, total, onChange, 
           onChange(allocations.filter(value => value.key !== allocation.key))
         }}>Retirar repartição</ActionButton>
       </div>
-      {picking === allocation.key && <InformationCard title="Pesquisar atividades" headingLevel={6} cardId="expense-activity-picker">
-        <div className="fields-grid">
-          <label>Tipo de atividade<AdaptiveSelect aria-label="Tipo de atividade" value={kind} disabled={disabled} onChange={event => { setKind(event.target.value); setPage(1) }}>
-            <option value="Consultation">Consultas</option><option value="Event">Grupos, oficinas e retiros</option>
-          </AdaptiveSelect></label>
-          <label>Nome da atividade ou local<SearchInput value={term} maxLength="200" showClear={!!(term || search)} disabled={disabled}
-            onChange={event => setTerm(event.target.value)} onClear={() => { setTerm(''); searchFor('') }}
-            onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); searchFor(term.trim()) } }} /></label>
-        </div>
-        <ActionButton variant="secondary" disabled={disabled} onClick={() => searchFor(term.trim())}>Pesquisar atividades</ActionButton>
-        {activities.loading && <p role="status">A carregar atividades…</p>}
-        {activities.data?.total === 0 && <p>Não foram encontradas atividades.</p>}
-        {activities.data?.items.map(activity => <p key={activity.id}>
-          <ActionButton variant="text" disabled={disabled} onClick={() => {
-            edit(allocation.key, { activity, location: allocation.location || (locations.includes(activity.location) ? activity.location : null) })
-            setPicking(null)
-          }}>{activity.title} · {agendaDate(activity.startsAt)}{activity.location && ' · ' + activity.location}</ActionButton>
-        </p>)}
-        <Pagination total={activities.data?.total} pageSize={activities.data?.pageSize} page={page} onChange={setPage}
-          disabled={disabled} label="Páginas das atividades" />
-      </InformationCard>}
+      {picking === allocation.key && <ExpenseActivitySearch lookup={activities} headingLevel={6} disabled={disabled} onSelect={activity => {
+        edit(allocation.key, { activity, location: allocation.location || (locations.includes(activity.location) ? activity.location : null) })
+        setPicking(null)
+      }} />}
     </InformationCard>)}
-    {activities.error && <InformationCard cardId="expense-activity-error" error={activities.error} onRetry={activities.refresh} />}
+    {activities.error && picking === null && <InformationCard cardId="expense-activity-error" error={activities.error} onRetry={activities.refresh} />}
     <ActionButton variant="secondary" disabled={disabled || allocations.length >= 20} onClick={() =>
       onChange([...allocations, { key: crypto.randomUUID(), activity: null, location: null, amount: '' }])}>Acrescentar repartição</ActionButton>
     {allocations.length > 0 && (general >= 0 ? <p>Despesa geral: <strong>{agendaMoney(general)}</strong></p>

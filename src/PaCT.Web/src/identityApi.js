@@ -37,7 +37,34 @@ async function uploadPhoto(consultationId, photoId, file, versionField, version)
   }, true)
 }
 
-export async function apiRequest(path, body, { signal, publicOnly = false } = {}) {
+export function sendConversationAudio(id, command, audio) {
+  const form = new FormData()
+  form.set('operationId', command.operationId)
+  form.set('conversationVersion', String(command.conversationVersion))
+  form.set('messageText', command.messageText)
+  command.photoIds.forEach(photoId => form.append('photoIds', photoId))
+  form.set('audio', audio)
+  return submittedWrite(async sent => {
+    const csrf = await apiRequest('identity/csrf')
+    sent()
+    const response = await fetch(`/api/consultations/${id}/messages/audio`, {
+      method: 'POST', credentials: 'same-origin', cache: 'no-store', headers: { 'X-PaCT-CSRF': csrf.token },
+      body: form, signal: AbortSignal.timeout(120000),
+    })
+    const result = await response.json().catch(() => ({}))
+    if (response.status === 401) window.dispatchEvent(new Event(SESSION_EXPIRED))
+    if (response.status === 429) throw rateLimitFailure(response, result.title)
+    if (!response.ok || result.id !== command.operationId) {
+      const error = new Error(result.title || 'Não foi possível confirmar o envio do áudio. O preenchimento foi mantido.')
+      if (!response.ok) error.status = response.status
+      throw error
+    }
+    announceSuccessfulWrite('consultations/commands', command)
+    return result
+  }, true)
+}
+
+export async function apiRequest(path, body, { signal, publicOnly = false, responseType = 'json' } = {}) {
   if (publicOnly && body !== undefined) throw new Error('A visualização de visitante permite apenas consultar.')
   if (body !== undefined) {
     if (path === 'identity/sign-out') cancelSubmittedWrites()
@@ -62,6 +89,7 @@ export async function apiRequest(path, body, { signal, publicOnly = false } = {}
     reportStaleContent()
     throw new Error('Sem ligação à aplicação. Verifica a rede e volta a tentar.', { cause: failure })
   }
+  if (response.ok && responseType === 'blob') return response.blob()
   const result = await response.json().catch(() => ({}))
   if (!response.ok) {
     if (response.status >= 500) reportStaleContent()

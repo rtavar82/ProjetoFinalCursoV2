@@ -1,11 +1,12 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 using PaCT.Api.Consultations;
 using PaCT.Api.Identity;
 
 namespace PaCT.Api.Management;
 
-public sealed record SiteField(string Key, string Label, string Value, int Maximum, bool Multiline = false);
+public sealed record SiteField(string Key, string Label, string Value, int Maximum, bool Multiline = false, bool Optional = false);
 public sealed record SitePublication(long Version, Dictionary<string, string> Changes)
 {
     public string Text(string key, string fallback) => Changes.GetValueOrDefault(key, fallback);
@@ -38,14 +39,9 @@ public static class SitePresentation
     {
         "Home" => Home,
         "Therapist" => TherapistFields(),
-        "Places" => PublicPresentationContent.Places.SelectMany(place =>
-        {
-            var description = new SiteField($"place.{place.Name}.description", $"{place.Name} — descrição pública", place.Description, 600, true);
-            return place.Modality == "Remote" ? [description] : new[]
-            {
-                description, new SiteField($"place.{place.Name}.address", $"{place.Name} — morada completa", AppointmentCommunications.Instructions("InPerson", place.Name, ""), 500)
-            };
-        }).ToArray(),
+        "Contacts" => ContactFields(),
+        "Payment" => PaymentFields(),
+        "Places" => [new("place.Online.description", "Online — descrição pública", PublicPresentationContent.LocationDescription("Remote"), 600, true)],
         _ => throw new IdentityProblem(404, "Área de edição desconhecida.")
     };
 
@@ -58,12 +54,14 @@ public static class SitePresentation
             if (!values.TryGetValue(field.Key, out var value))
                 throw new IdentityProblem(400, "Revê os campos desta secção.");
             var text = value?.Trim().ReplaceLineEndings("\n") ?? "";
-            if (text.Length == 0 || text.Length > field.Maximum || text.Any(c => char.IsControl(c) && !(field.Multiline && c == '\n')))
+            if (!field.Optional && text.Length == 0 || text.Length > field.Maximum || text.Any(c => char.IsControl(c) && !(field.Multiline && c == '\n')))
                 throw new IdentityProblem(400, $"Revê «{field.Label}». O limite é de {field.Maximum} caracteres.");
             return text;
         });
         if (normalized.Values.Sum(text => text.Length) > 40000)
             throw new IdentityProblem(400, "O conteúdo desta secção é demasiado longo.");
+        if (section == "Contacts") ValidateContacts(normalized);
+        if (section == "Payment") ValidatePayment(normalized);
         return normalized;
     }
 
@@ -73,7 +71,7 @@ public static class SitePresentation
     public static JsonObject PublicTherapist(SitePublication publication)
     {
         var person = JsonSerializer.SerializeToNode(PublicPresentationContent.Therapist)!.AsObject();
-        foreach (var field in TherapistFields())
+        foreach (var field in TherapistFields().Concat(ContactFields()))
         {
             var path = field.Key.Split('.');
             if (path.Length == 2) person[path[1]] = publication.Text(field.Key, field.Value);
@@ -82,16 +80,79 @@ public static class SitePresentation
         return person;
     }
 
+    public static JsonObject PublicPayment(SitePublication publication)
+    {
+        var payment = JsonSerializer.SerializeToNode(PublicPresentationContent.PaymentInformation)!.AsObject();
+        foreach (var field in PaymentFields()) payment[field.Key["payment.".Length..]] = publication.Text(field.Key, field.Value);
+        return payment;
+    }
+
+    private static SiteField[] ContactFields()
+    {
+        var person = JsonSerializer.SerializeToElement(PublicPresentationContent.Therapist);
+        return
+        [
+            new("therapist.telephone", "Telefone (tel:+351…)", person.GetProperty("telephone").GetString()!, 25, Optional: true),
+            new("therapist.whatsapp", "Ligação WhatsApp (https://wa.me/…)", person.GetProperty("whatsapp").GetString()!, 60, Optional: true),
+            new("therapist.instagram", "Ligação Instagram (https://www.instagram.com/…/)", person.GetProperty("instagram").GetString()!, 120, Optional: true)
+        ];
+    }
+
+    private static SiteField[] PaymentFields()
+    {
+        var payment = JsonSerializer.SerializeToElement(PublicPresentationContent.PaymentInformation);
+        SiteField Field(string key, string label, int limit, bool optional = false) =>
+            new("payment." + key, label, payment.GetProperty(key).GetString()!, limit, Multiline: limit > 100, Optional: optional);
+        return
+        [
+            Field("iban", "IBAN", 40, true),
+            Field("bic", "BIC/SWIFT", 11, true),
+            Field("transferNote", "Instruções de transferência bancária", 600),
+            Field("mbWay", "Número MB WAY", 20, true),
+            Field("mbWayNote", "Instruções de MB WAY", 600),
+            Field("cashNote", "Instruções para pagamento em dinheiro", 600),
+            Field("advanceCashNote", "Instruções para pagamento antecipado em dinheiro", 600),
+            Field("contactNote", "Texto de ajuda sobre pagamentos", 600)
+        ];
+    }
+
+    private static void ValidateContacts(Dictionary<string, string> values)
+    {
+        if (values["therapist.telephone"] is { Length: > 0 } telephone && !Regex.IsMatch(telephone, @"\Atel:\+[1-9][0-9]{6,14}\z"))
+            throw new IdentityProblem(400, "Indica o telefone no formato tel:+351 seguido do número.");
+        if (values["therapist.whatsapp"] is { Length: > 0 } whatsapp && !Regex.IsMatch(whatsapp, @"\Ahttps://wa\.me/[1-9][0-9]{6,14}\z"))
+            throw new IdentityProblem(400, "Indica uma ligação https://wa.me/ seguida do número com indicativo.");
+        if (values["therapist.instagram"] is { Length: > 0 } instagram && !Regex.IsMatch(instagram, @"\Ahttps://www\.instagram\.com/[a-zA-Z0-9_.]+/\z"))
+            throw new IdentityProblem(400, "Indica a ligação HTTPS do perfil de Instagram, com uma barra no fim.");
+    }
+
+    private static void ValidatePayment(Dictionary<string, string> values)
+    {
+        var iban = values["payment.iban"].Replace(" ", "").ToUpperInvariant();
+        var bic = values["payment.bic"].ToUpperInvariant();
+        var mbWay = values["payment.mbWay"].Replace(" ", "");
+        if (iban.Length > 0 && (!Regex.IsMatch(iban, @"\APT[0-9]{23}\z")
+            || (iban[4..] + "2529" + iban[2..4]).Aggregate(0, (remainder, digit) => (remainder * 10 + digit - '0') % 97) != 1))
+            throw new IdentityProblem(400, "Indica um IBAN português válido.");
+        if (bic.Length > 0 && (iban.Length == 0 || !Regex.IsMatch(bic, @"\A[A-Z]{6}[A-Z0-9]{2}([A-Z0-9]{3})?\z")))
+            throw new IdentityProblem(400, "Indica um BIC/SWIFT válido associado ao IBAN.");
+        if (mbWay.Length > 0 && !Regex.IsMatch(mbWay, @"\A[0-9]{9}\z"))
+            throw new IdentityProblem(400, "Indica os nove algarismos do número MB WAY.");
+        values["payment.iban"] = iban;
+        values["payment.bic"] = bic;
+        values["payment.mbWay"] = mbWay.Length == 0 ? "" : $"{mbWay[..3]} {mbWay[3..6]} {mbWay[6..]}";
+    }
+
     public static string LocationDescription(SitePublication publication, string modality, string location)
     {
         var name = modality == "Remote" ? "Online" : location;
-        return publication.Text($"place.{name}.description", PublicPresentationContent.LocationDescription(modality, location));
+        return publication.Text($"place.{name}.description", PublicPresentationContent.LocationDescription(modality));
     }
 
     public static ConsultationService WithAddress(SitePublication publication, ConsultationService service, string location)
     {
         if (service.Modality != "InPerson" || !string.IsNullOrWhiteSpace(service.Instructions)) return service;
-        var address = publication.Text($"place.{location}.address", AppointmentCommunications.Instructions("InPerson", location, ""));
+        var address = SiteLocations.Address(publication, location);
         return service with { Instructions = address };
     }
 

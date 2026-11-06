@@ -31,11 +31,15 @@ export function announceSuccessfulWrite(path, body) {
   const resources = []
   if (/^management\//.test(endpoint) && endpoint !== 'management/presentation/editor') resources.push('management')
   if (/^management\/presentation\/[^/]+\/publish$/.test(endpoint)) resources.push('publicPresentation')
-  if (/^finance\/expenses(?:\/|$)/.test(endpoint)) resources.push('expenses', 'management')
+  if (endpoint === 'management/presentation/Places/publish') resources.push('agenda', 'expenses', 'events')
+  if (endpoint === 'management/presentation/Payment/publish') resources.push('agenda', 'events', 'consultations')
+  if (/^finance\/expenses(?:\/|$)/.test(endpoint)) resources.push('expenses', 'management', 'finance')
   if (/^(clients(?:\/|$)|profile$|identity\/client-registration$)/.test(endpoint)) resources.push('clientReviews', 'clients', 'profile', 'clientAccess')
   if (/^clients\/reviews\/[^/]+$/.test(endpoint) && body?.accept) resources.push('consultations', 'finance', 'sales', 'agenda', 'guestRequests', 'packs', 'events', 'consultationNotices', 'consultationMessages')
   if (endpoint === 'consultations/commands') {
+    if (['UpdateServiceRates', 'PublishCatalogueConsultation', 'RetireCatalogueConsultation'].includes(body?.action)) resources.push('publicPresentation')
     if (body?.action === 'RecordSale') resources.push('sales')
+    if (body?.action === 'CancelEvent') resources.push('expenses')
     if (['SendMessage', 'ReadMessages', 'ReadMessageNotice', 'BlockConversation', 'ReopenConversation'].includes(body?.action)) resources.push('consultationNotices', 'consultations', 'consultationMessages')
     else resources.push('consultationNotices', 'consultations', 'finance', 'agenda', 'guestRequests', 'packs', 'events')
     if (body?.action === 'LinkGuestRequest') resources.push('clients', 'clientReviews')
@@ -43,6 +47,7 @@ export function announceSuccessfulWrite(path, body) {
   if (/^consultations\/events\/[^/]+\/requests$/.test(endpoint)) resources.push('events', 'consultationNotices', 'clients', 'clientReviews')
   if (endpoint === 'consultations/guests') resources.push('agenda', 'consultationNotices', 'guestRequests', 'clients', 'clientReviews')
   if (/^identity\/(passkeys|google|password-change)/.test(endpoint)) resources.push('accountSecurity')
+  if (/^sharing(?:\/|$)/.test(endpoint)) resources.push('sharing')
   if (resources.length) invalidateResources(resources)
 }
 

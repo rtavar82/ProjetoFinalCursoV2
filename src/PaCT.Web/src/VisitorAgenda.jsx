@@ -6,7 +6,7 @@ import { readPublicEvent } from './publicAgendaData'
 import styles from './VisitorAgenda.module.css'
 import useLiveResource from './useLiveResource'
 
-function EventRequest({ target, onClose, onSignIn, previewOnly = false }) {
+export function EventRequest({ target, onClose, onSignIn, previewOnly = false }) {
   const read = useCallback(() => readPublicEvent(target.id, target.serviceId, { publicOnly: previewOnly }), [target.id, target.serviceId, previewOnly])
   const { data: event, error, refresh } = useLiveResource('events', 'visitor-event:' + target.id, read)
   if (!event) return <ConsultationDialog title="O teu pedido" label="O teu pedido" onClose={onClose}>{error ? <><p className="notice error" role="alert">{error}</p><button type="button" onClick={refresh}>Tentar novamente</button></> : <p role="status">A consultar a atividade…</p>}</ConsultationDialog>
@@ -20,7 +20,7 @@ export default function VisitorAgenda({ initialServiceId = '', selection, onChoo
   return <section className={styles.page} aria-label="Agenda do visitante">
     <p className="eyebrow">A TUA AGENDA</p><h1>Um tempo para ti.</h1><p>Escolhe o dia. Encontra o teu horário.</p>
     {authenticated && <p>Com sessão iniciada, faz o agendamento na tua área com a tua ficha.</p>}
-    <ClientCalendar key={initialServiceId} visitor publicOnly={previewOnly} initialServiceId={initialServiceId} onChoose={onChoose} onEvent={(_, item) => authenticated ? onChoose(item) : setEvent(item)} />
+    <ClientCalendar key={initialServiceId} visitor shareRole={previewOnly ? 'manager' : undefined} publicOnly={previewOnly} initialServiceId={initialServiceId} onChoose={onChoose} onEvent={(_, item) => authenticated ? onChoose(item) : setEvent(item)} />
     {selection && <GuestBookingForm key={selection.startsAt} selection={selection} onBack={onBack} onSignIn={onSignIn} previewOnly={previewOnly} />}
     {event && <EventRequest target={event} onClose={() => setEvent(null)} onSignIn={onSignIn} previewOnly={previewOnly} />}
   </section>

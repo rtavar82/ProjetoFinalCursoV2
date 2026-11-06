@@ -1,18 +1,24 @@
 import AdaptiveSelect from './AdaptiveSelect'
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import useAgendaCalendar from './useAgendaCalendar'
 import AppIcon from './AppIcon'
+import AgendaShareReference from './AgendaShareReference'
+import useLiveResource from './useLiveResource'
+import { apiRequest } from './identityApi'
 import AgendaFilters from './AgendaFilters'
 import { agendaClock, agendaDate, agendaDay, dayKey, monthDays, shiftMonth, addDays, instant } from './agendaTime'
-import { bookingVariants, bookableSlots, publishedSlotDetails } from './clientBookingOptions'
+import { bookingVariants, bookableSlots, physicalLocations, publishedSlotDetails } from './clientBookingOptions'
 import { searchPublishedAgenda } from './publishedAgendaSearch'
 import styles from './ClientAgenda.module.css'
 import publicStyles from './VisitorAgenda.module.css'
 
-export default function ClientCalendar({ onChoose, onEvent, enabled = true, visitor = false, publicOnly = false, initialServiceId = '' }) {
+export default function ClientCalendar({ onChoose, onEvent, enabled = true, visitor = false, publicOnly = false, initialServiceId = '', shareRole }) {
   const { selection, setSelection, calendar } = useAgendaCalendar({ enabled, publicOnly })
   const [chosenType, setType] = useState(null), [place, setPlace] = useState(''), [modality, setModality] = useState('')
   const data = calendar.data
+  const readSharing = useCallback(signal => apiRequest('sharing/capabilities', undefined, { signal }), [])
+  const sharing = useLiveResource('sharing', 'sharing-capabilities', readSharing, enabled && shareRole === 'client')
+  const canShare = shareRole === 'manager' || sharing.data?.canPublish === true
   const services = data?.services || []
   const type = chosenType ?? (services.find(service => service.id === initialServiceId)?.title || '')
   const hasFilters = !!(type || place || modality)
@@ -34,7 +40,7 @@ export default function ClientCalendar({ onChoose, onEvent, enabled = true, visi
     if (!/^\d{4}-\d{2}$/.test(value) || value < firstDay.slice(0, 7) || (lastDay && value > lastDay.slice(0, 7))) return
     setSelection({ month: value, day: value === firstDay.slice(0, 7) ? firstDay : value + '-01' })
   }
-  const places = [...new Set([...bookingVariants(services).map(s => s.publicLocation), ...(data?.events || []).map(e => e.publicLocation)].filter(Boolean))]
+  const places = [...new Set([...physicalLocations(data), ...(data?.events || []).map(e => e.publicLocation)].filter(Boolean))]
   return <section className={visitor ? styles.visitorCalendar : undefined} aria-label="Calendário da agenda">
     <AgendaFilters active={hasFilters} summary={[type, place, modality === 'Remote' ? 'Remota' : modality === 'InPerson' ? 'Presencial' : ''].filter(Boolean).join(' · ')} onReset={resetFilters}>
           <label>Tipo de consulta<AdaptiveSelect aria-label="Tipo de consulta" value={type} onChange={e => setType(e.target.value)}><option value="">Todas as consultas e atividades</option>{[...new Set([...services.map(s => s.title), ...(data?.events || []).map(e => e.title)])].map(name => <option key={name}>{name}</option>)}</AdaptiveSelect></label>
@@ -54,12 +60,17 @@ export default function ClientCalendar({ onChoose, onEvent, enabled = true, visi
     <section className={styles.schedule} aria-label="Disponibilidade do dia"><p className={styles.eyebrow}>Disponibilidade do dia</p><div className={visitor ? publicStyles.dayHeading : undefined}><h2>{visitor ? new Intl.DateTimeFormat('pt-PT', { timeZone: 'Europe/Lisbon', weekday: 'long', day: 'numeric' }).format(new Date(instant(selection.day + 'T12:00'))) : agendaDay(selection.day)}</h2>{visitor && <span>{new Intl.DateTimeFormat('pt-PT', { timeZone: 'UTC', month: 'long' }).format(new Date(selection.day + 'T12:00:00Z'))}</span>}</div>
       {data && <><p className={styles.muted}>{slots.length} {slots.length === 1 ? 'horário individual' : 'horários individuais'}{visibleEvents.length ? ` · ${visibleEvents.length} ${visibleEvents.length === 1 ? 'atividade' : 'atividades'}` : ''}</p>
         {rows.map(row => {
-          if (row.event) { const event = row.event; return <button type="button" className={styles.slot} key={event.id} onClick={() => onEvent(event.id, { ...event, services })}><time dateTime={event.startsAt} className={styles.hour}>{agendaClock(event.startsAt)}</time><span><strong>{event.title}</strong><small>{event.kind === 'Retreat' ? 'Retiro' : 'Grupo'} · {event.publicLocation}</small>{visitor && event.kind === 'Retreat' && <small>{agendaDate(event.startsAt)} — {agendaDate(event.endsAt)}</small>}<small>{event.state === 'Cancelled' ? 'Cancelado' : event.state === 'Performed' ? 'Realizado' : event.remaining ? `${event.remaining} vagas disponíveis` : 'Inscrições completas'}</small></span><AppIcon name="arrow" /></button> }
+          if (row.event) { const event = row.event; return <AgendaShareRow key={event.id} reference={canShare && event.state === 'Waiting' && Date.parse(event.startsAt) > Date.parse(data.serverTime) ? event.id : ''}><button type="button" className={styles.slot} onClick={() => onEvent(event.id, { ...event, services })}><time dateTime={event.startsAt} className={styles.hour}>{agendaClock(event.startsAt)}</time><span><strong>{event.title}</strong><small>{event.kind === 'Retreat' ? 'Retiro' : 'Grupo'} · {event.publicLocation}</small>{visitor && event.kind === 'Retreat' && <small>{agendaDate(event.startsAt)} — {agendaDate(event.endsAt)}</small>}<small>{event.state === 'Cancelled' ? 'Cancelado' : event.state === 'Performed' ? 'Realizado' : event.remaining ? `${event.remaining} vagas disponíveis` : 'Inscrições completas'}</small></span><AppIcon name="arrow" /></button></AgendaShareRow> }
           const slot = row.slot, details = publishedSlotDetails(slot, services)
-          return <button key={slot.startsAt} type="button" className={styles.slot} onClick={() => onChoose({ ...slot, services })}><time dateTime={slot.startsAt} className={styles.hour}>{agendaClock(slot.startsAt)}</time><span><strong>{details.title}</strong><small>{[details.modality, details.location].filter(Boolean).join(' · ')}</small>{details.registeredOnly && <small>Só registados</small>}</span><AppIcon name="arrow" /></button>
+          return <AgendaShareRow key={slot.startsAt} reference={canShare && slot.windowIds[0] ? slot.windowIds[0] + '@' + Math.floor(Date.parse(slot.startsAt) / 1000) : ''}><button type="button" className={styles.slot} onClick={() => onChoose({ ...slot, services })}><time dateTime={slot.startsAt} className={styles.hour}>{agendaClock(slot.startsAt)}</time><span><strong>{details.title}</strong><small>{[details.modality, details.location].filter(Boolean).join(' · ')}</small>{details.registeredOnly && <small>Só registados</small>}</span><AppIcon name="arrow" /></button></AgendaShareRow>
         })}
         {!slots.length && !visibleEvents.length && <div className={styles.empty}><AppIcon name="calendar" /><h3>Sem horários disponíveis</h3><p>Escolhe outro dia ou ajusta os filtros.</p></div>}
       </>}
     </section></div>
   </section>
+}
+
+function AgendaShareRow({ reference, children }) {
+  if (!reference) return children
+  return <div className={styles.shareRow}>{children}<AgendaShareReference reference={reference} /></div>
 }

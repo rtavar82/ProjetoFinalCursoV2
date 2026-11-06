@@ -1,4 +1,5 @@
 using PaCT.Api.Identity;
+using PaCT.Api.Management;
 
 namespace PaCT.Api.Consultations;
 
@@ -13,8 +14,8 @@ public static class ConsultationConditions
 {
     public static bool AcceptAtRequest(string mode) => mode is "Postpayment" or "Contribution";
     public static string VersionForMode(string mode) => mode == "Prepayment" ? ConsultationRules.TermsVersion : ConsultationRules.TermsVersion + ":" + mode;
-    public static ConsultationConditionSet? ForRequest(ConsultationService service) => service.ServiceKind is null && AcceptAtRequest(service.PaymentMode)
-        ? DescribeMode(service.PaymentMode, VersionForMode(service.PaymentMode)) : null;
+    public static ConsultationConditionSet? ForRequest(ConsultationService service, SitePublication? site = null) => service.ServiceKind is null && AcceptAtRequest(service.PaymentMode)
+        ? DescribeMode(service.PaymentMode, VersionForMode(service.PaymentMode), site) : null;
     public static void ValidateRequest(ConsultationService service, bool accepted, string? version)
     {
         var conditions = ForRequest(service);
@@ -29,12 +30,12 @@ public static class ConsultationConditions
     public static bool HasClientAccount(ConsultationData data, string personId) => data.ClientAccountPeople.Contains(personId)
         || data.ClientReadOwners.Values.Contains(personId, StringComparer.Ordinal);
     public static bool Pending(Consultation c, DateTimeOffset now) => c.RequiresClientAcceptance && c.AcceptedAt is null && ProcessLifecycle.Substate(c, now) == "Confirmed";
-    public static ConsultationConditionSet Describe(Consultation c)
+    public static ConsultationConditionSet Describe(Consultation c, SitePublication? site = null)
     {
         var mode = Mode(c);
-        return DescribeMode(mode, Version(c));
+        return DescribeMode(mode, Version(c), site);
     }
-    public static ConsultationConditionSet DescribeMode(string mode, string version)
+    public static ConsultationConditionSet DescribeMode(string mode, string version, SitePublication? site = null)
     {
         var payable = mode is "Prepayment" or "Postpayment" or "Contribution";
         var label = mode switch { "Prepayment" => "Pagamento antecipado", "Postpayment" => "Pagamento depois da consulta",
@@ -58,6 +59,6 @@ public static class ConsultationConditions
             "A falta a esta consulta não cria um valor a pagar nem consome saldo ou sessões de pack."
         ] : mode == "Prepayment" ? PublicPresentationContent.PrepaymentCancellations : PublicPresentationContent.OtherCancellations));
         return new(version, mode, label, mode == "Prepayment" ? "Aceito as condições. De seguida farei este pagamento." : "Li e aceito as condições da consulta.",
-            sections.ToArray(), payable ? PublicPresentationContent.PaymentInformation : null);
+            sections.ToArray(), payable ? SitePresentation.PublicPayment(site ?? SitePresentation.Default) : null);
     }
 }

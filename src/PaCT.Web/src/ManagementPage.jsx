@@ -3,6 +3,7 @@ import ActionButton from './ActionButton'
 import AdaptiveSelect from './AdaptiveSelect'
 import CardGrid from './CardGrid'
 import ConsultationDialog from './ConsultationDialog'
+import ConsultationCataloguePanel from './ConsultationCataloguePanel'
 import Heading from './Heading'
 import InformationCard from './InformationCard'
 import ManagerSchedulingDialog from './ManagerSchedulingDialog'
@@ -26,10 +27,14 @@ const decisions = { Activate: 'Reativar', Deactivate: 'Desativar', Delete: 'Elim
 
 export default function ManagementPage({ guard, busy }) {
   const [kind, setKind] = useState('Supplier')
-  const presentation = { Home: 'Página inicial', Therapist: 'Apresentação da terapeuta', Places: 'Locais e moradas' }
+  const presentation = { Home: 'Página inicial', Therapist: 'Apresentação da terapeuta', Places: 'Locais e moradas',
+    Contacts: 'Contactos e redes sociais', Payment: 'Formas de pagamento' }
+  const tabs = [...Object.entries(areas).map(([key, area]) => [key, area.title]), ...Object.entries(presentation), ['Catalogue', 'Catálogo de consultas']]
   return <section aria-labelledby="application-management-title"><Heading level={1} id="application-management-title">Gestão da aplicação</Heading>
-    <nav className="consultation-tabs" aria-label="Áreas de gestão">{[...Object.entries(areas).map(([key, area]) => [key, area.title]), ...Object.entries(presentation)].map(([key, title]) => <ActionButton key={key} variant={kind === key ? 'primary' : 'secondary'} aria-pressed={kind === key} disabled={busy} onClick={() => guard(() => setKind(key))}>{title}</ActionButton>)}</nav>
-    {presentation[kind] ? <SitePresentationPanel key={kind} section={kind} title={presentation[kind]} guard={guard} busy={busy} /> : <DirectoryPanel key={kind} kind={kind} guard={guard} busy={busy} />}
+    <nav className="consultation-tabs" aria-label="Áreas de gestão">{tabs.map(([key, title]) => <ActionButton key={key} variant={kind === key ? 'primary' : 'secondary'} aria-pressed={kind === key} disabled={busy} onClick={() => guard(() => setKind(key))}>{title}</ActionButton>)}</nav>
+    {kind === 'Catalogue' ? <ConsultationCataloguePanel guard={guard} busy={busy} />
+      : presentation[kind] ? <SitePresentationPanel key={kind} section={kind} title={presentation[kind]} guard={guard} busy={busy} />
+        : <DirectoryPanel key={kind} kind={kind} guard={guard} busy={busy} />}
   </section>
 }
 

@@ -7,8 +7,8 @@ using PaCT.Api.Identity;
 namespace PaCT.Api.Management;
 
 public sealed record SiteEditSession(string Editor, bool Release = false, bool Renew = false);
-public sealed record SitePublishInput(string Editor, long Version, Dictionary<string, string>? Values);
-public sealed record SiteEditorView(long Version, SiteField[] Fields);
+public sealed record SitePublishInput(string Editor, long Version, Dictionary<string, string>? Values, SitePlace[]? Places = null);
+public sealed record SiteEditorView(long Version, SiteField[] Fields, SitePlace[]? Places = null);
 public sealed record SitePublicationResult(long Version);
 
 public sealed class MySqlSitePresentationStore(DatabaseConnectionSettings settings, IdentitySecurity security, TimeProvider time)
@@ -49,7 +49,8 @@ public sealed class MySqlSitePresentationStore(DatabaseConnectionSettings settin
         try { if (await query.ExecuteScalarAsync(ct) is null) throw Unprepared(); }
         catch (MySqlException error) when (error.Number == 1146) { throw Unprepared(); }
         var published = await ReadPublished(connection, null, security, ct);
-        return new(published.Version, fields.Select(field => field with { Value = published.Text(field.Key, field.Value) }).ToArray());
+        return new(published.Version, fields.Select(field => field with { Value = published.Text(field.Key, field.Value) }).ToArray(),
+            section == "Places" ? SiteLocations.Published(published) : null);
     }
 
     public Task<bool> EditAsync(SiteEditSession input, string author, CancellationToken ct) =>
@@ -94,6 +95,7 @@ public sealed class MySqlSitePresentationStore(DatabaseConnectionSettings settin
                     if (values[field.Key] == field.Value) changes.Remove(field.Key);
                     else changes[field.Key] = values[field.Key];
                 }
+                if (section == "Places") SiteLocations.Apply(published, input.Places, changes);
                 var version = published.Version + 1;
                 var bytes = security.Encrypt(Scope, "publication-" + version, JsonSerializer.Serialize(changes));
                 await using var write = MySqlManagementStore.Query(connection, tx,

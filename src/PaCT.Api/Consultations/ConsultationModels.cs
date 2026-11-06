@@ -8,11 +8,13 @@ public sealed record ConsultationService(string Id, string Title, int DurationMi
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ConsultationDelivery[]? BookingOptions = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ServicePresentation? Presentation = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ServicePromotionRevision[]? PromotionHistory = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] bool DefinedPerEvent = false);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] bool DefinedPerEvent = false,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] bool OffersAtManagedLocations = false);
 public sealed record ServicePromotionRevision(string AuthorId, DateTimeOffset At, string? PreviousText, string? Text, bool Published);
 public sealed record ServicePresentation(string Introduction, string Description, string Recommendations = "", int? PackSessions = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? PackPromotion = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] bool PackPromotionPublished = false);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] bool PackPromotionPublished = false,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? NegotiatedPackOffer = null);
 public sealed record ConsultationDelivery(string Id, string Modality, string PublicLocation, string Instructions,
     decimal? ReferencePrice = null, string? PaymentMode = null, int? DurationMinutes = null);
 public sealed record BookingPreviewInput(string ServiceId,
@@ -113,7 +115,8 @@ public sealed record ConsultationRead(string AccountId, long PublicContentVersio
 public sealed record ConversationDecision(string AccountId, bool Blocked, long Version, DateTimeOffset At);
 public sealed record ConsultationMessage(string Id, string? ConsultationId, string AuthorId, bool AuthorIsManager,
     long Sequence, DateTimeOffset CreatedAt, string TextCiphertext,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string[]? PhotoIds = null, string? ParticipationId = null)
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string[]? PhotoIds = null, string? ParticipationId = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? AudioType = null)
 {
     [JsonIgnore] public string TargetId => ParticipationId ?? ConsultationId ?? throw new InvalidOperationException("Mensagem sem destinatário.");
 }
@@ -202,6 +205,10 @@ public sealed record ConsultationCommand
     public string[] PhotoIds { get; init; } = [];
     public ConsultationService? Service { get; init; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public ConsultationRate? Rates { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public CatalogueConsultationEdit? CatalogueConsultation { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public AvailabilityPublication? Publication { get; init; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public SaleInput? Sale { get; init; }
@@ -228,6 +235,7 @@ public sealed record ConsultationCommand
     public long? ConversationVersion { get; init; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? MessageText { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? MessageAudioType { get; init; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string[]? MessageIds { get; init; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]

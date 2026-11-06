@@ -4,12 +4,6 @@ namespace PaCT.Api.Consultations;
 public static class PublicPresentationContent
 {
     public sealed record PublicPlace(string Name, string Modality, string Description);
-    public static readonly PublicPlace[] Places =
-    [
-        new("Montijo", "InPerson", LocationDescription("InPerson", "Montijo")),
-        new("Online", "Remote", LocationDescription("Remote", "")),
-        new("Vila Nova de São Bento", "InPerson", LocationDescription("InPerson", "Vila Nova de São Bento"))
-    ];
     public static readonly string[] Experiences = ["Grupo de constelação", SharingWorkshop.Title, "Retiro"];
     public static readonly string[] PrepaymentConditions =
     [
@@ -50,13 +44,9 @@ public static class PublicPresentationContent
         }
     };
 
-    public static string LocationDescription(string modality, string location) => modality == "Remote"
+    public static string LocationDescription(string modality) => modality == "Remote"
         ? "Por videochamada de WhatsApp ou Google Meet, onde estiveres."
-        : location.Trim() switch
-        {
-            "Vila Nova de São Bento" => "Disponibilidade limitada a dias específicos. Consulta a agenda e filtra por este local.",
-            _ => "Sessões presenciais, mediante marcação."
-        };
+        : "Sessões presenciais, mediante marcação.";
 
     public static readonly object Therapist = new
     {

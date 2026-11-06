@@ -1,9 +1,11 @@
+import AgendaShareReference from './AgendaShareReference'
 import CalendarInput from './CalendarInput'
 import eventStatusLabel from './eventStatusLabel'
 import DateRangeFields from './DateRangeFields'
 import AdaptiveSelect from './AdaptiveSelect'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { apiRequest } from './identityApi'
+import { physicalLocations } from './clientBookingOptions'
 import useLiveResource from './useLiveResource'
 import ClientSearch from './ClientSearch'
 import RecordTable from './RecordTable'
@@ -62,6 +64,7 @@ export default function GroupEventsPanel({ manager = false, send, disabled = fal
             onAccept={fields => command({ action: 'JoinEvent', id: detail.summary.id, version: detail.summary.version, choice: detail.summary.remaining === 0 ? 'Waiting' : undefined, ...fields })} /></section>
         : <button disabled={disabled} onClick={() => command({ action: 'JoinEvent', id: detail.summary.id, version: detail.summary.version, choice: detail.summary.remaining === 0 ? 'Waiting' : undefined })}>{detail.summary.remaining === 0 ? 'Pedir entrada na fila de desistências' : 'Confirmar inscrição'}</button>)}{detail.ownParticipations.map(p => <Participation key={p.id} participation={p} event={detail} showStatus={false} disabled={disabled} send={command} />)}</>}
       {manager && <>
+        {detail.definition?.published && detail.summary.registrationOpen && <AgendaShareReference reference={detail.summary.id} />}
         <p>Participantes por fechar: {detail.summary.pendingClosures}</p><EventRoster event={detail} disabled={disabled} send={command} guard={guard} initialParticipationId={initialEntry?.participationId} />
         {['Waiting', 'AwaitingClosure'].includes(detail.summary.state) && <>
           <button className="secondary" disabled={disabled} onClick={() => guard(() => { setEditing({ id: detail.summary.id, version: detail.summary.version, definition: detail.definition }); setDetail(null) })}>Editar evento</button>
@@ -103,6 +106,7 @@ export function EventEditor({ event, setup, disabled, send, onBack, fixedService
   const [billingMode, setBillingMode] = useState(event.definition?.billingMode || 'Prepayment')
   const [selectedService, setSelectedService] = useState(event.definition?.serviceId || '')
   const service = setup.data?.services.find(s => s.id === selectedService)
+  const places = [...new Set([...physicalLocations(setup.data), event.id && event.definition?.publicLocation].filter(Boolean))]
   const retreat = service?.serviceKind === 'Retreat'
   const paidOccurrence = service && !retreat && service.paymentMode !== 'Free' && billingMode === 'Prepayment'
   return <InformationCard title={event.id ? 'Editar evento' : 'Criar grupo ou retiro'} cardId="event-editor" loading={setup.loading} error={setup.error}>
@@ -111,15 +115,16 @@ export function EventEditor({ event, setup, disabled, send, onBack, fixedService
       const start = dates ? dates.from + 'T' + fields.get('start') : fields.get('start')
       const end = dates ? dates.to + 'T' + fields.get('end') : fields.get('end')
       if (!start || !end || end <= start) throw new Error('O fim do evento deve ser posterior ao início. Corrige a data e a hora de fim.')
-      await send({ action: 'SaveEvent', id: event.id, version: event.version || 0, event: { serviceId: selectedService, startsAt: instant(start), endsAt: instant(end), publicLocation: fields.get('location'), capacity: Number(fields.get('capacity')), published: true, billingMode: !retreat && service?.paymentMode !== 'Free' ? billingMode : null, minimumParticipants: Number(fields.get('minimum')), allowClientCredit: fields.has('allowClientCredit'), promoted: fields.has('promoted'), promotionText: fields.get('promotionText'), allowedPersonIds: null, ...(!retreat && paidOccurrence ? { totalPrice: Number(fields.get('totalPrice')) } : {}), ...(retreat ? { program: fields.get('program'), totalPrice: Number(fields.get('totalPrice')), cancellationConditions: fields.get('cancellation') } : {}) }, conditionsAccepted: fields.has('promoted') })
+      const promotion = event.id ? { promoted: fields.has('promoted'), promotionText: fields.get('promotionText') } : null
+      await send({ action: 'SaveEvent', id: event.id, version: event.version || 0, event: { serviceId: selectedService, startsAt: instant(start), endsAt: instant(end), publicLocation: fields.get('location'), capacity: Number(fields.get('capacity')), published: true, billingMode: !retreat && service?.paymentMode !== 'Free' ? billingMode : null, minimumParticipants: Number(fields.get('minimum')), allowClientCredit: fields.has('allowClientCredit'), ...promotion, allowedPersonIds: null, ...(!retreat && paidOccurrence ? { totalPrice: Number(fields.get('totalPrice')) } : {}), ...(retreat ? { program: fields.get('program'), totalPrice: Number(fields.get('totalPrice')), cancellationConditions: fields.get('cancellation') } : {}) }, ...(promotion && { conditionsAccepted: promotion.promoted }) })
     } catch (failure) { setError(failure.message) } }}><fieldset className={styles.eventFields} disabled={disabled}>
-      {!fixedService && <label>Tipo de grupo ou retiro<AdaptiveSelect aria-label="Tipo de grupo ou retiro" name="service" required value={selectedService} onChange={e => setSelectedService(e.target.value)}><option value="">Escolhe grupo ou retiro</option>{setup.data?.services.filter(s => s.serviceKind === 'Group' || s.serviceKind === 'Retreat').map(s => <option value={s.id} key={s.id}>{s.title}</option>)}</AdaptiveSelect></label>}<DateRangeFields type={dates ? 'time' : 'datetime-local'} startLabel={dates ? 'Hora de início' : 'Início'} endLabel={dates ? 'Hora de fim' : 'Fim'} required exclusive ordered={!dates || dates.from === dates.to} defaultValue={{ start: event.definition?.startsAt ? localDate(new Date(event.definition.startsAt)).slice(dates ? 11 : 0) : '', end: event.definition?.endsAt ? localDate(new Date(event.definition.endsAt)).slice(dates ? 11 : 0) : event.definition?.startsAt ? localDate(new Date(event.definition.startsAt)).slice(dates ? 11 : 0) : '' }} onChange={() => setError('')} /><label>Local do evento<AdaptiveSelect aria-label="Local do evento" name="location" required defaultValue={event.definition?.publicLocation || ''}><option value="">Escolhe o local</option><option>Montijo</option><option>Vila Nova de São Bento</option></AdaptiveSelect></label><label>Mínimo de participantes<input name="minimum" type="number" min="1" max="10000" required defaultValue={event.definition?.minimumParticipants ?? ''} /></label><label>Lotação<input name="capacity" type="number" min="1" max="10000" required defaultValue={event.definition?.capacity || ''} /></label>
+      {!fixedService && <label>Tipo de grupo ou retiro<AdaptiveSelect aria-label="Tipo de grupo ou retiro" name="service" required value={selectedService} onChange={e => setSelectedService(e.target.value)}><option value="">Escolhe grupo ou retiro</option>{setup.data?.services.filter(s => s.serviceKind === 'Group' || s.serviceKind === 'Retreat').map(s => <option value={s.id} key={s.id}>{s.title}</option>)}</AdaptiveSelect></label>}<DateRangeFields type={dates ? 'time' : 'datetime-local'} startLabel={dates ? 'Hora de início' : 'Início'} endLabel={dates ? 'Hora de fim' : 'Fim'} required exclusive ordered={!dates || dates.from === dates.to} defaultValue={{ start: event.definition?.startsAt ? localDate(new Date(event.definition.startsAt)).slice(dates ? 11 : 0) : '', end: event.definition?.endsAt ? localDate(new Date(event.definition.endsAt)).slice(dates ? 11 : 0) : event.definition?.startsAt ? localDate(new Date(event.definition.startsAt)).slice(dates ? 11 : 0) : '' }} onChange={() => setError('')} /><label>Local do evento<AdaptiveSelect aria-label="Local do evento" name="location" required defaultValue={event.definition?.publicLocation || ''}><option value="">Escolhe o local</option>{places.map(place => <option key={place}>{place}</option>)}</AdaptiveSelect></label><label>Mínimo de participantes<input name="minimum" type="number" min="1" max="10000" required defaultValue={event.definition?.minimumParticipants ?? ''} /></label><label>Lotação<input name="capacity" type="number" min="1" max="10000" required defaultValue={event.definition?.capacity || ''} /></label>
       {!retreat && service && service.paymentMode !== 'Free' && <label>Pagamento da consulta de grupo<AdaptiveSelect name="billingMode" value={billingMode} onChange={event => setBillingMode(event.target.value)}><option value="Prepayment">Pré-pagamento</option><option value="Contribution">Contribuição livre, depois do grupo</option></AdaptiveSelect></label>}
       {!retreat && paidOccurrence && <label>Preço por participante<input aria-label="Preço por participante" name="totalPrice" type="number" min="0.01" step="0.01" required defaultValue={event.definition?.totalPrice ?? ''} /></label>}
       {service?.paymentMode === 'Free' && <p>Participação gratuita, sem contribuição.</p>}
       {retreat && <RetreatDefinition definition={event.definition} disabled={disabled} />}
       {service?.paymentMode !== 'Free' && (retreat || billingMode === 'Prepayment') && <InformationCard title="Utilização de crédito pelo cliente" headingLevel={3} cardId="event-credit-authorization"><label className="checkbox"><input type="checkbox" name="allowClientCredit" defaultChecked={event.definition?.allowClientCredit || false} />Permitir utilizar crédito disponível na inscrição</label><p>A utilização é opcional e só aparece ao cliente com crédito autorizado disponível.</p></InformationCard>}
-      <label className="checkbox"><input type="checkbox" name="promoted" />Divulgar também em Partilhas</label><label>Texto de divulgação (opcional)<textarea name="promotionText" maxLength="2000" defaultValue={event.definition?.promotionText || ''} /></label>
+      {event.id && <><label className="checkbox"><input type="checkbox" name="promoted" />Divulgar também em Partilhas</label><label>Texto de divulgação (opcional)<textarea name="promotionText" maxLength="2000" defaultValue={event.definition?.promotionText || ''} /></label></>}
       <button>Publicar e sair</button>
     </fieldset></form><button type="button" className="secondary" disabled={disabled} onClick={onBack}>Voltar aos eventos</button>
   </InformationCard>
@@ -171,7 +176,7 @@ export function Participation({ participation: p, event, disabled, send, manager
   const act = (action, fields = {}) => send({ action, id: p.id, version: p.version, ...fields })
   const paymentVisible = p.conditionsPending || p.remaining > 0 || p.financialState === 'ContributionUndefined' || !!p.paymentDeclaredAt
   const clientPayment = { ...p, state: p.attendance === 'Performed' ? 'Performed' : p.state, financialChoice: event.summary.paymentMode,
-    paymentConditions: event.paymentConditions, paymentInformation: p.acceptedConditions?.paymentInformation || event.paymentConditions?.paymentInformation,
+    paymentConditions: event.paymentConditions, paymentInformation: event.paymentConditions?.paymentInformation,
     amountDue: p.remaining, actions: [...(p.conditionsPending ? ['Accept'] : []), ...(!p.conditionsPending && p.clientCreditAvailable > 0 ? ['UseAuthorizedCredit'] : []),
       ...(!p.conditionsPending && !p.paymentDeclaredAt && p.state === 'Confirmed' && paymentVisible ? ['DeclarePayment'] : [])] }
   const clientAct = (action, fields) => act(({ Accept: 'AcceptParticipationConditions', DeclarePayment: 'DeclareParticipationPayment' })[action] || action, fields)
@@ -179,7 +184,7 @@ export function Participation({ participation: p, event, disabled, send, manager
   return <div className={styles.participation}>
     {showStatus && <AppointmentSummary consultation={event.summary} showTitle={false} stateLabel={eventStatusLabel(event.summary, { manager, participation: p })} typeLabel={event.summary.kind === 'Retreat' ? 'Retiro' : 'Grupo'} />}
     {!manager && paymentVisible && <ClientPaymentPanel consultation={clientPayment} disabled={disabled} act={clientAct} participation />}
-    {p.acceptedConditions && <details><summary>Condições aceites na inscrição</summary><ConditionsContent conditions={p.acceptedConditions} /></details>}
+    {p.acceptedConditions && <details><summary>Condições aceites na inscrição</summary><ConditionsContent conditions={{ ...p.acceptedConditions, paymentInformation: null }} /></details>}
     {manager && p.canReceive && <FinancialEntryForm people={[{ id: p.personId, data: { firstName: names?.[p.personId] || 'Ficha de cliente' } }]} participation={{ ...p, paymentMode: event.summary.paymentMode }} disabled={disabled} instant={instant} reviewBeforeSubmit submit={async (e, input) => { e.preventDefault(); return send(input(new FormData(e.currentTarget))) }} />}
     {manager && (p.remaining > 0 || p.financialState === 'ContributionUndefined') && <InformationCard title="Pagamento da participação" headingLevel={3} cardId="participation-payment">
       <p>Por pagar: <strong>{p.financialState === 'ContributionUndefined' ? 'Contribuição por definir' : agendaMoney(p.remaining)}</strong></p>

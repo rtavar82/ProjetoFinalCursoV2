@@ -4,6 +4,8 @@ using Microsoft.AspNetCore.RateLimiting;
 using PaCT.Api.Consultations;
 using PaCT.Api.Identity;
 using PaCT.Api.Clients;
+using PaCT.Api.Finance;
+using PaCT.Api.Management;
 using System.Security.Claims;
 
 namespace PaCT.Api.Controllers;
@@ -25,7 +27,7 @@ public sealed class ConsultationsController(IConsultationStore store, IIdentityS
         var registered = User.Identity?.IsAuthenticated == true;
         return Ok(await store.ReadAgendaAsync(data => new
         {
-            services = ActivityCatalogue.Complete(data.Services).Where(s => s.Active).Select(PublicService).ToArray(),
+            services = ActivityCatalogue.Complete(data.Services).Where(s => s.Active).Select(s => PublicService(s, data.PublishedSite)).ToArray(),
             windows = AgendaRules.ActiveWindows(data).Where(w => w.EndsAt > now && w.StartsAt < horizon && (!w.Available || AgendaRules.EligibleWindow(w, registered))).OrderBy(w => w.StartsAt)
                 .Select(w => new { w.Id, w.StartsAt, w.EndsAt, w.Available, w.Version, w.Rules }).ToArray(),
             occupied = data.Consultations.Where(c => c.EndsAt.AddMinutes(30) > now && c.StartsAt < horizon && ConsultationRules.Occupies(c, now))
@@ -46,7 +48,8 @@ public sealed class ConsultationsController(IConsultationStore store, IIdentityS
         return Ok(await store.ReadAgendaAsync(data => new
         {
             timeZone = "Europe/Lisbon", startsAt = range.Start, endsAt = range.End, horizonEndExclusive = AgendaRules.HorizonEndExclusive(now),
-            services = ActivityCatalogue.Complete(data.Services).Where(s => s.Active).Concat(data.Events.Where(e => e.Definition.Published && e.Definition.EndsAt > range.Start && e.Definition.StartsAt < range.End).Select(e => e.Service)).DistinctBy(s => s.Id).Select(PublicService).ToArray(),
+            physicalLocations = SiteLocations.PhysicalNames(data),
+            services = ActivityCatalogue.Complete(data.Services).Where(s => s.Active).Concat(data.Events.Where(e => e.Definition.Published && e.Definition.EndsAt > range.Start && e.Definition.StartsAt < range.End).Select(e => e.Service)).DistinctBy(s => s.Id).Select(s => PublicService(s, data.PublishedSite)).ToArray(),
             events = data.Events.Where(e => e.Definition.Published && e.Definition.EndsAt > range.Start && e.Definition.StartsAt < range.End)
                 .OrderBy(e => e.Definition.StartsAt).ThenBy(e => e.Id).Select(e => new { e.Id, e.Version, e.State, process = ProcessLifecycle.Status(e, now),
                     serviceId = e.Service.Id, title = e.Service.Title, kind = e.Service.ServiceKind, modality = e.Service.Modality,
@@ -56,14 +59,14 @@ public sealed class ConsultationsController(IConsultationStore store, IIdentityS
             intervals = AgendaRules.PublicSegments(data, range.Start, range.End, now, registered),
             bookingIntervals = AgendaRules.PublicSegments(data, range.Start, range.End.AddHours(13), now, registered),
             bookingWindows = AgendaRules.ActiveWindows(data).Where(w => w.Available && AgendaRules.EligibleWindow(w, registered) && w.EndsAt > range.Start && w.StartsAt < range.End)
-                .Select(w => new { w.StartsAt, w.EndsAt, w.Rules }).ToArray(), serverTime = now
+                .Select(w => new { w.Id, w.StartsAt, w.EndsAt, w.Rules }).ToArray(), serverTime = now
         }, ct));
     }
-    private static object PublicService(ConsultationService s) => new { s.Id, s.Version, s.Title, s.DurationMinutes, s.ReferencePrice, s.PaymentMode, s.Modality,
-        publicLocation = s.Modality == "Remote" ? "" : s.PublicLocation, s.ServiceKind, s.DefinedPerEvent, requestConditions = ConsultationConditions.ForRequest(s),
-        bookingOptions = s.ServiceKind is null ? ClientBooking.Options(s).Select(o => new { o.Id, o.Modality, o.PublicLocation,
+    private static object PublicService(ConsultationService s, SitePublication site) => new { s.Id, s.Version, s.Title, s.DurationMinutes, s.ReferencePrice, s.PaymentMode, s.Modality,
+        publicLocation = s.Modality == "Remote" ? "" : s.PublicLocation, s.ServiceKind, s.DefinedPerEvent, requestConditions = ConsultationConditions.ForRequest(s, site),
+        bookingOptions = s.ServiceKind is null ? ClientBooking.Options(s, site).Select(o => new { o.Id, o.Modality, o.PublicLocation,
             ClientBooking.Snapshot(s, o).DurationMinutes, ClientBooking.Snapshot(s, o).ReferencePrice, ClientBooking.Snapshot(s, o).PaymentMode,
-            requestConditions = ConsultationConditions.ForRequest(ClientBooking.Snapshot(s, o)) }).ToArray() : null };
+            requestConditions = ConsultationConditions.ForRequest(ClientBooking.Snapshot(s, o), site) }).ToArray() : null };
     [HttpPost("booking-preview"), Authorize(Roles = Roles.Client)]
     public async Task<IActionResult> BookingPreview(BookingPreviewInput input, CancellationToken ct)
     {
@@ -74,7 +77,7 @@ public sealed class ConsultationsController(IConsultationStore store, IIdentityS
             var service = ClientBooking.Validate(data, input.ServiceId, input.StartsAt.ToUniversalTime(), input.ServiceVersion, input.DeliveryOptionId, now);
             return new { serviceId = service.Id, serviceVersion = service.Version, service.Title, service.Modality, service.PublicLocation,
                 service.DurationMinutes, service.ReferencePrice, service.PaymentMode, startsAt = input.StartsAt.ToUniversalTime(),
-                endsAt = input.StartsAt.ToUniversalTime().AddMinutes(service.DurationMinutes), requestConditions = ConsultationConditions.ForRequest(service), serverTime = now };
+                endsAt = input.StartsAt.ToUniversalTime().AddMinutes(service.DurationMinutes), requestConditions = ConsultationConditions.ForRequest(service, data.PublishedSite), serverTime = now };
         }, ct));
     }
     [HttpPost("availability/preview"), Authorize(Roles = Roles.Managers)]
@@ -201,7 +204,25 @@ public sealed class ConsultationsController(IConsultationStore store, IIdentityS
         return Ok(await store.ReadAsync(data => ConsultationRules.PreviewFinalAmount(data, id, input, actor), ct));
     }
     [HttpGet("setup"), Authorize(Roles = Roles.Managers)]
-    public async Task<IActionResult> Setup(CancellationToken ct) => Ok(await store.ReadAgendaAsync(data => new { services = ActivityCatalogue.Complete(data.Services), windows = AgendaRules.ActiveWindows(data).ToArray(), revision = AgendaRules.Revision(data) }, ct));
+    public async Task<IActionResult> Setup(CancellationToken ct) => Ok(await store.ReadAgendaAsync(data => new
+    {
+        services = ActivityCatalogue.Complete(data.Services).Select(service => service.ServiceKind is null
+            ? service with { BookingOptions = ClientBooking.Options(service, data.PublishedSite) } : service).ToArray(),
+        physicalLocations = SiteLocations.PhysicalNames(data),
+        windows = AgendaRules.ActiveWindows(data).ToArray(), revision = AgendaRules.Revision(data)
+    }, ct));
+    [HttpGet("catalogue"), HttpGet("catalogue-rates"), Authorize(Roles = Roles.Managers)]
+    public async Task<IActionResult> CatalogueRates(CancellationToken ct) => Ok(await store.ReadAgendaAsync(data =>
+        data.Services.Where(s => s.Active && s.ServiceKind is null).OrderBy(s => s.Title).Select(s => new
+        {
+            s.Id, s.Title, s.Version, s.DurationMinutes, s.ReferencePrice, s.PaymentMode, priced = ConsultationRates.IsPriced(s.PaymentMode),
+            presentation = s.Presentation ?? PublicPresentationContent.ServiceText(s.Title),
+            options = (s.BookingOptions ?? []).Select(o => new
+            {
+                o.Id, o.Modality, o.PublicLocation, o.DurationMinutes, o.ReferencePrice,
+                priced = ConsultationRates.IsPriced(o.PaymentMode ?? s.PaymentMode)
+            }).ToArray()
+        }).ToArray(), ct));
     [HttpGet("{id:guid}/messages")]
     public async Task<IActionResult> Messages(string id, long? before, CancellationToken ct)
     {
@@ -214,7 +235,7 @@ public sealed class ConsultationsController(IConsultationStore store, IIdentityS
                 unread = page.Unread, hasOlder = page.HasOlder, latestSequence = page.LatestSequence,
                 items = page.Messages.Select(m => new { m.Id, m.Sequence, m.CreatedAt, own = m.AuthorIsManager == actor.IsManager,
                     author = m.AuthorIsManager == actor.IsManager ? "Tu" : m.AuthorIsManager ? "Terapeuta" : "Cliente",
-                    text = Decrypt(m.Id, "message", m.TextCiphertext), photoIds = m.PhotoIds ?? [], unread = m.AuthorIsManager != actor.IsManager && !page.ReadIds.Contains(m.Id) }).ToArray()
+                    text = Decrypt(m.Id, "message", m.TextCiphertext), photoIds = m.PhotoIds ?? [], audioType = m.AudioType, unread = m.AuthorIsManager != actor.IsManager && !page.ReadIds.Contains(m.Id) }).ToArray()
             });
     }
     [HttpGet("finance")]
@@ -267,10 +288,24 @@ public sealed class ConsultationsController(IConsultationStore store, IIdentityS
         }, ct));
     }
     [HttpGet("reports"), Authorize(Roles = Roles.Managers)]
-    public async Task<IActionResult> Reports(string? personId, DateTimeOffset? from, DateTimeOffset? to, string? origin, string? kind, CancellationToken ct)
+    public async Task<IActionResult> Reports(string? personId, DateTimeOffset? from, DateTimeOffset? to, string? origin, string? kind,
+        CancellationToken ct, string? format = null)
     {
         if (from is not null && to is not null && from >= to) return Problem(statusCode: 400, title: "Período inválido.");
-        return Ok(await store.ReadAsync(data => FinanceReports.Create(data, time.GetUtcNow(), personId, from, to, origin, kind), ct));
+        if (format is not (null or "xlsx")) return Problem(statusCode: 400, title: "Formato de exportação inválido.");
+        var now = time.GetUtcNow();
+        var report = await store.ReadFinancialReportAsync((data, expenses) =>
+            System.Text.Json.JsonSerializer.SerializeToNode(FinanceReports.Create(data, now, personId, from, to, origin, kind, expenses))!.AsObject(), ct);
+        var sections = FinancialReportPresentation.Sections(report);
+        var notes = FinancialReportPresentation.Notes(report);
+        if (format == "xlsx")
+            return File(FinancialReportPresentation.Workbook(sections, notes, now, from, to,
+                personId is null && origin is null && kind is null ? "Geral" : "Filtrado"),
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "PaCT-relatorio-financeiro.xlsx");
+        var json = new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web);
+        report["sections"] = System.Text.Json.JsonSerializer.SerializeToNode(sections, json);
+        report["notes"] = System.Text.Json.JsonSerializer.SerializeToNode(notes);
+        return Ok(report);
     }
     private sealed record FinancePerson(string Name, bool Active);
     private sealed record DomainObligation(string Id, string Kind, string PersonId, string Title, decimal? Amount, DateTimeOffset StartsAt, string ResourceId);
@@ -314,6 +349,7 @@ public sealed class ConsultationsController(IConsultationStore store, IIdentityS
     public async Task<IActionResult> Command(ConsultationCommand input, [FromServices] ConsultationPhotoStore photos, CancellationToken ct)
     {
         var actor = await Actor(ct);
+        if (input.MessageAudioType is not null) return BadRequest(new ProblemDetails { Title = "Usa o envio de áudio do acompanhamento." });
         if (input.Action is "Close" or "CloseParticipation" && input.PhotoIds.Length > 0)
         {
             if (!actor.IsManager) return Forbid();
@@ -332,7 +368,8 @@ public sealed class ConsultationsController(IConsultationStore store, IIdentityS
         c.Id, c.PersonId, c.Version, serviceId = c.Service.Id, serviceTitle = c.Service.Title, c.StartsAt, c.EndsAt, c.Service.Modality, c.Service.PublicLocation,
         c.Service.ReferencePrice, c.Service.PaymentMode,
         instructions = actor.IsManager || c.ApprovedAt is not null && (c.FinancialChoice != "Prepayment" || c.AdvanceSatisfiedAt is not null)
-            ? AppointmentCommunications.Instructions(c.Service.Modality, c.Service.PublicLocation, c.Service.Instructions) : null,
+            ? AppointmentCommunications.Instructions(c.Service.Modality,
+                SitePresentation.WithAddress(data.PublishedSite, c.Service, c.Service.PublicLocation).Instructions) : null,
         c.FinancialChoice, c.CreatedAt,
         process = ProcessLifecycle.Status(c, now), state = ProcessLifecycle.Substate(c, now), financialState = ConsultationRules.FinancialState(c),
         section = actor.IsManager ? ConsultationRules.ManagerSection(c, now) : ConsultationRules.ClientSection(c, now),
@@ -348,13 +385,13 @@ public sealed class ConsultationsController(IConsultationStore store, IIdentityS
         creditAuthorization = new { allowed = c.CreditAuthorizations.LastOrDefault()?.Allowed == true,
             limit = c.CreditAuthorizations.LastOrDefault()?.Sources.Sum(p => p.Amount) ?? 0,
             available = ConsultationCredit.Available(data, c) },
-        paymentInformation = ConsultationCredit.Payable(c) || c.ExpectationOpen ? PublicPresentationContent.PaymentInformation : null,
+        paymentInformation = ConsultationCredit.Payable(c) || c.ExpectationOpen ? SitePresentation.PublicPayment(data.PublishedSite) : null,
         paymentHistory = CreditLedger.Ordered(data, c.PersonId).Where(e => e.ConsultationId == c.Id && e.Kind is "Receipt" or "Settlement" or "SettlementReturn" or "Reversal")
             .Select(e => new { e.Id, e.Kind, amount = Math.Abs(e.Amount), at = e.EffectiveAt ?? e.CreatedAt, e.Method,
                 author = e.Kind == "SettlementReturn" ? "Reposição automática" : e.AuthorizationId is not null ? "Cliente" : "Gestão" }).ToArray(),
         c.CancellationOrigin, c.CancelledAt, c.ActualStartsAt, c.ActualEndsAt,
         balance = data.Balance(c.PersonId), termsVersion = ConsultationConditions.Version(c), terms = ConsultationConditions.Describe(c).Text,
-        paymentConditions = ConsultationConditions.Describe(c), conditionsPending = ConsultationConditions.Pending(c, now),
+        paymentConditions = ConsultationConditions.Describe(c, data.PublishedSite), conditionsPending = ConsultationConditions.Pending(c, now),
         sharedNote = c.State == "Performed" && c.SharedNoteCiphertext is not null ? Decrypt(c.Id, "shared", c.SharedNoteCiphertext) : null,
         privateNote = actor.IsManager && c.PrivateNoteCiphertext is not null ? Decrypt(c.Id, "private", c.PrivateNoteCiphertext) : null,
         photoIds = c.State == "Performed" ? c.PhotoIds : [],

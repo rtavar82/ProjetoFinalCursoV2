@@ -70,7 +70,8 @@ public static class FinancialSales
                 Require(line.StartsAt > DateTimeOffset.UnixEpoch && line.EndsAt > line.StartsAt && line.EndsAt <= now,
                     "Indica início e fim já ocorridos, com o fim posterior ao início.");
                 Require(line.Modality is "InPerson" or "Remote", "Escolhe a modalidade da consulta realizada.");
-                Require(line.Modality == "Remote" || normalized.Location is "Montijo" or "Vila Nova de São Bento", "Escolhe o local da consulta realizada.");
+                Require(line.Modality == "Remote" || PaCT.Api.Management.SiteLocations.PhysicalNames(data).Contains(normalized.Location),
+                    "Escolhe o local da consulta realizada.");
                 if (line.Modality == "Remote") normalized = normalized with { Location = null };
             }
             else Require(line.StartsAt is null && line.EndsAt is null && line.Modality is null && line.Location is null,

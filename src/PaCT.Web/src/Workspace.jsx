@@ -13,7 +13,7 @@ import TestimonialManager from './TestimonialManager'
 import ManagementPage from './ManagementPage'
 import PublicPresentation from './PublicPresentation'
 import PublicTestimonials from './PublicTestimonials'
-import PublicPromotions from './PublicPromotions'
+import SharingFeed from './SharingFeed'
 import { apiRequest } from './identityApi'
 import { isManager } from './identityRoles'
 import { observeResource } from './liveUpdates'
@@ -31,7 +31,11 @@ function WorkspaceContent({ profile: initialProfile, busy, perform, notify, erro
   const profile = account.data || initialProfile
   const client = profile.role === 'Client'
   const operational = isManager(profile.role)
-  const [page, setPage] = useState('Agenda')
+  const [page, setPage] = useState(() => window.location.hash === '#partilhas' ? 'Sharing' : 'Agenda')
+  useEffect(() => {
+    if (page === 'Sharing' && window.location.hash !== '#partilhas') window.history.replaceState(null, '', '#partilhas')
+    else if (page !== 'Sharing' && window.location.hash === '#partilhas') window.history.replaceState(null, '', '#inicio')
+  }, [page])
   const [homePage, setHomePage] = useState('PublicHome')
   const [consultationEntry, setConsultationEntry] = useState(null)
   const [online, setOnline] = useState(navigator.onLine)
@@ -98,6 +102,7 @@ function WorkspaceContent({ profile: initialProfile, busy, perform, notify, erro
     ...(client ? [{ id: 'Home', label: 'Início', icon: 'leaf', active: page === 'Home' }] : []),
     ...((client || operational) ? [{ id: 'Agenda', label: 'Agenda', icon: 'calendar', active: page === 'Agenda' }] : []),
     ...(operational ? [{ id: 'Consultations', label: 'Consultas', icon: 'clock', active: page === 'Consultations' }, { id: 'Finance', label: 'Financeiro', icon: 'wallet', active: page === 'Finance' }] : []),
+    ...((client || operational) ? [{ id: 'Sharing', label: 'Partilhas', icon: 'heart', active: page === 'Sharing' }] : []),
     ...(!client ? [{ id: 'Clients', label: 'Clientes', icon: 'people', active: page === 'Clients' }] : []),
     ...(operational ? [{ id: 'Testimonials', label: 'Testemunhos', icon: 'heart', active: page === 'Testimonials' }] : []),
     ...(operational ? [{ id: 'Management', label: 'Gestão da aplicação', icon: 'settings', active: page === 'Management' }] : []),
@@ -126,11 +131,11 @@ function WorkspaceContent({ profile: initialProfile, busy, perform, notify, erro
       </section>}
       {client && page === 'Home' && <PublicPresentation embedded page={homePage} profile={profile} onNavigate={navigateHome}>
         {homePage === 'PublicTestimonials' && <PublicTestimonials onBack={() => navigateHome('PublicHome')} />}
-        {homePage === 'PublicPromotions' && <PublicPromotions onAgenda={serviceId => navigateHome('PublicAgenda', serviceId)} />}
       </PublicPresentation>}
       {!client && page === 'Clients' && <Clients key={clientEntry.version} initialView={clientEntry.view} pendingReviewCount={reviewSummary.count} busy={busy} perform={perform} notify={notify} guard={guard} />}
       {client && page === 'Profile' && <PersonalProfile busy={busy} perform={perform} notify={notify} />}
       {(client || operational) && ['Agenda', 'Consultations', 'Finance'].includes(page) && <ActiveConsultationPage key={`${page}:${operational ? 'manager' : consultationEntry?.payments ? 'payments' : consultationEntry?.events ? 'events' : consultationEntry?.packs ? 'packs' : consultationEntry?.guests ? 'guests' : 'default'}`} manager={operational} initialEntry={consultationEntry} guard={guard} perform={perform} notify={notify} profileBusy={busy} onCreateClient={() => { setClientEntry(previous => ({ version: previous.version + 1, view: 'Create' })); setPage('Clients') }} />}
+      {(client || operational) && page === 'Sharing' && <SharingFeed profile={profile} guard={guard} />}
       {operational && page === 'Testimonials' && <TestimonialManager guard={guard} onPublic={onPublicTestimonials} />}
       {operational && page === 'Management' && <ManagementPage guard={guard} busy={busy} />}
       {page === 'Account' && <AccountPage profile={profile} busy={busy} perform={perform} notify={notify} guard={guard} onPasskeyUpdated={onPasskeyUpdated} onSecuritySignedOut={onSecuritySignedOut} onAccountClosed={onAccountClosed} onForgetBrowser={onForgetBrowser} packEntry={packEntry} />}

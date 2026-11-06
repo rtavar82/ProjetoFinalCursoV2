@@ -14,7 +14,7 @@ import { enrollPasskey, verifyPasskey } from './passkeys'
 import VisitorAgenda from './VisitorAgenda'
 import PublicPresentation from './PublicPresentation'
 import PublicTestimonials from './PublicTestimonials'
-import PublicPromotions from './PublicPromotions'
+import SharingFeed from './SharingFeed'
 import { publicRoute } from './publicPresentationData'
 import { cancelSubmittedWrites } from './submittedWrites'
 import { dismissSuccess, showSuccess } from './actionNotices'
@@ -52,12 +52,12 @@ export default function App() {
     function openLink() {
       const next = readLink()
       if (!Object.values(next).some(Boolean)) {
-        if (['PublicHome', 'PublicTherapist', 'PublicTestimonials', 'PublicPromotions', 'PublicAgenda', 'SignIn'].includes(stage) || profile && ['#testemunhos', '#partilhas'].includes(window.location.hash)) {
+        if (['PublicHome', 'PublicTherapist', 'PublicTestimonials', 'PublicSharing', 'PublicAgenda', 'SignIn'].includes(stage) || profile && ['#testemunhos', '#partilhas'].includes(window.location.hash)) {
           const route = publicRoute()
           if (route.stage === stage && route.serviceId === publicService) return
           if (document.querySelector('[data-pending-command="true"]')) { window.history.forward(); return }
           if ((guestSelection || document.querySelector('[data-guest-request="true"]')) && !window.confirm('Queres sair e descartar o preenchimento do pedido?')) { window.history.forward(); return }
-          setPublicService(route.serviceId); setGuestSelection(null); setStage(route.stage); setError(''); setMessage('')
+          setPublicService(route.serviceId); setGuestSelection(null); setStage(profile && route.stage === 'PublicSharing' ? 'SignedIn' : route.stage); setError(''); setMessage('')
         }
         return
       }
@@ -79,7 +79,7 @@ export default function App() {
         const state = await request('installation')
         let next = state.prepared ? (state.managerExists ? 'SignIn' : 'Register') : 'NotPrepared'
         if (state.managerExists) {
-          try { const me = await request('me'); if (current) setProfile(me); next = window.location.hash === '#testemunhos' ? 'PublicTestimonials' : window.location.hash === '#partilhas' ? 'PublicPromotions' : 'SignedIn' }
+          try { const me = await request('me'); if (current) setProfile(me); next = window.location.hash === '#testemunhos' ? 'PublicTestimonials' : 'SignedIn' }
           catch (failure) {
             if (failure.status !== 401) throw failure
             next = (await request('progress')).stage
@@ -177,8 +177,8 @@ export default function App() {
   function navigatePublic(next, serviceId = '') {
     if (document.querySelector('[data-pending-command="true"]')) return
     if ((guestSelection || document.querySelector('[data-guest-request="true"]')) && !window.confirm('Queres sair e descartar o preenchimento do pedido?')) return
-    setGuestSelection(null); setPublicService(serviceId); setError(''); setMessage(''); setStage(next)
-    const hash = next === 'SignIn' ? 'entrar' : next === 'PublicTherapist' ? 'terapeuta' : next === 'PublicTestimonials' ? 'testemunhos' : next === 'PublicPromotions' ? 'partilhas' : next === 'PublicAgenda' ? 'agenda' : 'inicio'
+    setGuestSelection(null); setPublicService(serviceId); setError(''); setMessage(''); setStage(next === 'PublicSharing' && profile ? 'SignedIn' : next)
+    const hash = next === 'SignIn' ? 'entrar' : next === 'PublicTherapist' ? 'terapeuta' : next === 'PublicTestimonials' ? 'testemunhos' : next === 'PublicSharing' ? 'partilhas' : next === 'PublicAgenda' ? 'agenda' : 'inicio'
     window.history.pushState(null, '', '#' + hash + (serviceId ? '?servico=' + encodeURIComponent(serviceId) : ''))
     window.scrollTo(0, 0)
   }
@@ -190,8 +190,8 @@ export default function App() {
     onSecuritySignedOut={text => { setProfile(null); notify(text); setStage('SignIn') }}
     onAccountClosed={text => { setProfile(null); notify(text); setStage('SignIn') }} />
 
-  if (['PublicHome', 'PublicTherapist', 'PublicTestimonials', 'PublicPromotions', 'PublicAgenda'].includes(stage)) return <PublicPresentation page={stage} onNavigate={navigatePublic} profile={profile} onAccount={() => { window.history.pushState(null, '', '#inicio'); setStage('SignedIn') }}>
-    {stage === 'PublicPromotions' && <PublicPromotions onAgenda={serviceId => navigatePublic('PublicAgenda', serviceId)} />}
+  if (['PublicHome', 'PublicTherapist', 'PublicTestimonials', 'PublicSharing', 'PublicAgenda'].includes(stage)) return <PublicPresentation page={stage} onNavigate={navigatePublic} profile={profile} onAccount={() => { window.history.pushState(null, '', '#inicio'); setStage('SignedIn') }}>
+    {stage === 'PublicSharing' && <SharingFeed onSignIn={() => navigatePublic('SignIn')} />}
     {stage === 'PublicTestimonials' && <PublicTestimonials onBack={() => navigatePublic('PublicHome')} />}
     {stage === 'PublicAgenda' && <VisitorAgenda key={publicService} initialServiceId={publicService} authenticated={!!profile} selection={guestSelection} onChoose={choosePublicBooking} onBack={() => setGuestSelection(null)} onSignIn={() => navigatePublic('SignIn')} />}
   </PublicPresentation>

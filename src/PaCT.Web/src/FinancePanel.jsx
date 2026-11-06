@@ -2,6 +2,7 @@ import CalendarInput from './CalendarInput'
 import DateRangeFields from './DateRangeFields'
 import FinancialSalesPanel from './FinancialSalesPanel'
 import ExpensesPanel from './ExpensesPanel'
+import FinancialReportsPanel from './FinancialReportsPanel'
 import ConsultationPriceCorrectionDialog from './ConsultationPriceCorrectionDialog'
 import AdaptiveSelect from './AdaptiveSelect'
 import { useCallback, useEffect, useState } from 'react'
@@ -15,14 +16,11 @@ import CardGrid from './CardGrid'
 import SummaryCard from './SummaryCard'
 import ActionButton from './ActionButton'
 import styles from './FinancePanel.module.css'
-import { observeResource } from './liveUpdates'
 import { localDate, setDateRangeParams } from './agendaTime'
 
 const currency = value => value == null ? 'Por definir' : new Intl.NumberFormat('pt-PT', { style: 'currency', currency: 'EUR' }).format(value)
 const names = { Receipt: 'Recebimento', Refund: 'Devolução', Settlement: 'Liquidação', SettlementReturn: 'Crédito reposto', Restitution: 'Reposição de valor do retiro', Reversal: 'Anulação / movimento compensatório', Adjustment: 'Correção financeira', AdjustmentReversal: 'Anulação de correção' }
 const origins = { GeneralCredit: 'Crédito geral', Consultation: 'Consulta/pedido', Sale: 'Venda', EventService: 'Evento/serviço', Pack: 'Compra de pack' }
-const measures = { received: 'Total recebido (dinheiro confirmado)', corrections: 'Correções e compensações (valor assinado)', globalNegativeDebt: 'Dívida global por saldo negativo', refunded: 'Total devolvido (registos de dinheiro)', settled: 'Crédito utilizado, após reposições', settlementReturns: 'Crédito reposto de liquidações', availableBalance: 'Crédito disponível (saldos positivos)', netBalance: 'Saldo global líquido', activeCollectionAmount: 'Cobranças ativas', oldDebtAmount: 'Dívidas antigas', totalUnpaid: 'Total conhecido ainda não pago' }
-const counts = { paidConsultations: 'Consultas pagas', unpaidConsultations: 'Consultas por pagar', pendingContributions: 'Contribuições pendentes', undefinedContributions: 'Contribuições sem montante definido', noDebtConsultations: 'Consultas sem dívida', freeConsultations: 'Consultas gratuitas', giftConsultations: 'Consultas oferecidas', packConsultations: 'Consultas cobertas por pack' }
 
 export function FinancialEntryForm({ people = [], selectedClient = null, consultation = null, participation = null, refund = false, disabled, submit, instant, reviewBeforeSubmit = false }) {
   const [review, setReview] = useState(null)
@@ -31,55 +29,39 @@ export function FinancialEntryForm({ people = [], selectedClient = null, consult
   const [chosenClient, setClient] = useRecoveryState(`finance:${refund ? 'refund' : 'receipt'}:${consultation?.id || participation?.id || selectedClient?.id || 'general'}:client`, selectedClient)
   const client = fixedPersonId ? people.find(p => p.id === fixedPersonId) || { id: fixedPersonId, data: { firstName: 'Ficha de cliente' } } : chosenClient
   const person = client?.id || ''
-  const [origin, setOrigin] = useState(consultation ? 'Consultation' : participation ? 'EventService' : 'GeneralCredit')
-  const [options, setOptions] = useState([])
-  const [consultationId, setConsultationId] = useState('')
-  const linkedConsultation = consultation || options.find(c => c.id === consultationId)
-  const settlesContribution = !refund && (origin === 'Consultation' && linkedConsultation?.state === 'Performed' && linkedConsultation?.paymentMode === 'Contribution' && linkedConsultation?.finalAmount == null || participation?.attendance === 'Performed' && participation?.paymentMode === 'Contribution' && participation?.finalAmount == null)
-  const [loadError, setLoadError] = useState('')
-  useEffect(() => {
-    if (consultation || participation || !person || !['Consultation', 'Pack'].includes(origin)) return
-    let active = true
-    async function load() {
-      try {
-        const all = []; let page = 1; let total
-        do { const batch = await apiRequest(origin === 'Pack' ? `consultations/packs?scope=History&personId=${person}&page=${page++}` : `consultations?search=true&personId=${person}&page=${page++}`); total = batch.total; all.push(...batch.items) } while (all.length < total)
-        if (active) { setOptions(all); setLoadError('') }
-      } catch { if (active) setLoadError(origin === 'Pack' ? 'Não foi possível carregar as compras de packs. Volta a selecionar o cliente.' : 'Não foi possível carregar as consultas. Volta a selecionar o cliente.') }
-    }
-    const stop = observeResource('finance', load); return () => { active = false; stop() }
-  }, [person, origin, consultation, participation])
+  const origin = consultation ? 'Consultation' : participation ? 'EventService' : undefined
+  const canSubmit = !!person && (refund || !!origin)
+  const settlesContribution = !refund && (consultation?.state === 'Performed' && consultation.paymentMode === 'Contribution' && consultation.finalAmount == null || participation?.attendance === 'Performed' && participation.paymentMode === 'Contribution' && participation.finalAmount == null)
   return <InformationCard as="form" cardId="financial-entry" data-protect-draft onSubmit={async e => {
     e.preventDefault()
     if (reviewBeforeSubmit && !review) { setReview(new FormData(e.currentTarget)); return }
     const result = await submit(e, supplied => {
     const f = review || supplied
     if (!person) throw new Error('Pesquisa e seleciona a ficha do cliente.')
+    if (!refund && !origin) throw new Error('Abre a consulta ou a inscrição para registar o recebimento.')
     const effective = instant(f.get('effective'))
     if (Date.parse(effective) > Date.now()) throw new Error(`A data ${refund ? 'da devolução' : 'do recebimento'} não pode ser futura. Confirma a data e a hora indicadas.`)
-    const linked = consultation || options.find(c => c.id === f.get('consultation'))
-    return { action: refund ? 'Refund' : 'Receipt', personId: person, id: origin === 'Consultation' && !refund ? linked?.id : undefined,
-      version: linked?.version ?? participation?.version, origin: refund ? undefined : origin, originReference: participation?.id || f.get('reference'), amount: Number(f.get('amount')), startsAt: effective, method: f.get('method'), reason: f.get('reason') }
+    return { action: refund ? 'Refund' : 'Receipt', personId: person, id: refund ? undefined : consultation?.id,
+      version: consultation?.version ?? participation?.version, origin: refund ? undefined : origin, originReference: participation?.id,
+      amount: Number(f.get('amount')), startsAt: effective, method: f.get('method'), reason: f.get('reason') }
     })
     if (result) setReview(null)
   }}>
     <h3>{refund ? 'Registar devolução efetuada' : 'Registar recebimento confirmado'}</h3>
     <fieldset disabled={disabled} hidden={!!review}>
-    {!consultation && <ClientSearch purpose="finance" selected={client} readOnly={!!fixedPersonId} disabled={disabled} onSelect={value => { setClient(value); setOptions([]); setLoadError('') }} />}
-    {!refund && <>{!consultation && <label>Origem<AdaptiveSelect value={origin} disabled={!!consultation || !!participation} onChange={e => setOrigin(e.target.value)}>{Object.entries(origins).map(([key, text]) => <option key={key} value={key}>{text}</option>)}</AdaptiveSelect></label>}
-      {origin === 'Consultation' && !consultation && <label>Consulta/pedido<AdaptiveSelect name="consultation" value={consultationId} onChange={event => setConsultationId(event.target.value)} required><option value="">Seleciona a origem</option>{options.map(c => <option key={c.id} value={c.id}>{c.serviceTitle} · {new Date(c.startsAt).toLocaleString('pt-PT', { timeZone: 'Europe/Lisbon' })}</option>)}</AdaptiveSelect></label>}
-      {['Sale', 'EventService'].includes(origin) && !participation && <label>Referência da origem<input name="reference" required maxLength="120" /></label>}</>}
-    {!refund && origin === 'Pack' && <label>Compra de pack<AdaptiveSelect name="reference" required defaultValue=""><option value="">Seleciona a compra</option>{options.map(p => <option key={p.id} value={p.id}>{p.title} · {currency(p.amount)}</option>)}</AdaptiveSelect></label>}
-    {loadError && <p role="alert">{loadError}</p>}
+    {!consultation && <ClientSearch purpose="finance" selected={client} readOnly={!!fixedPersonId} disabled={disabled} onSelect={setClient} />}
+    {!refund && participation && <label>Origem<AdaptiveSelect value="EventService" disabled>
+      <option value="EventService">{origins.EventService}</option>
+    </AdaptiveSelect></label>}
     {settlesContribution && <p>O valor recebido define a contribuição e paga esta {participation ? 'participação' : 'consulta'} na mesma confirmação.</p>}
     <label>Valor efetivo<input name="amount" type="number" required min="0.01" step="0.01" defaultValue={consultation?.amountDue > 0 ? consultation.amountDue : participation?.remaining > 0 ? participation.remaining : consultation?.finalAmount ?? consultation?.referencePrice ?? participation?.finalAmount ?? participation?.agreedTotal ?? participation?.referencePrice ?? ''} /></label>
     <label>Data e hora efetivas<CalendarInput name="effective" type="datetime-local" defaultValue={openedAt} required /></label>
     <label>Método<AdaptiveSelect name="method"><option value="Transfer">Transferência bancária</option><option value="Cash">Dinheiro</option><option value="MbWay">MB WAY</option><option value="Card">Cartão / Multibanco</option><option value="Other">Outro</option></AdaptiveSelect></label>
     {refund && <label>Motivo<input name="reason" required maxLength="2000" /></label>}
-    {(refund || origin === 'Pack') && <p>{refund ? 'Pode ser devolvida uma parte do saldo. O montante não pode exceder o crédito disponível.' : 'Este registo acrescenta crédito. O pagamento da compra é confirmado em separado.'}</p>}
+    {refund && <p>Pode ser devolvida uma parte do saldo. O montante não pode exceder o crédito disponível.</p>}
     </fieldset>
     {review && <><p>Valor recebido: <strong>{currency(Number(review.get('amount')))}</strong></p><p>Saldo: {currency(participation?.balance ?? consultation?.balance)} → {currency((participation?.balance ?? consultation?.balance ?? 0) + (settlesContribution ? 0 : Number(review.get('amount'))))}</p>{settlesContribution && <p>O recebimento define e liquida esta contribuição.</p>}<button type="button" className="secondary" disabled={disabled} onClick={() => setReview(null)}>Voltar atrás</button></>}
-    <button disabled={disabled || !person || !!loadError}>{reviewBeforeSubmit && !review ? 'Rever antes de confirmar' : refund ? 'Confirmar devolução efetuada' : settlesContribution ? participation ? 'Confirmar recebimento e pagar participação' : 'Confirmar recebimento e pagar consulta' : 'Confirmar recebimento em crédito'}</button>
+    <button disabled={disabled || !canSubmit}>{reviewBeforeSubmit && !review ? 'Rever antes de confirmar' : refund ? 'Confirmar devolução efetuada' : settlesContribution ? participation ? 'Confirmar recebimento e pagar participação' : 'Confirmar recebimento e pagar consulta' : 'Confirmar recebimento em crédito'}</button>
   </InformationCard>
 }
 
@@ -92,11 +74,9 @@ export default function FinancePanel({ guard, disabled, submit, send, feedback, 
   const [correction, setCorrection] = useState(null)
   const [correctingPrice, setCorrectingPrice] = useState(false)
   const key = `${section}|${person}|${page}|${filters}`
-  const read = useCallback(signal => {
-    const endpoint = section === 'Reports' ? 'consultations/reports' : 'consultations/finance'
-    return apiRequest(`${endpoint}?section=${section}&page=${page}${person ? '&personId=' + person : ''}${filters}`, undefined, { signal })
-  }, [section, person, page, filters])
-  const resource = useLiveResource('finance', key, read, !['Receipt', 'Refund', 'Sales', 'Expenses'].includes(section))
+  const read = useCallback(signal => apiRequest(`consultations/finance?section=${section}&page=${page}${person ? '&personId=' + person : ''}${filters}`, undefined, { signal }), [section, person, page, filters])
+  const showsMovements = ['Pending', 'OldDebts', 'Balances', 'Corrections'].includes(section)
+  const resource = useLiveResource('finance', key, read, showsMovements)
   const result = resource.data
   useEffect(() => {
     if (!result || resource.error || !['Pending', 'OldDebts', 'Balances', 'Corrections'].includes(section) || page <= Math.max(1, Math.ceil(result.total / 8))) return
@@ -105,26 +85,26 @@ export default function FinancePanel({ guard, disabled, submit, send, feedback, 
   }, [result, resource.error, section, page])
   function change(next, nextClient) { guard(() => { if (nextClient !== undefined) setClient(nextClient); setSection(next); setPage(1); setCorrection(null) }) }
   return <>
-    <nav className="consultation-tabs" aria-label="Ações financeiras">{[['Receipt', 'Registar recebimento'], ['Sales', 'Vendas'], ['Expenses', 'Despesas e investimentos'], ['Reports', 'Relatórios financeiros']].map(([id, label]) => <ActionButton key={id} variant={section === id ? 'primary' : 'secondary'} aria-pressed={section === id} onClick={() => change(id)}>{label}</ActionButton>)}</nav>
+    <nav className="consultation-tabs" aria-label="Ações financeiras">{[['Sales', 'Vendas'], ['Expenses', 'Despesas e investimentos'], ['Reports', 'Relatórios financeiros']].map(([id, label]) => <ActionButton key={id} variant={section === id ? 'primary' : 'secondary'} aria-pressed={section === id} onClick={() => change(id)}>{label}</ActionButton>)}</nav>
     <nav className="consultation-tabs" aria-label="Separadores financeiros"><button className={section === 'Pending' ? '' : 'secondary'} aria-pressed={section === 'Pending'} onClick={() => change('Pending')}>Pendências financeiras</button><button className={section === 'OldDebts' ? '' : 'secondary'} aria-pressed={section === 'OldDebts'} onClick={() => change('OldDebts')}>Dívidas antigas</button><button className={section === 'Balances' ? '' : 'secondary'} aria-pressed={section === 'Balances'} onClick={() => change('Balances', null)}>Saldos e movimentos</button><button className={section === 'Corrections' ? '' : 'secondary'} aria-pressed={section === 'Corrections'} onClick={() => change('Corrections')}>Correções financeiras</button></nav>
     {section === 'Sales' && <FinancialSalesPanel send={send} feedback={feedback} disabled={disabled} guard={guard} perform={perform} notify={notify} />}
     {section === 'Expenses' && <ExpensesPanel disabled={disabled} guard={guard} />}
-    {section === 'Reports' && <InformationCard cardId="finance-report-expense-scope"><p>Os totais deste relatório ainda não incluem despesas e investimentos.</p></InformationCard>}
-    {!['Receipt', 'Refund', 'Sales', 'Expenses'].includes(section) && (resource.loading || resource.error) && <InformationCard cardId="finance-status" loading={resource.loading} error={resource.error} onRetry={resource.refresh} />}
-    {!['Receipt', 'Refund', 'Sales', 'Expenses'].includes(section) && <details className={styles.filters}><summary>{section === 'Reports' ? 'Filtrar o relatório' : 'Pesquisar movimentos e clientes'}</summary><form onSubmit={e => {
+    {section === 'Reports' && <FinancialReportsPanel disabled={disabled} origins={origins} movementKinds={names} />}
+    {showsMovements && (resource.loading || resource.error) && <InformationCard cardId="finance-status" loading={resource.loading} error={resource.error} onRetry={resource.refresh} />}
+    {showsMovements && <details className={styles.filters}><summary>Pesquisar movimentos e clientes</summary><form onSubmit={e => {
       e.preventDefault(); const f = new FormData(e.currentTarget); const q = new URLSearchParams()
-      for (const field of ['sort', 'origin', 'kind']) if (f.get(field)) q.set(field, f.get(field))
+      if (f.get('sort')) q.set('sort', f.get('sort'))
       setDateRangeParams(q, f.get('from'), f.get('to'))
       setFilters('&' + q.toString()); setPage(1)
-    }}><h2>{section === 'Reports' ? 'Relatórios financeiros' : 'Pesquisa financeira'}</h2>
+    }}><h2>Pesquisa financeira</h2>
       <ClientSearch purpose="filter" selected={client} onSelect={value => { setClient(value); setPage(1) }} disabled={disabled} />
       <DateRangeFields type="date" startName="from" endName="to" startLabel="Desde" endLabel="Até" />
-      {section === 'Reports' ? <><label>Origem dos movimentos<AdaptiveSelect name="origin"><option value="">Todas</option>{Object.entries(origins).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</AdaptiveSelect></label><label>Tipo de movimento<AdaptiveSelect name="kind"><option value="">Todos</option>{Object.entries(names).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</AdaptiveSelect></label></> : <><label>Ordenação<AdaptiveSelect name="sort"><option value="">Prioridade inicial</option><option value="Oldest">Mais antigas primeiro</option><option value="Newest">Mais recentes primeiro</option>{section === 'Balances' && !person && <option value="NameDescending">Clientes Z–A</option>}</AdaptiveSelect></label></>}
+      <label>Ordenação<AdaptiveSelect name="sort"><option value="">Prioridade inicial</option><option value="Oldest">Mais antigas primeiro</option><option value="Newest">Mais recentes primeiro</option>{section === 'Balances' && !person && <option value="NameDescending">Clientes Z–A</option>}</AdaptiveSelect></label>
       <button>Pesquisar</button>
     </form></details>}
     {result && ['Pending', 'OldDebts', 'Balances', 'Corrections'].includes(section) && <SummaryCard cardId="finance-count" label={section === 'Pending' ? 'Pendências financeiras' : section === 'OldDebts' ? 'Dívidas antigas' : section === 'Corrections' ? 'Correções financeiras' : person ? 'Movimentos' : 'Saldos de clientes'} value={result.total} unit="registos" icon="wallet" />}
     {section === 'OldDebts' && result?.total === 0 && <InformationCard cardId="old-debts-empty"><p>Não há dívidas antigas nesta pesquisa.</p></InformationCard>}
-    {['Receipt', 'Refund'].includes(section) && <div className="record-panel"><FinancialEntryForm key={`${section}:${person}`} selectedClient={client} refund={section === 'Refund'} disabled={disabled} submit={submit} instant={instant} /></div>}
+    {section === 'Refund' && <div className="record-panel"><FinancialEntryForm key={`Refund:${person}`} selectedClient={client} refund disabled={disabled} submit={submit} instant={instant} /></div>}
     {result && ['Pending', 'OldDebts'].includes(section) && <CardGrid>{(result.globalDebts || []).map(d => <InformationCard as="article" cardId={'global-debt-' + d.personId} key={d.personId}><h2>Saldo negativo por correção</h2><p>{d.name} · {currency(d.amount)}</p><p>Dívida global, separada das consultas.</p>{['Failed', 'Uncertain'].includes(d.pushState) && <form onSubmit={e => { if (!window.confirm('O envio anterior pode ter sido entregue. Autorizar outra tentativa pode repetir a notificação. Continuar?')) { e.preventDefault(); return } submit(e, () => ({ action: 'RetryBalancePush', id: d.noticeId })) }}><p>Notificação do dispositivo: {d.pushState === 'Uncertain' ? 'resultado por confirmar' : 'não submetida'}.</p><button className="secondary" disabled={disabled}>Autorizar nova tentativa de notificação</button></form>}<button onClick={() => change('Balances', { id: d.personId, data: { firstName: d.name } })}>Consultar saldo e movimentos</button></InformationCard>)}{result.obligations.map(c => <InformationCard as="article" cardId={'obligation-' + c.id} key={c.id}><h2>{c.serviceTitle}</h2><p>{c.finalAmount === null && c.state === 'Performed' ? 'Contribuição pendente — Por definir' : c.state === 'Performed' ? 'Por pagar' : 'A aguardar recebimento'}</p><p>{new Date(c.startsAt).toLocaleString('pt-PT', { timeZone: 'Europe/Lisbon' })}</p>{c.paymentAlert && <p role="status">Comunicação de pagamento do cliente</p>}<button onClick={() => open(c.id)}>Abrir operação financeira</button></InformationCard>)}</CardGrid>}
     {section === 'Pending' && result?.additionalObligations?.map(item => <InformationCard as="article" cardId={'domain-obligation-' + item.id} key={item.id} title={item.title}><p>{item.kind === 'Pack' ? 'Compra de pack por pagar' : 'Participação por pagar'} · {currency(item.amount)}</p><button disabled={disabled} onClick={() => onOpenDomain(item.kind, item.resourceId)}>Abrir pagamento</button></InformationCard>)}
     {section === 'Corrections' && <div className="record-panel">
@@ -137,9 +117,8 @@ export default function FinancePanel({ guard, disabled, submit, send, feedback, 
       <AdjustmentForm key="adjustment" selectedClient={client} disabled={disabled} submit={submit} />
       {result?.entries.map(e => <InformationCard as="article" cardId={'movement-' + e.id} key={e.id}><h3>{names[e.kind]}</h3><p>{e.name} · {currency(e.amount)} · Saldo após movimento: {currency(e.resultingBalance)}</p><p>{new Date(e.createdAt).toLocaleString('pt-PT', { timeZone: 'Europe/Lisbon' })} · {e.originalId && 'Origem: ' + e.originalId}</p><p>Justificação privada: {e.privateReason}</p>{e.canReverseAdjustment && <button className="secondary" onClick={() => setCorrection(e)}>Anular correção integralmente</button>}</InformationCard>)}
       {correction && <form data-protect-draft onSubmit={e => submit(e, f => ({ action: 'ReverseAdjustment', id: correction.id, reason: f.get('reason') }))}><h3>Compensação automática: {currency(-correction.amount)}</h3><label>Justificação privada<textarea name="reason" required maxLength="2000" /></label><button disabled={disabled}>Confirmar anulação da correção</button><button type="button" className="secondary" onClick={() => setCorrection(null)}>Voltar</button></form>}</div>}
-    {result && section === 'Balances' && <div className="record-panel">{!person ? result.customers.map(c => <p key={c.id}><button className="text-button" onClick={() => { setClient({ id: c.id, data: { firstName: c.name } }); setPage(1) }}>{c.name}</button> · {currency(c.balance)}</p>) : <><h2>Saldo disponível: {currency(result.balance)}</h2><div className="consultation-tabs"><button onClick={() => change('Receipt')}>Registar recebimento</button><button className="secondary" onClick={() => change('Refund')}>Registar devolução</button></div>{result.entries.map(e => <InformationCard as="article" cardId={'movement-' + e.id} key={e.id}><p>{names[e.kind]} · {currency(e.amount)} · Saldo após movimento: {currency(e.resultingBalance)}</p><p>Efetivo: {new Date(e.effectiveAt).toLocaleString('pt-PT', { timeZone: 'Europe/Lisbon' })} · Registado: {new Date(e.createdAt).toLocaleString('pt-PT', { timeZone: 'Europe/Lisbon' })}</p><p>Origem: {origins[e.origin] || (e.origin === 'Correction' ? 'Correção excecional' : 'Registo anterior')} {e.originReference}</p>{e.consultationId && <button className="text-button" onClick={() => open(e.consultationId)}>Ver consulta</button>}{e.canReverse && <button className="secondary" onClick={() => setCorrection(e)}>Anular movimento integralmente</button>}</InformationCard>)}
+    {result && section === 'Balances' && <div className="record-panel">{!person ? result.customers.map(c => <p key={c.id}><button className="text-button" onClick={() => { setClient({ id: c.id, data: { firstName: c.name } }); setPage(1) }}>{c.name}</button> · {currency(c.balance)}</p>) : <><h2>Saldo disponível: {currency(result.balance)}</h2><div className="consultation-tabs"><button className="secondary" onClick={() => change('Refund')}>Registar devolução</button></div>{result.entries.map(e => <InformationCard as="article" cardId={'movement-' + e.id} key={e.id}><p>{names[e.kind]} · {currency(e.amount)} · Saldo após movimento: {currency(e.resultingBalance)}</p><p>Efetivo: {new Date(e.effectiveAt).toLocaleString('pt-PT', { timeZone: 'Europe/Lisbon' })} · Registado: {new Date(e.createdAt).toLocaleString('pt-PT', { timeZone: 'Europe/Lisbon' })}</p><p>Origem: {origins[e.origin] || (e.origin === 'Correction' ? 'Correção excecional' : 'Registo anterior')} {e.originReference}</p>{e.consultationId && <button className="text-button" onClick={() => open(e.consultationId)}>Ver consulta</button>}{e.canReverse && <button className="secondary" onClick={() => setCorrection(e)}>Anular movimento integralmente</button>}</InformationCard>)}
       {correction && <form data-protect-draft onSubmit={e => submit(e, f => ({ action: correction.kind === 'Receipt' ? 'ReverseReceipt' : 'ReverseRefund', id: correction.id, reason: f.get('reason') }))}><h3>Anular {names[correction.kind]} · {currency(correction.amount)}</h3><label>Motivo<input name="reason" required maxLength="2000" /></label><button disabled={disabled}>Confirmar anulação integral</button><button type="button" className="secondary" onClick={() => setCorrection(null)}>Voltar</button></form>}</>}</div>}
-    {result && section === 'Reports' && <div className="record-panel"><p>{result.description}</p><p>Apuramento: {new Date(result.asOf).toLocaleString('pt-PT', { timeZone: 'Europe/Lisbon' })}</p>{Object.entries(measures).map(([k, text]) => <p key={k}>{text}: <strong>{currency(result[k])}</strong></p>)}{Object.entries(counts).map(([k, text]) => <p key={k}>{text}: <strong>{result[k]}</strong></p>)}{result.legacyReceiptDates > 0 && <p>Existem recebimentos anteriores sem distinção entre data efetiva e data de validação. Não foi inventada uma data histórica.</p>}</div>}
     {['Pending', 'OldDebts', 'Balances', 'Corrections'].includes(section) && <Pagination total={result?.total} page={page} label="Páginas dos registos financeiros" onChange={setPage} />}
   </>
 }

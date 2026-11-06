@@ -17,7 +17,7 @@ public static class ManualBooking
         var source = data.Services.SingleOrDefault(s => s.Id == serviceId && s.Active && s.ServiceKind is null)
             ?? throw new IdentityProblem(400, "Seleciona uma consulta individual ativa.");
         if (version is not null && version != source.Version) throw new IdentityProblem(409, "A consulta mudou. Revê as opções atuais.");
-        var options = ClientBooking.Options(source);
+        var options = ClientBooking.Options(source, data.PublishedSite);
         var option = optionId is null && options.Length == 1 ? options[0] : options.SingleOrDefault(o => o.Id == optionId)
             ?? throw new IdentityProblem(400, "Seleciona a modalidade e o local da consulta.");
         var service = ClientBooking.Snapshot(source, option);
