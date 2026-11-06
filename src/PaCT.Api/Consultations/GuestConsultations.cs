@@ -90,7 +90,7 @@ public static class GuestConsultations
         {
             if (!Guid.TryParse(input.PersonId, out _)) throw new IdentityProblem(400, "Seleciona a ficha cuja identidade verificaste.");
             if (input.PersonId != request.PersonId && !input.ConditionsAccepted) throw new IdentityProblem(400, "Confirma que verificaste a identidade antes de associar a ficha.");
-            AgendaRules.ValidateOccupation(data, request.StartsAt, request.EndsAt, now, excludingGuestId: request.Id);
+            AgendaRules.ValidateOccupation(data, request.StartsAt, request.EndsAt, now, excludingGuestId: request.Id, manager: true);
             if (!data.Services.Any(x => x.Id == request.Service.Id && x.Active)) throw new IdentityProblem(409, "O serviço deixou de estar disponível. Revê o pedido antes de continuar.");
             var id = Guid.NewGuid().ToString("D");
             var consultation = new Consultation { Id = id, PersonId = input.PersonId!, Service = request.Service,

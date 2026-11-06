@@ -46,7 +46,7 @@ export default function GuestBookingForm({ selection, onBack, onSignIn, previewO
   const modes = [...new Set(choices.filter(choice => choice.id === selected?.id).map(choice => choice.modality))]
   const alternatives = choices.filter(choice => choice.id === selected?.id && choice.modality === selected?.modality)
   const endsAt = selection.endsAt || new Date(Date.parse(selection.startsAt) + selected.durationMinutes * 60000).toISOString()
-  const eventClosed = !!event && (event.state !== 'Waiting')
+  const eventClosed = !!event && (event.state !== 'Waiting' || event.scheduleBlocked)
   useEffect(() => {
     function leaving(e) { if (dirty.current || pending.current) { e.preventDefault(); e.returnValue = '' } }
     window.addEventListener('beforeunload', leaving)

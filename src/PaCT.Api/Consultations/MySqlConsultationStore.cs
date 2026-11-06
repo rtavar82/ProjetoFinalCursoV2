@@ -17,6 +17,7 @@ public interface IConsultationStore
         => ReadAsync(data => read(data, null), ct);
     Task<ConversationPage> ReadConversationAsync(string id, ConsultationActor actor, long? before, CancellationToken ct) => ReadAsync(data => ConsultationConversation.Page(data, id, actor, before), ct);
     Task<T> ReadAgendaAsync<T>(Func<ConsultationData, T> read, CancellationToken ct) => ReadAsync(read, ct);
+    Task<T> ReadSchedulingAsync<T>(Func<ConsultationData, T> read, CancellationToken ct) => ReadAsync(read, ct);
     Task<T> ReadEventCatalogueAsync<T>(Func<ConsultationData, T> read, CancellationToken ct) => ReadAsync(read, ct);
     Task<ConsultationResult> ExecuteAsync(ConsultationCommand input, ConsultationActor actor, CancellationToken ct);
     Task<ConsultationResult> ExecuteAudioMessageAsync(ConsultationCommand input, ConsultationActor actor, AudioAttachment audio, CancellationToken ct)
@@ -30,11 +31,21 @@ public interface IConsultationStore
     Task<bool> UpdateConsultationPushAsync(string id, string state, CancellationToken ct) => Task.FromResult(false);
 }
 
-public sealed class MySqlConsultationStore(DatabaseConnectionSettings settings, IdentitySecurity security, TimeProvider time, IDataProtectionProvider? protection = null) : IConsultationStore
+public sealed class MySqlConsultationStore(DatabaseConnectionSettings settings, IdentitySecurity security, TimeProvider time,
+    IDataProtectionProvider? protection = null, GoogleCalendarAvailability? googleCalendar = null) : IConsultationStore
 {
     private string Encrypt(string id, string field, string value) => Convert.ToBase64String(security.Encrypt(id, "consultation-" + field, value));
     public Task<T> ReadAsync<T>(Func<ConsultationData, T> read, CancellationToken ct) => ReadCore(read, false, ct);
-    public Task<T> ReadAgendaAsync<T>(Func<ConsultationData, T> read, CancellationToken ct) => ReadCore(read, true, ct);
+    public Task<T> ReadAgendaAsync<T>(Func<ConsultationData, T> read, CancellationToken ct) =>
+        WithCalendar(() => ReadCore(read, true, ct), ct);
+    public Task<T> ReadSchedulingAsync<T>(Func<ConsultationData, T> read, CancellationToken ct) =>
+        WithCalendar(() => ReadAsync(read, ct), ct);
+
+    private async Task<T> WithCalendar<T>(Func<Task<T>> action, CancellationToken ct, bool force = false, DateTimeOffset? through = null)
+    {
+        if (googleCalendar is not null) await googleCalendar.RefreshAsync(ct, force, through);
+        return await action();
+    }
     public Task<T> ReadFinancialReportAsync<T>(Func<ConsultationData, IReadOnlyList<Expense>?, T> read, CancellationToken ct)
         => Write(async (connection, transaction, data) =>
         {
@@ -97,7 +108,7 @@ public sealed class MySqlConsultationStore(DatabaseConnectionSettings settings, 
         return new(c, page, reads.ToArray(), unread, latest, page.Length > 0 && oldest < page[0].Sequence);
     }
     public Task<T> ReadEventCatalogueAsync<T>(Func<ConsultationData, T> read, CancellationToken ct) =>
-        Write((_, _, data) => Task.FromResult(read(data)), ct, eventCatalogue: true, synchronizeClock: true);
+        WithCalendar(() => Write((_, _, data) => Task.FromResult(read(data)), ct, eventCatalogue: true, synchronizeClock: true), ct);
     internal static async Task<ConsultationData> LoadEventCatalogue(MySqlConnection connection, MySqlTransaction transaction, CancellationToken ct)
     {
         var data = new ConsultationData();
@@ -133,7 +144,11 @@ public sealed class MySqlConsultationStore(DatabaseConnectionSettings settings, 
         await Save(connection, transaction, data, before, ct);
     }
     public Task<ConsultationResult> ExecuteAsync(ConsultationCommand input, ConsultationActor actor, CancellationToken ct) =>
-        Execute(input, actor, null, ct);
+        input.Action is "Request" or "Manual" or "Approve" or "LinkGuestRequest" or "PublishAvailability"
+            or "SaveEvent" or "JoinEvent" or "LinkEventGuest" or "ConfirmParticipation"
+            ? WithCalendar(() => Execute(input, actor, null, ct), ct, force: true,
+                through: input.Action == "SaveEvent" && actor.IsManager ? input.Event?.EndsAt : null)
+            : Execute(input, actor, null, ct);
 
     public Task<ConsultationResult> ExecuteAudioMessageAsync(ConsultationCommand input, ConsultationActor actor, AudioAttachment audio, CancellationToken ct) =>
         Execute(input, actor, audio, ct);
@@ -209,7 +224,8 @@ public sealed class MySqlConsultationStore(DatabaseConnectionSettings settings, 
             appliedInput = input with { PersonId = personId, ConditionsAccepted = true };
             // The verified identity decision may have reassigned existing records in this transaction.
             var published = data.PublishedSite;
-            data = await Load(connection, transaction, ct); data.PublishedSite = published; before = Snapshot(data);
+            var calendar = data.GoogleCalendar;
+            data = await Load(connection, transaction, ct); data.PublishedSite = published; data.GoogleCalendar = calendar; before = Snapshot(data);
             appliedInput = appliedInput with { Version = data.GuestRequests.Single(g => g.Id == input.Id).Version };
         }
         // Compare the reviewed revision with the locked snapshot before housekeeping can
@@ -241,29 +257,29 @@ public sealed class MySqlConsultationStore(DatabaseConnectionSettings settings, 
             ("@id", input.OperationId), ("@author", actor.AccountId), ("@hash", hash), ("@result", JsonSerializer.Serialize(result)), ("@now", time.GetUtcNow().UtcDateTime));
         await record.ExecuteNonQueryAsync(ct); return result;
     }, ct);
-    public Task<ConsultationResult> SubmitGuestAsync(GuestSubmission input, CancellationToken ct) => Write(async (connection, transaction, data) =>
+    public Task<ConsultationResult> SubmitGuestAsync(GuestSubmission input, CancellationToken ct) => WithCalendar(() => Write(async (connection, transaction, data) =>
     {
         var count = data.GuestRequests.Count;
         var before = Snapshot(data);
         var result = GuestConsultations.Submit(data, input, time.GetUtcNow(), Encrypt);
         if (data.GuestRequests.Count > count) await PaCT.Api.Clients.MySqlClientStore.CreateGuestAsync(connection, transaction, data.GuestRequests.Single(g => g.Id == result.Id).PersonId!, input, security, time.GetUtcNow().UtcDateTime, ct);
         await Save(connection, transaction, data, before, ct); return result;
-    }, ct);
-    public Task<ConsultationResult> SubmitEventGuestAsync(string eventId, GuestSubmission input, CancellationToken ct) => Write(async (connection, transaction, data) =>
+    }, ct), ct, force: true);
+    public Task<ConsultationResult> SubmitEventGuestAsync(string eventId, GuestSubmission input, CancellationToken ct) => WithCalendar(() => Write(async (connection, transaction, data) =>
     {
         var count = data.Participations.Count;
         var before = Snapshot(data); var result = GroupEvents.SubmitGuest(data, eventId, input, time.GetUtcNow(), Encrypt);
         if (data.Participations.Count > count) await PaCT.Api.Clients.MySqlClientStore.CreateGuestAsync(connection, transaction, data.Participations.Single(p => p.Id == result.Id).PersonId!, input, security, time.GetUtcNow().UtcDateTime, ct);
         await Save(connection, transaction, data, before, ct); return result;
-    }, ct);
-    public async Task AdvanceAsync(CancellationToken ct) => await Write(async (connection, transaction, data) =>
+    }, ct), ct, force: true);
+    public async Task AdvanceAsync(CancellationToken ct) => await WithCalendar(() => Write(async (connection, transaction, data) =>
     {
         var before = Snapshot(data); ConsultationRules.Advance(data, time.GetUtcNow());
         await QueuePackReminders(connection, transaction, data, ct);
         await QueueGroupSummaries(connection, transaction, data, ct);
         await QueueAppointmentEmails(connection, transaction, data, ct);
         await Save(connection, transaction, data, before, ct); return true;
-    }, ct);
+    }, ct), ct);
     public Task<bool> UpdateBalancePushAsync(string id, string state, CancellationToken ct) => Write(async (connection, transaction, data) =>
     {
         var before = Snapshot(data); var index = data.BalanceNotices.FindIndex(n => n.Id == id);
@@ -293,6 +309,7 @@ public sealed class MySqlConsultationStore(DatabaseConnectionSettings settings, 
             if (synchronizeClock) await PersistLifecycle(connection, transaction, time.GetUtcNow(), ct);
             var data = eventCatalogue ? await LoadEventCatalogue(connection, transaction, ct) : await Load(connection, transaction, ct, agendaOnly);
             data.PublishedSite = await PaCT.Api.Management.MySqlSitePresentationStore.ReadPublished(connection, transaction, security, ct);
+            data.GoogleCalendar = googleCalendar?.Current ?? GoogleCalendarSnapshot.Empty;
             var result = await action(connection, transaction, data);
             await transaction.CommitAsync(ct); return result;
         }

@@ -20,9 +20,23 @@ public sealed class PasswordChangeController(PasswordChangeService passwords) : 
         return Ok(new { message = "Pedido recebido. Abre o email da tua conta para escolheres a nova palavra-passe." });
     }
     [HttpPost("confirm"), EnableRateLimiting("account")]
-    public async Task<IActionResult> Confirm(PasswordChangeConfirmation input, CancellationToken ct)
+    public Task<IActionResult> Confirm(PasswordChangeConfirmation input, CancellationToken ct) =>
+        ConfirmPassword(input, PasswordChangeService.ChangeKind, ct);
+
+    [HttpPost("recovery"), EnableRateLimiting("email")]
+    public IActionResult RequestRecovery(PasswordRecoveryRequest input)
     {
-        await passwords.ConfirmAsync(input, User.Identity?.IsAuthenticated == true ? User.FindFirstValue(ClaimTypes.NameIdentifier) : null, ct);
+        passwords.RequestRecovery(input);
+        return Accepted(new { message = "Se o email estiver associado a uma conta elegível, receberás um link para recuperares o acesso." });
+    }
+
+    [HttpPost("recovery/confirm"), EnableRateLimiting("account")]
+    public Task<IActionResult> ConfirmRecovery(PasswordChangeConfirmation input, CancellationToken ct) =>
+        ConfirmPassword(input, PasswordChangeService.RecoveryKind, ct);
+
+    private async Task<IActionResult> ConfirmPassword(PasswordChangeConfirmation input, string kind, CancellationToken ct)
+    {
+        await passwords.ConfirmAsync(input, User.FindFirstValue(ClaimTypes.NameIdentifier), ct, kind);
         await AccountLoginController.ClearSession(HttpContext);
         return Ok(new { stage = "SignIn", message = "Palavra-passe alterada. Entra novamente com o teu email e a nova palavra-passe." });
     }
@@ -89,7 +103,7 @@ public sealed class AccountLoginController(GoogleLoginSettings settings, GoogleF
                 return Redirect("/#google-result=Linked");
             }
             var account = await google.ResolveAsync(googleIdentity, ct);
-            if (account is null) return Redirect("/#google-result=NotLinked");
+            if (account is null) return Redirect("/#google-result=Failed");
             var trustedUntil = cookies.TrustedUntil(flow.TrustedBrowser, account);
             if (account.PasskeyEnabledAt is not null && trustedUntil is null
                 || account.TwoFactorEnabledAt is not null && account.PasskeyEnabledAt is null && trustedUntil is null
@@ -102,7 +116,10 @@ public sealed class AccountLoginController(GoogleLoginSettings settings, GoogleF
             await cookies.SignInAsync(HttpContext, account, false, trustedUntil, "Google");
             return Redirect("/#google-result=Continue");
         }
-        catch (IdentityProblem error) { return Redirect("/#google-result=" + (error.Status == 403 ? "PasswordRequired" : error.Status == 409 ? "Conflict" : "Failed")); }
+        catch (IdentityProblem error)
+        {
+            return Redirect(flow.Mode == "Link" && error.Status == 409 ? "/#google-result=Conflict" : "/#google-result=Failed");
+        }
     }
 
     [Authorize, HttpPost("unlink"), EnableRateLimiting("account")]

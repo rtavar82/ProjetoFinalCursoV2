@@ -32,7 +32,7 @@ public sealed class GroupEventsController(IConsultationStore store, IIdentitySto
     public async Task<IActionResult> Detail(string id, CancellationToken ct)
     {
         var account = await Account(ct) ?? throw new IdentityProblem(401, "Inicia sessão novamente."); var manager = Roles.IsManager(account.Role);
-        return Ok(await store.ReadAsync(data =>
+        return Ok(await store.ReadSchedulingAsync(data =>
         {
             var e = data.Events.SingleOrDefault(e => e.Id == id && (manager || e.Definition.Published || data.Participations.Any(p => p.EventId == e.Id && p.PersonId == account.PersonId))) ?? throw new IdentityProblem(404, "Evento não encontrado.");
             return new { summary = Public(e, data, account), definition = manager ? e.Definition : null, e.ActualStartsAt, e.ActualEndsAt,
@@ -73,6 +73,7 @@ public sealed class GroupEventsController(IConsultationStore store, IIdentitySto
         e.Definition.StartsAt, e.Definition.EndsAt, e.Definition.PublicLocation, e.Definition.Capacity, e.Definition.Published,
         e.Definition.Program, e.Definition.TotalPrice, e.Definition.CancellationConditions, e.Definition.MinimumParticipants, e.Definition.AllowClientCredit,
         registrationOpen = EventLifecycle.RegistrationOpen(e, time.GetUtcNow()),
+        scheduleBlocked = AgendaRules.GoogleConflict(data, e.Definition.StartsAt, e.Definition.EndsAt),
         occupiedCount = GroupEvents.Seats(data, e.Id),
         confirmedCount = data.Participations.Count(p => p.EventId == e.Id && p.State == "Confirmed"),
         pendingClosures = data.Participations.Count(p => p.EventId == e.Id && p.Attendance is null && p.State is "Confirmed" or "Cancelled"),

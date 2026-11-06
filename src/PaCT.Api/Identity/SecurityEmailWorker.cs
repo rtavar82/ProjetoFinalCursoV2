@@ -90,6 +90,9 @@ internal static class SecurityEmailContent
         "PasswordChange" => ("PaCT — altera a tua palavra-passe", "Recebemos o teu pedido para alterar a palavra-passe. Escolhe a nova palavra-passe nesta página:\n\n"
             + publicWebUrl + "/#change-password=" + Uri.EscapeDataString(payload.Token)
             + "\n\nO link é pessoal, de uso único e válido durante 24 horas. Abrir o link não altera a palavra-passe. Se não fizeste este pedido, ignora esta mensagem."),
+        "PasswordRecovery" => ("PaCT — recupera o acesso à tua conta", "Recebemos um pedido para recuperares o acesso à tua conta PaCT. Usa este link para escolheres uma nova palavra-passe.\n\n"
+            + publicWebUrl + "/#recover-password=" + Uri.EscapeDataString(payload.Token)
+            + "\n\nO link é pessoal, de uso único e válido durante 30 minutos. Se não fizeste este pedido, ignora esta mensagem."),
         "PackReminder" => ("PaCT — lembrete do teu pack", "Faltam dois meses para a referência de um ano do teu pack. Consulta as sessões disponíveis na tua área PaCT e combina a sua utilização com a terapeuta.\n\n"
             + publicWebUrl + "/#inicio\n\nAs sessões não são retiradas nem bloqueadas automaticamente por esta data."),
         _ => throw new InvalidOperationException("Unknown security email kind.")
@@ -210,7 +213,7 @@ public sealed class SecurityEmailWorker(IIdentityStore store, ITherapistInvitati
         }
         if (payload.Kind == "ClientAccessEmail" && clientAccess is not null)
             eligible = await clientAccess.CanSendEmailAsync(job, payload, ct);
-        if (payload.Kind == "PasswordChange" && passwords is not null)
+        if (payload.Kind is "PasswordChange" or "PasswordRecovery" && passwords is not null)
             eligible = await passwords.CanSendAsync(job, payload, ct);
         if (payload.Kind is "GroupAcceptanceSummary" or "GroupConfirmation" or "EventCancelled" or "EventParticipationClosed" or "EventReminder24" && consultations is not null && job.CreatedAt.AddHours(24) > now && job.Id == payload.Token
             && account is { Role: Roles.Client, ClosedAt: null, PersonActive: true, LinkStatus: "Verified", EmailConfirmedAt: not null }

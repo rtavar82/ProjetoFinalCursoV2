@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useState } from 'react'
 import ActionButton from './ActionButton'
+import ConsultationPhotoPreview from './ConsultationPhotoPreview'
 import InformationCard from './InformationCard'
 import ManagerSchedulingDialog from './ManagerSchedulingDialog'
 import { apiRequest } from './identityApi'
 import { showSuccess } from './actionNotices'
 import useLiveResource from './useLiveResource'
+import { validateJpegPng } from './photoValidation'
 import formStyles from './ManagerScheduling.module.css'
 
 export default function SitePresentationPanel({ section, title, guard, busy }) {
@@ -52,15 +54,47 @@ function release(editor) {
 }
 
 function SiteEditor({ title, session, path, guard, busy, onClose }) {
-  const { editor, fields, version, places: publishedPlaces } = session
+  const { editor, fields, version, places: publishedPlaces, images = [] } = session
+  const imageFields = images ?? []
   const [draft, setDraft] = useState(() => Object.fromEntries(fields.map(field => [field.key, field.value])))
   const [places, setPlaces] = useState(() => (publishedPlaces ?? []).map(place => ({ ...place, key: place.name, existing: true })))
   const [review, setReview] = useState(null), [sending, setSending] = useState(false), [error, setError] = useState('')
-  const disabled = busy || sending
+  const [files, setFiles] = useState({})
+  const [checkingImage, setCheckingImage] = useState(false)
+  const disabled = busy || sending || checkingImage
   const dirty = fields.some(field => draft[field.key].trim() !== field.value)
+    || Object.keys(files).length > 0
     || places.length !== (publishedPlaces?.length ?? 0)
     || places.some((place, index) => !place.existing || ['description', 'address'].some(key => place[key].trim() !== publishedPlaces?.[index]?.[key]))
   const editPlace = (key, change) => setPlaces(current => current.map(place => place.key === key ? { ...place, ...change } : place))
+  const imageTextKeys = new Set(imageFields.flatMap(image => [image.altKey, image.captionKey]))
+
+  function editField(field) {
+    const Control = field.multiline ? 'textarea' : 'input'
+    return <label key={field.key}>{field.label}{field.optional && ' (opcional)'}<Control required={!field.optional} maxLength={field.maximum} value={draft[field.key]}
+      onChange={event => setDraft(current => ({ ...current, [field.key]: event.target.value }))} /></label>
+  }
+
+  async function chooseImage(key, event) {
+    const file = event.target.files[0]
+    event.target.value = ''
+    if (!file) return
+    setCheckingImage(true)
+    setError('')
+    try {
+      await validateJpegPng(file, 5)
+      setFiles(current => ({ ...current, [key]: file }))
+    } catch (failure) { setError(failure.message) }
+    finally { setCheckingImage(false) }
+  }
+
+  function discardImage(key) {
+    setFiles(current => {
+      const next = { ...current }
+      delete next[key]
+      return next
+    })
+  }
 
   useEffect(() => {
     let renewing = false
@@ -87,7 +121,14 @@ function SiteEditor({ title, session, path, guard, busy, onClose }) {
     setSending(true)
     setError('')
     try {
-      await apiRequest(`${path}/publish`, { editor, version, ...review })
+      const publication = { editor, version, ...review }
+      let body = publication
+      if (Object.keys(files).length > 0) {
+        body = new FormData()
+        body.set('publication', JSON.stringify(publication))
+        for (const [key, file] of Object.entries(files)) body.set(key, file)
+      }
+      await apiRequest(`${path}/publish`, body)
       showSuccess('Alterações publicadas.')
       onClose()
     } catch (failure) { setError(failure.message) }
@@ -96,25 +137,40 @@ function SiteEditor({ title, session, path, guard, busy, onClose }) {
 
   return <ManagerSchedulingDialog title={review ? 'Rever publicação' : title} disabled={disabled} onClose={() => guard(onClose)}>
     {error && <p className="notice error" role="alert">{error}</p>}
-    {review ? <>
+    {review && <>
       <InformationCard title="Alterações a publicar" headingLevel={3}>
         {fields.filter(field => review.values[field.key] !== field.value).map(field => <p key={field.key}><strong>{field.label}</strong> · {review.values[field.key] || 'Retirar da apresentação'}</p>)}
         {review.places?.filter(place => !publishedPlaces.some(old => old.name === place.name && old.description === place.description && old.address === place.address))
           .map(place => <div key={place.name}><p><strong>{place.name}</strong> · {place.description}</p><p>{place.address}</p></div>)}
         {publishedPlaces?.filter(place => !review.places.some(value => value.name === place.name)).map(place =>
           <p key={place.name}><strong>Apagar {place.name}</strong> · Sai das novas escolhas. Os registos existentes são conservados.</p>)}
+        {imageFields.filter(image => files[image.key]).map(image => <div key={image.key}>
+          <p><strong>{image.label}</strong> · {files[image.key].name}</p>
+          <ConsultationPhotoPreview file={files[image.key]} alt={review.values[image.altKey] || image.label} />
+        </div>)}
       </InformationCard>
       <div className="button-row">
         <ActionButton variant="secondary" disabled={disabled} onClick={() => setReview(null)}>Voltar à edição</ActionButton>
         <ActionButton disabled={disabled} onClick={publish}>Publicar</ActionButton>
       </div>
-    </> : <form data-protect-draft onSubmit={prepare}>
+    </>}
+    <div hidden={!!review}><form data-protect-draft onSubmit={prepare}>
       <fieldset className={formStyles.fields} disabled={disabled}>
-        {fields.map(field => {
-          const Control = field.multiline ? 'textarea' : 'input'
-          return <label key={field.key}>{field.label}{field.optional && ' (opcional)'}<Control required={!field.optional} maxLength={field.maximum} value={draft[field.key]}
-            onChange={event => setDraft(current => ({ ...current, [field.key]: event.target.value }))} /></label>
-        })}
+        {fields.filter(field => !imageTextKeys.has(field.key)).map(editField)}
+        {imageFields.length > 0 && <>
+          <h3>Imagens da apresentação</h3>
+          <p>Escolhe ficheiros JPEG ou PNG de até 5 MB. As imagens só ficam visíveis na página pública quando publicares.</p>
+          {imageFields.map(image => <InformationCard key={image.key} title={image.label} headingLevel={4}>
+            <ConsultationPhotoPreview src={image.url} file={files[image.key]} alt={draft[image.altKey] || image.label} />
+            <label>Substituir {image.label.toLocaleLowerCase('pt-PT')}
+              <input type="file" accept="image/jpeg,image/png" onChange={event => chooseImage(image.key, event)} />
+            </label>
+            {files[image.key] && <><p>{files[image.key].name}</p>
+              <ActionButton variant="text" onClick={() => discardImage(image.key)}>Manter imagem publicada</ActionButton>
+            </>}
+            {fields.filter(field => field.key === image.altKey || field.key === image.captionKey).map(editField)}
+          </InformationCard>)}
+        </>}
         {publishedPlaces && <>
           {places.map(place => <InformationCard key={place.key} title={place.existing ? place.name : 'Novo local'} headingLevel={3}
             actions={<ActionButton variant="text" aria-label={`Apagar ${place.name || 'novo local'}`}
@@ -134,6 +190,6 @@ function SiteEditor({ title, session, path, guard, busy, onClose }) {
           <ActionButton type="submit" disabled={!dirty}>Rever antes de publicar</ActionButton>
         </div>
       </fieldset>
-    </form>}
+    </form></div>
   </ManagerSchedulingDialog>
 }

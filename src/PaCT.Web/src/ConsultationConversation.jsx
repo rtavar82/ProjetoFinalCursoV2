@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState } from 'react'
-import { apiRequest, sendConversationAudio, uploadConversationPhoto } from './identityApi'
+import { apiRequest, sendConversationAudio, uploadConversationPhoto, uploadConversationVideo } from './identityApi'
 import { announceOperation, dismissSuccess } from './actionNotices'
 import useLiveResource from './useLiveResource'
 import useEditorState from './useEditorState'
@@ -66,6 +66,7 @@ export default function ConsultationConversation({ id, manager = false, onMessag
         {before && older.error && <p role="alert" className="notice error">{older.error}<button type="button" onClick={older.refresh}>Tentar novamente</button></p>}
         <ol className={styles.messages}>{messages.map(message => <li key={message.id} className={message.own ? styles.own : ''}>
           {message.photoIds?.length > 0 && <div className={styles.images}>{message.photoIds.map((photoId, index) => <img key={photoId} loading="lazy" src={`/api/consultations/${id}/photos/${photoId}`} alt={`Imagem partilhada na conversa ${index + 1}`} />)}</div>}
+          {message.videoId && <video className={styles.video} src={`/api/consultations/${id}/messages/${message.id}/video`} controls playsInline preload="none" aria-label="Vídeo partilhado no acompanhamento" />}
           {message.audioType && <AudioPlayer src={`/api/consultations/${id}/messages/${message.id}/audio`} label="Áudio partilhado no acompanhamento" />}
           {message.text && <p className={styles.text}>{message.text}</p>}
           <small className={styles.author}>{message.author} · <time dateTime={message.createdAt}>{agendaDate(message.createdAt)}</time>{message.unread && <span> · Por ler</span>}</small>
@@ -73,7 +74,7 @@ export default function ConsultationConversation({ id, manager = false, onMessag
         {value.unread > unread.length && <p>Existem mais mensagens por ler.</p>}
       </>}
     </InformationCard>}
-    {value && <MessageComposer id={id} value={value} manager={manager} disabled={busy || uncertain} />}
+    {value && <MessageComposer id={id} value={value} manager={manager} unread={unread} disabled={busy || uncertain} />}
     {manager && value && <button type="button" className={`secondary ${styles.close}`} disabled={busy || uncertain} onClick={() => {
       if (window.confirm(value.blocked ? 'Reabrir esta conversa para novas mensagens?' : 'Encerrar esta conversa para novas mensagens? As mensagens anteriores mantêm-se.'))
         void decide({ action: value.blocked ? 'ReopenConversation' : 'BlockConversation', conversationVersion: value.conversationVersion })
@@ -81,24 +82,30 @@ export default function ConsultationConversation({ id, manager = false, onMessag
   </section>
 }
 
-function MessageComposer({ id, value, manager, disabled }) {
+function MessageComposer({ id, value, manager, unread, disabled }) {
   const [revision, setRevision] = useState(0)
-  return <MessageForm key={revision} id={id} value={value} manager={manager} disabled={disabled} onConfirmed={() => setRevision(n => n + 1)} />
+  return <MessageForm key={revision} id={id} value={value} manager={manager} unread={unread} disabled={disabled} onConfirmed={() => setRevision(n => n + 1)} />
 }
-function MessageForm({ id, value, manager, disabled, onConfirmed }) {
-  const editor = useEditorState({ text: '', photoIds: [], pending: null, audio: null }, value.conversationVersion)
+function MessageForm({ id, value, manager, unread, disabled, onConfirmed }) {
+  const editor = useEditorState({ text: '', photoIds: [], pending: null, audio: null, video: null }, value.conversationVersion)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   async function send(retry = false) {
     if (busy || disabled) return
     if (editor.fields.pending && !retry) return
+    const messageIds = manager && !retry ? unread.slice(-1000).map(message => message.id) : []
     dismissSuccess(); setBusy(true); setError('')
     try {
       const current = await editor.ready()
-      const command = retry ? current.fields.pending : { action: 'SendMessage', id, conversationVersion: value.conversationVersion, messageText: current.fields.text, photoIds: current.fields.photoIds, operationId: crypto.randomUUID() }
+      const command = retry ? current.fields.pending : {
+        action: 'SendMessage', id, conversationVersion: value.conversationVersion, messageText: current.fields.text,
+        photoIds: current.fields.photoIds, ...(current.fields.video ? { messageVideoId: current.fields.video.id } : {}),
+        ...(messageIds.length ? { messageIds } : {}), operationId: crypto.randomUUID(),
+      }
       if (!command) return
       if (!retry) {
         for (let i = 0; i < current.files.length; i++) await uploadConversationPhoto(id, command.photoIds[i], current.files[i], command.conversationVersion)
+        if (current.fields.video) await uploadConversationVideo(id, current.fields.video, command.conversationVersion)
         editor.change('pending', command)
       }
       const result = current.fields.audio ? await sendConversationAudio(id, command, current.fields.audio) : await apiRequest('consultations/commands', command)
@@ -114,11 +121,20 @@ function MessageForm({ id, value, manager, disabled, onConfirmed }) {
   return <form data-protect-draft data-pending-command={busy || pending ? 'true' : undefined} onSubmit={event => { event.preventDefault(); void send() }}>
     {error && <p role="alert" className="notice error">{error}</p>}
     {editor.conflict && !pending && <div className="notice"><p>O estado da conversa mudou. O texto foi mantido.</p><button type="button" className="secondary" onClick={editor.acceptCurrentVersion}>Revi o estado da conversa; manter a mensagem</button></div>}
-    <label>{manager ? 'Mensagem partilhada com o cliente' : 'Mensagem partilhada com a terapeuta'}<textarea name="followupMessage" maxLength="8000" required={editor.files.length === 0 && !editor.fields.audio} value={editor.fields.text} disabled={disabled || busy || pending || value.blocked} onChange={event => editor.change('text', event.target.value)} /></label>
+    <label>{manager ? 'Mensagem partilhada com o cliente' : 'Mensagem partilhada com a terapeuta'}<textarea name="followupMessage" maxLength="8000" required={editor.files.length === 0 && !editor.fields.audio && !editor.fields.video} value={editor.fields.text} disabled={disabled || busy || pending || value.blocked} onChange={event => editor.change('text', event.target.value)} /></label>
     {manager && !value.blocked && <label>Imagens para partilhar (opcional)<input type="file" accept="image/jpeg,image/png" multiple disabled={disabled || busy || pending || editor.conflict} onChange={async event => {
       const files = [...event.target.files]; event.target.value = ''
       try { await editor.addPhotos(files); setError('') } catch (failure) { setError(failure.message) }
     }} /></label>}
+    {manager && !value.blocked && <label>Vídeo para partilhar (opcional) · MP4 ou MOV até 30 segundos e 25 MB
+      <input type="file" accept="video/mp4,video/quicktime,.mp4,.mov" disabled={disabled || busy || pending || editor.conflict} onChange={event => {
+        const file = event.target.files[0]; event.target.value = ''
+        if (!file) return
+        if (!/\.(mp4|mov)$/i.test(file.name) || !file.size || file.size > 25_000_000) { setError('Escolhe um vídeo MP4 ou MOV até 25 MB.'); return }
+        editor.change('video', { id: crypto.randomUUID(), kind: 'video', file }); setError('')
+      }} />
+    </label>}
+    {editor.fields.video && <div className={styles.photo}><p>{editor.fields.video.file.name}</p><button type="button" className="secondary" disabled={disabled || busy || pending || value.blocked} onClick={() => editor.change('video', null)}>Retirar vídeo</button></div>}
     {manager && !value.blocked && <label>Áudio para partilhar (opcional) · MP3, WAV ou OGG até 9 MB
       <input type="file" accept={audioAccept} disabled={disabled || busy || pending || editor.conflict} onChange={event => {
         const file = event.target.files[0]; event.target.value = ''

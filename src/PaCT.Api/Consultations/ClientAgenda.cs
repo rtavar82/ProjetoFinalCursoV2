@@ -35,7 +35,7 @@ public static class ClientAgenda
             .Where(c => filters.State is null || ProcessLifecycle.Substate(c, now) == filters.State)
             .Where(c => filters.Financial is null || (filters.Financial == "OldDebt" ? ConsultationRules.HasOldDebt(c) : ConsultationRules.FinancialState(c) == filters.Financial))
             .Where(c => (filters.From is null || c.StartsAt >= filters.From) && (filters.To is null || c.StartsAt < filters.To))
-            .Where(c => filters.HasNotes is null || filters.HasNotes == (c.SharedNoteCiphertext is not null))
+            .Where(c => filters.HasNotes is null || filters.HasNotes == (c.SharedNoteCiphertext is not null || c.SharedClosureMedia is { Length: > 0 }))
             .Select(c => new ClientAgendaItem(c.Id, "Consultation", c.Id, c.StartsAt, ProcessLifecycle.Substate(c, now),
                 ConsultationRules.FinancialState(c), ConsultationRules.ClientSection(c, now),
                 c.ArchivedAt is not null && (c.ArchivedContentVersion ?? 1) == c.PublicContentVersion, Consultation: c))

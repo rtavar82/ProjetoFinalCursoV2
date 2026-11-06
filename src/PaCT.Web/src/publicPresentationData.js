@@ -1,13 +1,18 @@
 import { apiRequest } from './identityApi'
 import { agendaMoney } from './agendaTime'
 
+function isPresentationImage(path) {
+  return typeof path === 'string' && (/^\/presentation\/[a-z-]+\.png$/.test(path)
+    || /^\/api\/public\/presentation\/images\/(?:portrait|gallery-[1-9]\d*|signature)\/[a-f0-9]{64}\.(?:png|jpg)$/.test(path))
+}
+
 export async function readPublicPresentation(signal) {
   const data = await apiRequest('public/presentation', undefined, { signal })
   const person = data?.therapist
   const payment = data?.paymentInformation
   if (!person || !['name', 'role', 'heading', 'introduction', 'summary', 'approach', 'closing'].every(key => typeof person[key] === 'string')
     || !Array.isArray(person.sections) || !Array.isArray(person.gallery)
-    || ![person.heroImage, person.signatureImage, ...person.gallery.map(p => p.image)].every(path => typeof path === 'string' && /^\/presentation\/[a-z-]+\.png$/.test(path))
+    || ![person.heroImage, person.signatureImage, ...person.gallery.map(p => p.image)].every(isPresentationImage)
     || person.sections.some(s => typeof s.heading !== 'string' || typeof s.text !== 'string')
     || person.gallery.some(p => typeof p.alt !== 'string' || typeof p.caption !== 'string')
     || !/^(https:\/\/wa\.me\/\d+)?$/.test(person.whatsapp) || !/^(tel:\+\d+)?$/.test(person.telephone) || !/^(https:\/\/www\.instagram\.com\/[a-zA-Z0-9_.]+\/)?$/.test(person.instagram)

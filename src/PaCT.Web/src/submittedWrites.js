@@ -63,6 +63,8 @@ export function clientOperation(path) {
 }
 
 export function canReplay(path, body, operationKey) {
+  if (path === 'management/tasks') return !!body?.operationId
+  if (/^management\/tasks\/[0-9a-f-]+\/(complete|read-reminder)$/.test(path)) return true
   return !!operationKey && clientOperation(path) || ['consultations/manual-preview', 'consultations/publication-preview'].includes(path)
     || /^consultations\/[0-9a-f-]+\/price-correction-preview$/.test(path) || !!body?.operationId && (path === 'consultations/commands' || path === 'consultations/guests'
     || /^consultations\/events\/[^/]+\/requests$/.test(path)

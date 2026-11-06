@@ -46,7 +46,7 @@ public sealed class SharingController(SharingStore store, SharingMedia media, Sh
             const int pageSize = 8;
             var now = time.GetUtcNow();
             var snapshot = before is { } date && date < now ? date : now;
-            var (total, rows) = await store.ListAsync(scope, Viewer, snapshot, page, pageSize, ct);
+            var (total, rows, currentPage, currentSnapshot) = await store.ListAsync(scope, Viewer, snapshot, now, page, pageSize, ct);
             var canPublish = await MayPublish(ct);
             var names = new Dictionary<string, string>();
             var items = new List<object>();
@@ -71,7 +71,7 @@ public sealed class SharingController(SharingStore store, SharingMedia media, Sh
                     liked = myReaction == SharingReactions.Like, comments
                 });
             }
-            return Ok(new { total, pageSize, page, before = snapshot, canPublish, items });
+            return Ok(new { total, pageSize, page = currentPage, before = currentSnapshot, canPublish, items });
 
             async Task<string> Name(string id)
             {

@@ -18,21 +18,22 @@ import SharingFeed from './SharingFeed'
 import { publicRoute } from './publicPresentationData'
 import { cancelSubmittedWrites } from './submittedWrites'
 import { dismissSuccess, showSuccess } from './actionNotices'
+import PrivacyProvider from './PrivacyProvider'
 
 function readLink() {
   const parameters = new URLSearchParams(window.location.hash.slice(1))
-  const link = { confirmationToken: parameters.get('confirm-email'), invitationToken: parameters.get('therapist-invitation'), accessEmailToken: parameters.get('confirm-access-email'), passwordChangeToken: parameters.get('change-password'), googleResult: parameters.get('google-result') }
+  const link = { confirmationToken: parameters.get('confirm-email'), invitationToken: parameters.get('therapist-invitation'), accessEmailToken: parameters.get('confirm-access-email'), passwordChangeToken: parameters.get('change-password'), passwordRecoveryToken: parameters.get('recover-password'), googleResult: parameters.get('google-result') }
   return link
 }
 
 function linkStage(link) {
   if (Object.values(link).filter(Boolean).length > 1) return 'InvalidLink'
-  return link.googleResult ? 'GoogleReturn' : link.passwordChangeToken ? 'PasswordChangeLink' : link.accessEmailToken ? 'AccessEmailLink' : link.invitationToken ? 'Invitation' : link.confirmationToken ? 'EmailLink' : null
+  return link.googleResult ? 'GoogleReturn' : link.passwordRecoveryToken ? 'PasswordRecoveryLink' : link.passwordChangeToken ? 'PasswordChangeLink' : link.accessEmailToken ? 'AccessEmailLink' : link.invitationToken ? 'Invitation' : link.confirmationToken ? 'EmailLink' : null
 }
 
 export default function App() {
-  const [{ confirmationToken, invitationToken, accessEmailToken, passwordChangeToken, googleResult }, setLink] = useState(readLink)
-  const [stage, setStage] = useState(!navigator.onLine ? 'Offline' : window.location.protocol !== 'https:' ? 'Insecure' : linkStage({ confirmationToken, invitationToken, accessEmailToken, passwordChangeToken, googleResult }) || 'Loading')
+  const [{ confirmationToken, invitationToken, accessEmailToken, passwordChangeToken, passwordRecoveryToken, googleResult }, setLink] = useState(readLink)
+  const [stage, setStage] = useState(!navigator.onLine ? 'Offline' : window.location.protocol !== 'https:' ? 'Insecure' : linkStage({ confirmationToken, invitationToken, accessEmailToken, passwordChangeToken, passwordRecoveryToken, googleResult }) || 'Loading')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
@@ -70,7 +71,7 @@ export default function App() {
   }, [profile, stage, guestSelection, publicService])
 
   useEffect(() => {
-    if (confirmationToken || invitationToken || accessEmailToken || passwordChangeToken || googleResult) { window.history.replaceState(null, '', window.location.pathname); return }
+    if (confirmationToken || invitationToken || accessEmailToken || passwordChangeToken || passwordRecoveryToken || googleResult) { window.history.replaceState(null, '', window.location.pathname); return }
     if (!navigator.onLine) return
     if (window.location.protocol !== 'https:') return
     let current = true
@@ -91,13 +92,13 @@ export default function App() {
     }
     initialize()
     return () => { current = false }
-  }, [confirmationToken, invitationToken, accessEmailToken, passwordChangeToken, googleResult])
+  }, [confirmationToken, invitationToken, accessEmailToken, passwordChangeToken, passwordRecoveryToken, googleResult])
 
   useEffect(() => {
-    if (!googleResult || confirmationToken || invitationToken || accessEmailToken || passwordChangeToken) return
+    if (!googleResult || confirmationToken || invitationToken || accessEmailToken || passwordChangeToken || passwordRecoveryToken) return
     let current = true
     async function resumeGoogle() {
-      const messages = { Failed: 'Não foi possível concluir a entrada com Google. Tenta novamente.', NotLinked: 'Esta conta Google ainda não está associada. Entra com o teu email e palavra-passe e associa-a em Meu perfil → A minha conta.', PasswordRequired: 'Entra com o teu email e a nova palavra-passe antes de voltares a usar o Google.', Conflict: 'A conta Google já está associada. Não foi alterada nenhuma conta.' }
+      const messages = { Failed: 'Não foi possível concluir a entrada com Google. Tenta novamente ou entra com o teu email e a palavra-passe.', Conflict: 'A conta Google já está associada.' }
       if (!['Continue', 'Linked'].includes(googleResult)) {
         await Promise.resolve()
         if (current) { setProfile(null); setError(messages[googleResult] || messages.Failed); setStage('SignIn') }
@@ -110,7 +111,7 @@ export default function App() {
     }
     resumeGoogle()
     return () => { current = false }
-  }, [googleResult, confirmationToken, invitationToken, accessEmailToken, passwordChangeToken])
+  }, [googleResult, confirmationToken, invitationToken, accessEmailToken, passwordChangeToken, passwordRecoveryToken])
 
   useEffect(() => { if (error) errorRef.current?.focus() }, [error])
 
@@ -182,6 +183,13 @@ export default function App() {
     window.history.pushState(null, '', '#' + hash + (serviceId ? '?servico=' + encodeURIComponent(serviceId) : ''))
     window.scrollTo(0, 0)
   }
+  const client = profile?.role === 'Client'
+  const privacyAvailable = stage.startsWith('Public') || ['SignedIn', 'SignIn', 'ClientRegister'].includes(stage)
+  return <PrivacyProvider key={profile?.id || 'visitor'} client={client} visitor={!profile && privacyAvailable} available={privacyAvailable}>
+    {renderStage()}
+  </PrivacyProvider>
+
+  function renderStage() {
   if (stage === 'SignedIn' && profile) return <Workspace profile={profile} busy={busy} perform={perform} notify={notify} error={error} message={message} errorRef={errorRef}
     onPublicTestimonials={() => navigatePublic('PublicTestimonials')}
     onSignOut={() => perform(async () => { await request('sign-out', {}); setProfile(null); setRecoveryCodes([]); setStage('SignIn') })}
@@ -195,6 +203,39 @@ export default function App() {
     {stage === 'PublicTestimonials' && <PublicTestimonials onBack={() => navigatePublic('PublicHome')} />}
     {stage === 'PublicAgenda' && <VisitorAgenda key={publicService} initialServiceId={publicService} authenticated={!!profile} selection={guestSelection} onChoose={choosePublicBooking} onBack={() => setGuestSelection(null)} onSignIn={() => navigatePublic('SignIn')} />}
   </PublicPresentation>
+
+  const isRecovery = stage === 'PasswordRecoveryLink'
+  function submitNewPassword(event) {
+    event.preventDefault()
+    const form = event.currentTarget
+    const data = Object.fromEntries(new FormData(form))
+    perform(async () => {
+      validatePasswordFields(data)
+      const path = isRecovery ? 'password-change/recovery/confirm' : 'password-change/confirm'
+      const token = isRecovery ? passwordRecoveryToken : passwordChangeToken
+      const result = await request(path, { token, ...data })
+      form.reset()
+      setProfile(null)
+      setMessage(result.message)
+      setStage('SignIn')
+    })
+  }
+
+  function openPasswordRecovery() {
+    setError('')
+    setMessage('')
+    setStage('PasswordRecoveryRequest')
+  }
+
+  function submitPasswordRecovery(event) {
+    event.preventDefault()
+    const email = new FormData(event.currentTarget).get('email')
+    perform(async () => {
+      const result = await request('password-change/recovery', { email })
+      setMessage(result.message)
+      setStage('PasswordRecoveryRequested')
+    })
+  }
 
   return (
     <AppLayout><AuthPage busy={busy} onBack={stage === 'SignIn' ? () => navigatePublic('PublicHome') : undefined} introduction={<>
@@ -211,7 +252,23 @@ export default function App() {
           {stage === 'AccessEmailLink' && <><h2>Confirma o teu novo email</h2><p>Depois de confirmares, entra com este email e a tua palavra-passe habitual.</p><button disabled={busy} onClick={() => perform(async () => { const result = await request('confirm-access-email', { token: accessEmailToken }); setMessage(result.message); setStage('AccessEmailConfirmed') })}>Confirmar novo email</button></>}
           {stage === 'AccessEmailConfirmed' && <h2>O teu email foi atualizado</h2>}
           {stage === 'GoogleReturn' && <p role="status">A concluir a entrada…</p>}
-          {stage === 'PasswordChangeLink' && <><h2>Escolhe a nova palavra-passe</h2><p>Depois de guardares, entra novamente com o teu email e a nova palavra-passe.</p><form onSubmit={event => { event.preventDefault(); const form = event.currentTarget; const data = Object.fromEntries(new FormData(form)); perform(async () => { validatePasswordFields(data); const result = await request('password-change/confirm', { token: passwordChangeToken, ...data }); form.reset(); setProfile(null); setMessage(result.message); setStage('SignIn') }) }}><PasswordField label="Nova palavra-passe" name="password" autoComplete="new-password" required minLength="12" maxLength="128" /><PasswordField label="Confirmar nova palavra-passe" name="confirmPassword" autoComplete="new-password" required minLength="12" maxLength="128" /><p className="field-help">12 a 128 caracteres, com maiúscula, minúscula, algarismo e símbolo.</p><button disabled={busy}>Guardar nova palavra-passe</button></form></>}
+          {stage === 'PasswordRecoveryRequest' && <><h2>Recuperar acesso</h2>
+            <form onSubmit={submitPasswordRecovery}>
+              <label>Email<input name="email" type="email" autoComplete="email" required maxLength="256" /></label>
+              <button disabled={busy}>{busy ? 'A enviar o pedido…' : 'Pedir link de recuperação'}</button>
+            </form>
+          </>}
+          {stage === 'PasswordRecoveryRequested' && <h2>Pedido recebido</h2>}
+          {(stage === 'PasswordChangeLink' || isRecovery) && <><h2>Escolhe a nova palavra-passe</h2>
+            <p>Depois de guardares, entra novamente com o teu email e a nova palavra-passe.</p>
+            <form onSubmit={submitNewPassword}>
+              <PasswordField label="Nova palavra-passe" name="password" autoComplete="new-password" required minLength="12" maxLength="128" />
+              <PasswordField label="Confirmar nova palavra-passe" name="confirmPassword" autoComplete="new-password" required minLength="12" maxLength="128" />
+              <p className="field-help">12 a 128 caracteres, com maiúscula, minúscula, algarismo e símbolo.</p>
+              <button disabled={busy}>Guardar nova palavra-passe</button>
+            </form>
+            {isRecovery && <button className="text-button" disabled={busy} onClick={openPasswordRecovery}>Pedir outro link de recuperação</button>}
+          </>}
           {stage === 'Loading' && <p role="status">A verificar a instalação…</p>}
           {stage === 'Offline' && <><h2>Estrutura pública offline</h2><p>Retoma a ligação para entrar e consultar informação atualizada. Os formulários de uma janela fechada não são enviados depois de voltares a abrir a aplicação.</p><button disabled={!navigator.onLine} onClick={() => window.location.reload()}>Voltar a verificar a ligação</button></>}
           {stage === 'InvalidLink' && <><h2>Link inválido</h2><p>Abre apenas o link original do email de convite ou de confirmação. Não combines códigos de links diferentes.</p></>}
@@ -224,10 +281,18 @@ export default function App() {
               <PasswordField label="Código de instalação" name="installationCode" autoComplete="off" required maxLength="256" revealLabel="código de instalação" />
               <p className="field-help">Código privado entregue ao responsável. Não é a palavra-passe da conta.</p>
               <RegistrationFields />
+              <fieldset>
+                <legend>Responsável pelo tratamento de dados</legend>
+                <p className="field-help">O nome e o contacto serão apresentados na política quando o gestor técnico a publicar.</p>
+                <label>Nome ou designação<input name="privacyControllerName" required maxLength={200} /></label>
+                <label>Email de contacto para privacidade<input name="privacyContactEmail" type="email" required maxLength={256} /></label>
+              </fieldset>
               <button disabled={busy} type="submit">{busy ? 'A criar a conta…' : 'Criar conta e confirmar email'}</button>
             </form><button className="text-button" disabled={busy} onClick={() => { setError(''); setStage('SignIn') }}>Já comecei a configuração — entrar</button></>}
           {stage === 'SignIn' && <><h2>Bem-vindo de volta</h2>
-            <form onSubmit={submitSignIn}><label>Email<input name="email" type="email" autoComplete="username" required maxLength="256" /></label><PasswordField label="Palavra-passe" name="password" autoComplete="current-password" required maxLength="128" /><button disabled={busy}>{busy ? 'A verificar…' : 'Entrar'}</button></form><GoogleSignInButton busy={busy} perform={perform} /><button className="secondary" disabled={busy} onClick={() => { setError(''); setMessage(''); setStage('ClientRegister') }}>Criar uma conta</button></>}
+            <form onSubmit={submitSignIn}><label>Email<input name="email" type="email" autoComplete="username" required maxLength="256" /></label><PasswordField label="Palavra-passe" name="password" autoComplete="current-password" required maxLength="128" /><button disabled={busy}>{busy ? 'A verificar…' : 'Entrar'}</button></form>
+            <button className="text-button" disabled={busy} onClick={openPasswordRecovery}>Esqueci-me da palavra-passe</button>
+            <GoogleSignInButton busy={busy} perform={perform} /><button className="secondary" disabled={busy} onClick={() => { setError(''); setMessage(''); setStage('ClientRegister') }}>Criar uma conta</button></>}
           {stage === 'ClientRegister' && <><h2>Criar conta de cliente</h2><p>Preenche nome, apelido, email, telefone, nascimento, género e localidade. Depois de confirmares o email, vais definir a tua palavra-passe.</p><ClientProfileForm registration busy={busy} onSave={submitClientRegistration} /></>}
           {stage === 'ClientReview' && <><h2>Pedido em análise</h2><p>O registo não foi concluído. A gestão irá verificar o teu pedido.</p></>}
           {stage === 'ClientEmailSent' && <><h2>Confirma o teu email</h2><p>Abre a mensagem recebida, incluindo a pasta de spam. O botão do link permite confirmar o endereço e definir a palavra-passe. Ainda não foi iniciada uma sessão.</p><button className="secondary" disabled={busy} onClick={() => { setError(''); setMessage(''); setStage('ClientRegister') }}>Pedir novo email para continuar o registo</button></>}
@@ -244,6 +309,7 @@ export default function App() {
           {!['Loading', 'SignedIn', 'SignIn', 'Register', 'EmailLink', 'Invitation', 'InvalidLink', 'NotPrepared', 'Unavailable', 'Insecure'].includes(stage) && <button className="text-button" disabled={busy} onClick={() => { setRecoveryCodes([]); setError(''); setMessage(''); setStage('SignIn') }}>Voltar à entrada</button>}
     </AuthPage></AppLayout>
   )
+  }
 }
 
 function FactorForm({ setup = false, busy, onSubmit }) {

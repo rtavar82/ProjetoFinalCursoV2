@@ -37,7 +37,10 @@ public static class ManualBooking
         ConsultationRules.ValidateFinancialChoice(data, service, input.PersonId, input.Choice ?? service.PaymentMode);
         var conflicts = AgendaRules.ConfirmedConflicts(data, start, end, now).Select(c => new ManualBookingConflict(c.Id,
             data.Consultations.FirstOrDefault(row => row.Id == c.Id)?.Version ?? data.Events.Single(e => e.Id == c.Id).Version,
-            c.State == "Event" ? "Event" : "Consultation", c.StartsAt, c.EndsAt.AddMinutes(30))).OrderBy(c => c.StartsAt).ThenBy(c => c.Id).ToArray();
+            c.State == "Event" ? "Event" : "Consultation", c.StartsAt, c.EndsAt.AddMinutes(30)))
+            .Concat(data.GoogleCalendar.Busy.Where(b => AgendaRules.Overlaps(start, end.AddMinutes(30), b.StartsAt, b.EndsAt))
+                .Select(b => new ManualBookingConflict($"google:{b.StartsAt.UtcTicks}", 0, "GoogleCalendar", b.StartsAt, b.EndsAt)))
+            .OrderBy(c => c.StartsAt).ThenBy(c => c.Id).ToArray();
         return new(AgendaRules.Revision(data), service.Id, service.Version, input.DeliveryOptionId, service.Title, service.Modality,
             service.PublicLocation, service.DurationMinutes, service.ReferencePrice, service.PaymentMode, start, end,
             conflicts.Length == 0, conflicts);

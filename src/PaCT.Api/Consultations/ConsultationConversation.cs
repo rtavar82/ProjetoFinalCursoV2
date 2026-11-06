@@ -8,6 +8,8 @@ public sealed record ConversationPage(ConversationTarget Consultation, Consultat
 
 public static class ConsultationConversation
 {
+    internal const int MaxReplyReadIds = 1000;
+
     public static ConversationPage Page(ConsultationData data, string id, ConsultationActor actor, long? before)
     {
         var c = Authorized(data, id, actor);
@@ -29,6 +31,12 @@ public static class ConsultationConversation
         if (p.Attendance != "Performed") throw new IdentityProblem(409, "O acompanhamento fica disponível após o fecho individual da presença.");
         return new(p.Id, p.PersonId, p.ConversationVersion, p.ConversationBlocked, true);
     }
+    internal static string? VisibleVideo(ConsultationData data, string targetId, string messageId, ConsultationActor actor)
+    {
+        var target = Authorized(data, targetId, actor);
+        return data.Messages.SingleOrDefault(m => m.Id == messageId && m.TargetId == target.Id)?.VideoId;
+    }
+
     public static void MarkPresented(ConsultationData data, Consultation c, string[]? ids, ConsultationActor actor, DateTimeOffset now, int maximum = 20)
         => MarkPresented(data, new ConversationTarget(c.Id, c.PersonId, c.ConversationVersion, c.ConversationBlocked), ids, actor, now, maximum);
 
@@ -76,12 +84,21 @@ public static class ConsultationConversation
                 throw new IdentityProblem(400, "Seleciona até 20 fotografias diferentes.");
             if (input.MessageAudioType is not null && !actor.IsManager) throw new IdentityProblem(403, "O envio de áudio nesta conversa pertence à gestão.");
             if (input.MessageAudioType is not null && !PaCT.Api.Infrastructure.AudioAttachment.IsAudio(input.MessageAudioType)) throw new IdentityProblem(400, "O formato do áudio não é válido.");
+            if (input.MessageVideoId is not null && !actor.IsManager) throw new IdentityProblem(403, "O envio de vídeo nesta conversa pertence à gestão.");
+            if (input.MessageVideoId is not null && !Guid.TryParseExact(input.MessageVideoId, "D", out _))
+                throw new IdentityProblem(400, "O vídeo não é válido.");
             var text = input.MessageText ?? "";
-            if (string.IsNullOrWhiteSpace(text) && photoIds.Length == 0 && input.MessageAudioType is null || text.Length > 8000 || text.Any(ch => char.IsControl(ch) && ch is not ('\r' or '\n' or '\t')))
+            if (string.IsNullOrWhiteSpace(text) && photoIds.Length == 0 && input.MessageAudioType is null && input.MessageVideoId is null || text.Length > 8000 || text.Any(ch => char.IsControl(ch) && ch is not ('\r' or '\n' or '\t')))
                 throw new IdentityProblem(400, "Escreve uma mensagem até 8000 caracteres ou seleciona um anexo permitido.");
             var sequence = data.Messages.Where(m => m.TargetId == c.Id).Select(m => m.Sequence).DefaultIfEmpty().Max() + 1;
-            data.Messages.Add(new(input.OperationId, c.IsParticipation ? null : c.Id, actor.AccountId, actor.IsManager, sequence, now,
-                encrypt(input.OperationId, "message", text), photoIds.Length > 0 ? photoIds : null, c.IsParticipation ? c.Id : null, input.MessageAudioType));
+            var message = new ConsultationMessage(input.OperationId, c.IsParticipation ? null : c.Id, actor.AccountId, actor.IsManager, sequence, now,
+                encrypt(input.OperationId, "message", text), photoIds.Length > 0 ? photoIds : null, c.IsParticipation ? c.Id : null, input.MessageAudioType, input.MessageVideoId?.ToLowerInvariant());
+            if (input.MessageIds is { Length: > 0 })
+            {
+                if (!actor.IsManager) throw new IdentityProblem(403, "A leitura por resposta pertence à gestão.");
+                MarkPresented(data, c, input.MessageIds, actor, now, MaxReplyReadIds);
+            }
+            data.Messages.Add(message);
             if (c.IsParticipation)
             {
                 var participant = data.Participations.Single(p => p.Id == c.Id);

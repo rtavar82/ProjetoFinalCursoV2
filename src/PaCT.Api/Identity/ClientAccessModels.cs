@@ -1,7 +1,7 @@
 namespace PaCT.Api.Identity;
 
 public sealed record ClientAccessRequest(Guid OperationId, ulong Version, string Password, bool ConfirmIdentity, string? NewEmail = null);
-public sealed record ClientAccessAction(string Id, string AccountId, string PersonId, string CreatedByAccountId,
+public sealed record ClientAccessAction(string Id, string AccountId, string PersonId, string? CreatedByAccountId,
     string Kind, string Status, string SecurityStamp, byte[] PreviousEmailHash, byte[]? EmailHash,
     byte[] Details, DateTime CreatedAt, DateTime ExpiresAt, DateTime? CompletedAt = null);
 public sealed record ClientAccessDetails(string? NewEmail, string PreviousEmail, int PasskeysRemoved = 0);

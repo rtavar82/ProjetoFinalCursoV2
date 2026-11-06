@@ -35,7 +35,9 @@ public sealed class ConsultationsController(IConsultationStore store, IIdentityS
                 .Concat(data.GuestRequests.Where(g => GuestConsultations.Occupies(g, now) && g.EndsAt.AddMinutes(30) > now && g.StartsAt < horizon)
                     .Select(g => new { g.StartsAt, endsAt = g.EndsAt.AddMinutes(30) }))
                 .Concat(data.Events.Where(e => GroupEvents.Occupies(e) && e.Definition.EndsAt.AddMinutes(30) > now && e.Definition.StartsAt < horizon)
-                    .Select(e => new { e.Definition.StartsAt, endsAt = e.Definition.EndsAt.AddMinutes(30) })).ToArray(),
+                    .Select(e => new { e.Definition.StartsAt, endsAt = e.Definition.EndsAt.AddMinutes(30) }))
+                .Concat(data.GoogleCalendar.Busy.Where(b => b.EndsAt > now && b.StartsAt < horizon)
+                    .Select(b => new { b.StartsAt, endsAt = b.EndsAt })).ToArray(),
             serverTime = now, horizonEndExclusive = horizon
         }, ct));
     }
@@ -55,6 +57,7 @@ public sealed class ConsultationsController(IConsultationStore store, IIdentityS
                     serviceId = e.Service.Id, title = e.Service.Title, kind = e.Service.ServiceKind, modality = e.Service.Modality,
                     e.Definition.StartsAt, e.Definition.EndsAt, e.Definition.PublicLocation,
                     remaining = Math.Max(0, e.Definition.Capacity - GroupEvents.Seats(data, e.Id)),
+                    scheduleBlocked = AgendaRules.GoogleConflict(data, e.Definition.StartsAt, e.Definition.EndsAt),
                     eligible = account?.Role == Roles.Client && GroupEvents.Eligible(e, account.PersonId) }).ToArray(),
             intervals = AgendaRules.PublicSegments(data, range.Start, range.End, now, registered),
             bookingIntervals = AgendaRules.PublicSegments(data, range.Start, range.End.AddHours(13), now, registered),
@@ -99,7 +102,7 @@ public sealed class ConsultationsController(IConsultationStore store, IIdentityS
         }, false, ct);
         if (!eligible) throw new IdentityProblem(409, "A ficha não está disponível para uma marcação. Revê a identidade em Clientes.");
         var now = time.GetUtcNow();
-        return Ok(await store.ReadAsync(data => ManualBooking.Preview(data, input, now), ct));
+        return Ok(await store.ReadSchedulingAsync(data => ManualBooking.Preview(data, input, now), ct));
     }
     [HttpGet("management"), Authorize(Roles = Roles.Managers)]
     public async Task<IActionResult> Management(string section = "Upcoming", int page = 1,
@@ -166,7 +169,7 @@ public sealed class ConsultationsController(IConsultationStore store, IIdentityS
                 .Where(c => state is null || ProcessLifecycle.Substate(c, now) == state)
                 .Where(c => financial is null || (financial == "OldDebt" ? ConsultationRules.HasOldDebt(c) : ConsultationRules.FinancialState(c) == financial))
                 .Where(c => (from is null || c.StartsAt >= from) && (to is null || c.StartsAt < to))
-                .Where(c => hasNotes is null || hasNotes == (c.SharedNoteCiphertext is not null || actor.IsManager && c.PrivateNoteCiphertext is not null));
+                .Where(c => hasNotes is null || hasNotes == (c.SharedNoteCiphertext is not null || c.SharedClosureMedia is { Length: > 0 } || actor.IsManager && (c.PrivateNoteCiphertext is not null || c.PrivateClosureMedia is { Length: > 0 })));
             bool WasSeen(Consultation c) => c.ArchivedAt is not null && (c.ArchivedContentVersion ?? 1) == c.PublicContentVersion;
             var counts = rows.ToArray();
             rows = counts.Where(c => seen is null || WasSeen(c) == seen);
@@ -235,7 +238,7 @@ public sealed class ConsultationsController(IConsultationStore store, IIdentityS
                 unread = page.Unread, hasOlder = page.HasOlder, latestSequence = page.LatestSequence,
                 items = page.Messages.Select(m => new { m.Id, m.Sequence, m.CreatedAt, own = m.AuthorIsManager == actor.IsManager,
                     author = m.AuthorIsManager == actor.IsManager ? "Tu" : m.AuthorIsManager ? "Terapeuta" : "Cliente",
-                    text = Decrypt(m.Id, "message", m.TextCiphertext), photoIds = m.PhotoIds ?? [], audioType = m.AudioType, unread = m.AuthorIsManager != actor.IsManager && !page.ReadIds.Contains(m.Id) }).ToArray()
+                    text = Decrypt(m.Id, "message", m.TextCiphertext), photoIds = m.PhotoIds ?? [], audioType = m.AudioType, videoId = m.VideoId, unread = m.AuthorIsManager != actor.IsManager && !page.ReadIds.Contains(m.Id) }).ToArray()
             });
     }
     [HttpGet("finance")]
@@ -342,13 +345,43 @@ public sealed class ConsultationsController(IConsultationStore store, IIdentityS
                     return (object)new { n.Id, n.EventId, n.ParticipationId, n.Kind, n.DueAt, personId = participant?.PersonId,
                         serviceTitle = occurrence?.Service.Title, startsAt = occurrence?.Definition.StartsAt,
                         publicLocation = occurrence?.Definition.PublicLocation, modality = occurrence?.Service.Modality }; });
-            return consultationNotices.Concat(balanceNotices).Concat(guestNotices).Concat(packNotices).Concat(eventNotices).ToArray();
+            var calendarNotices = actor.IsManager ? CalendarNotices(data, time.GetUtcNow()) : [];
+            return consultationNotices.Concat(balanceNotices).Concat(guestNotices).Concat(packNotices).Concat(eventNotices).Concat(calendarNotices).ToArray();
         }, ct));
     }
+    internal static IEnumerable<object> CalendarNotices(ConsultationData data, DateTimeOffset now)
+    {
+        var calendar = data.GoogleCalendar;
+        if (!calendar.Connected) yield break;
+        if (calendar.Unavailable)
+            yield return new { id = "google-calendar-unavailable", kind = "GoogleCalendarUnavailable" };
+        foreach (var item in data.Consultations.Where(c => c.EndsAt > now && c.State is "Requested" or "Confirmed" or "AwaitingClosure"
+            && ConsultationRules.Occupies(c, now) && AgendaRules.GoogleConflict(data, c.StartsAt, c.EndsAt)))
+            yield return new { id = "google-calendar:" + item.Id, kind = "GoogleCalendarConflict", consultationId = item.Id,
+                item.PersonId, serviceTitle = item.Service.Title, item.StartsAt, item.Service.PublicLocation, item.Service.Modality };
+        foreach (var guest in data.GuestRequests.Where(g => GuestConsultations.Occupies(g, now) && AgendaRules.GoogleConflict(data, g.StartsAt, g.EndsAt)))
+            yield return new { id = "google-calendar:" + guest.Id, kind = "GoogleCalendarConflict", guestRequestId = guest.Id,
+                guest.PersonId, serviceTitle = guest.Service.Title, guest.StartsAt, guest.Service.PublicLocation, guest.Service.Modality };
+        foreach (var item in data.Events.Where(e => e.Definition.Published && e.Definition.EndsAt > now && e.State is "Waiting" or "AwaitingClosure"
+            && AgendaRules.GoogleConflict(data, e.Definition.StartsAt, e.Definition.EndsAt)))
+            yield return new { id = "google-calendar:" + item.Id, kind = "GoogleCalendarConflict", eventId = item.Id,
+                serviceTitle = item.Service.Title, item.Definition.StartsAt, item.Definition.PublicLocation, item.Service.Modality };
+    }
+
     [HttpPost("commands"), EnableRateLimiting("write")]
-    public async Task<IActionResult> Command(ConsultationCommand input, [FromServices] ConsultationPhotoStore photos, CancellationToken ct)
+    public async Task<IActionResult> Command(ConsultationCommand input, [FromServices] ConsultationPhotoStore photos, [FromServices] ClosureMediaStore closureMedia, CancellationToken ct)
     {
         var actor = await Actor(ct);
+        if (input.SharedClosureMedia is { Length: > 0 } || input.PrivateClosureMedia is { Length: > 0 })
+        {
+            if (!actor.IsManager) return Forbid();
+            await closureMedia.ValidateUploadAsync(input, actor.AccountId, ct);
+        }
+        if (input.MessageVideoId is not null)
+        {
+            if (!actor.IsManager) return Forbid();
+            await closureMedia.ValidateMessageVideoAsync(input, actor.AccountId, ct);
+        }
         if (input.MessageAudioType is not null) return BadRequest(new ProblemDetails { Title = "Usa o envio de áudio do acompanhamento." });
         if (input.Action is "Close" or "CloseParticipation" && input.PhotoIds.Length > 0)
         {
@@ -395,6 +428,8 @@ public sealed class ConsultationsController(IConsultationStore store, IIdentityS
         sharedNote = c.State == "Performed" && c.SharedNoteCiphertext is not null ? Decrypt(c.Id, "shared", c.SharedNoteCiphertext) : null,
         privateNote = actor.IsManager && c.PrivateNoteCiphertext is not null ? Decrypt(c.Id, "private", c.PrivateNoteCiphertext) : null,
         photoIds = c.State == "Performed" ? c.PhotoIds : [],
+        sharedClosureMedia = c.State == "Performed" ? c.SharedClosureMedia ?? [] : [],
+        privateClosureMedia = actor.IsManager ? c.PrivateClosureMedia : null,
         unreadMessages = c.State == "Performed" ? data.Messages.Count(m => m.ConsultationId == c.Id && ConsultationConversation.Unread(data, m, actor)) : 0,
         serverTime = now
     };

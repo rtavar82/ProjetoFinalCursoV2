@@ -4,12 +4,14 @@ import AdaptiveSelect from './AdaptiveSelect'
 import CardGrid from './CardGrid'
 import ConsultationDialog from './ConsultationDialog'
 import ConsultationCataloguePanel from './ConsultationCataloguePanel'
+import GoogleCalendarPanel from './GoogleCalendarPanel'
 import Heading from './Heading'
 import InformationCard from './InformationCard'
 import ManagerSchedulingDialog from './ManagerSchedulingDialog'
 import Pagination from './Pagination'
 import SearchInput from './SearchInput'
 import SitePresentationPanel from './SitePresentationPanel'
+import PrivacyManagementPanel from './PrivacyManagementPanel'
 import SummaryCard from './SummaryCard'
 import useLiveResource from './useLiveResource'
 import useRecoveryState from './useRecoveryState'
@@ -25,14 +27,18 @@ const areas = {
 const actions = { Created: 'Criação', Updated: 'Alteração', Reactivated: 'Reativação', Deactivated: 'Desativação', Deleted: 'Eliminação' }
 const decisions = { Activate: 'Reativar', Deactivate: 'Desativar', Delete: 'Eliminar' }
 
-export default function ManagementPage({ guard, busy }) {
-  const [kind, setKind] = useState('Supplier')
+export default function ManagementPage({ role, guard, busy }) {
+  const [kind, setKind] = useState(() => window.location.hash.split('?')[0] === '#calendario-google' ? 'GoogleCalendar' : 'Supplier')
   const presentation = { Home: 'Página inicial', Therapist: 'Apresentação da terapeuta', Places: 'Locais e moradas',
     Contacts: 'Contactos e redes sociais', Payment: 'Formas de pagamento' }
-  const tabs = [...Object.entries(areas).map(([key, area]) => [key, area.title]), ...Object.entries(presentation), ['Catalogue', 'Catálogo de consultas']]
+  const technical = role === 'TechnicalManager'
+  const tabs = [...Object.entries(areas).map(([key, area]) => [key, area.title]), ...Object.entries(presentation), ['Catalogue', 'Catálogo de consultas'], ['GoogleCalendar', 'Google Calendar'],
+    ...(technical ? [['Privacy', 'Documentos RGPD']] : [])]
   return <section aria-labelledby="application-management-title"><Heading level={1} id="application-management-title">Gestão da aplicação</Heading>
     <nav className="consultation-tabs" aria-label="Áreas de gestão">{tabs.map(([key, title]) => <ActionButton key={key} variant={kind === key ? 'primary' : 'secondary'} aria-pressed={kind === key} disabled={busy} onClick={() => guard(() => setKind(key))}>{title}</ActionButton>)}</nav>
     {kind === 'Catalogue' ? <ConsultationCataloguePanel guard={guard} busy={busy} />
+      : kind === 'GoogleCalendar' ? <GoogleCalendarPanel guard={guard} busy={busy} />
+      : kind === 'Privacy' && technical ? <PrivacyManagementPanel guard={guard} disabled={busy} />
       : presentation[kind] ? <SitePresentationPanel key={kind} section={kind} title={presentation[kind]} guard={guard} busy={busy} />
         : <DirectoryPanel key={kind} kind={kind} guard={guard} busy={busy} />}
   </section>

@@ -83,9 +83,10 @@ public sealed class ConsultationPhotoStore
         }
     }
 
-    public static void ValidateImage(byte[] bytes, string type)
+    public static void ValidateImage(byte[] bytes, string type, int maximumMegabytes = 4)
     {
-        if (bytes.Length is 0 or > 4194304) throw new IdentityProblem(400, "Cada fotografia pode ter até 4 MB.");
+        if (bytes.Length == 0 || bytes.Length > maximumMegabytes * 1024 * 1024)
+            throw new IdentityProblem(400, $"Cada fotografia pode ter até {maximumMegabytes} MB.");
         int width = 0, height = 0;
         if (type == "image/png" && bytes.Length >= 45 && bytes.AsSpan(0, 8).SequenceEqual(new byte[] { 137, 80, 78, 71, 13, 10, 26, 10 })
             && bytes.AsSpan(12, 4).SequenceEqual("IHDR"u8) && bytes.AsSpan(bytes.Length - 8, 4).SequenceEqual("IEND"u8))

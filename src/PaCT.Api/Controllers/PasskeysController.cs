@@ -73,7 +73,11 @@ public sealed class PasskeysController(IIdentityStore store, IPasskeyStore crede
     {
         var account = await identity.PendingAccountAsync(cookies.ReadPending(HttpContext), ct); if (account is null) return Expired();
         try { await passkeys.Assert(account, Binding(), input, ct); }
-        catch (IdentityProblem error) when (error.Status == 400) { await identity.RecordFailedPasskeyAsync(account, ct); throw; }
+        catch (IdentityProblem error) when (error.Status == 400)
+        {
+            await identity.RecordFailedPasskeyAsync(account, ct);
+            throw new IdentityProblem(400, "Não foi possível confirmar a verificação. Tenta novamente.");
+        }
         var updated = await store.FindAsync(account.Id, ct); if (updated?.Id != account.Id) return Expired();
         var method = cookies.ReadPending(HttpContext)?.Method ?? "Password";
         if (updated.PasswordSignInRequired && method == "Password")

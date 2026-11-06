@@ -3,6 +3,12 @@ const VERSION = '__BUILD_ID__'
 const PRECACHE = ['__PRECACHE__']
 const CACHE_PREFIX = 'pact-public-'
 const CACHE_NAME = CACHE_PREFIX + VERSION
+const pushDestinations = new Map([
+  ['/#agenda', 'PACT_OPEN_AGENDA'],
+  ['/#tarefas', 'PACT_OPEN_TASKS'],
+  ['/?view=payments', 'PACT_OPEN_PAYMENTS'],
+])
+const pushDestination = url => pushDestinations.has(url) ? url : '/?view=payments'
 
 self.addEventListener('push', event => {
   event.waitUntil((async () => {
@@ -11,7 +17,7 @@ self.addEventListener('push', event => {
     await self.registration.showNotification('PaCT', {
       body: value?.body || 'Existe uma atualização na aplicação.',
       tag: typeof value?.tag === 'string' ? value.tag : 'pact-update',
-      data: { url: value?.url === '/#agenda' ? '/#agenda' : '/?view=payments' }, icon: '/app-icon-192.png',
+      data: { url: pushDestination(value?.url) }, icon: '/app-icon-192.png',
     })
   })())
 })
@@ -19,10 +25,10 @@ self.addEventListener('notificationclick', event => {
   event.notification.close()
   event.waitUntil((async () => {
     const clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
-    const url = event.notification.data?.url === '/#agenda' ? '/#agenda' : '/?view=payments'
+    const url = pushDestination(event.notification.data?.url)
     if (clients.length) {
       try { await clients[0].focus() } catch { /* The tab can still receive its destination when the browser refuses focus. */ }
-      clients[0].postMessage({ type: url === '/#agenda' ? 'PACT_OPEN_AGENDA' : 'PACT_OPEN_PAYMENTS' })
+      clients[0].postMessage({ type: pushDestinations.get(url) })
     } else await self.clients.openWindow(url)
   })())
 })

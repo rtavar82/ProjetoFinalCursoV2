@@ -1,0 +1,4 @@
+.fields { display: grid; gap: .75rem; min-inline-size: 0; }
+.files { overflow-wrap: anywhere; }
+.media { display: grid; gap: .75rem; }
+.media img, .media video { display: block; max-inline-size: 100%; max-block-size: 28rem; object-fit: contain; }

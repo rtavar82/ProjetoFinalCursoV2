@@ -9,7 +9,7 @@ import { bookingVariants, canBookForClient } from './clientBookingOptions'
 import { agendaDate, dayKey, instant, localDate, servicePrice } from './agendaTime'
 import styles from './ManagerScheduling.module.css'
 
-const conflictNames = { Consultation: 'Outra consulta ou recuperação', Guest: 'Pedido de visitante ou recuperação', Event: 'Grupo, retiro ou recuperação', Protected: 'Bloqueio protegido', Block: 'Bloqueio pessoal ou de férias' }
+const conflictNames = { Consultation: 'Outra consulta ou recuperação', Guest: 'Pedido de visitante ou recuperação', Event: 'Grupo, retiro ou recuperação', Protected: 'Bloqueio protegido', Block: 'Bloqueio pessoal ou de férias', GoogleCalendar: 'Ocupado no Google Calendar' }
 export default function ManualBookingForm({ setup, disabled, publish, onBack, onSaved, onWorking, onReviewStart, feedback, seed }) {
   const variants = bookingVariants(setup.services), initial = variants.find(v => v.id === seed?.serviceId && (!seed.deliveryOptionId || v.optionId === seed.deliveryOptionId)) || variants[0]
   const [person, setPerson] = useState(null), [serviceId, setServiceId] = useState(seed?.serviceId || initial?.id || ''), [mode, setMode] = useState(initial?.modality || '')

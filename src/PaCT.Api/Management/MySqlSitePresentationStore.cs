@@ -8,10 +8,10 @@ namespace PaCT.Api.Management;
 
 public sealed record SiteEditSession(string Editor, bool Release = false, bool Renew = false);
 public sealed record SitePublishInput(string Editor, long Version, Dictionary<string, string>? Values, SitePlace[]? Places = null);
-public sealed record SiteEditorView(long Version, SiteField[] Fields, SitePlace[]? Places = null);
+public sealed record SiteEditorView(long Version, SiteField[] Fields, SitePlace[]? Places = null, SiteImageField[]? Images = null);
 public sealed record SitePublicationResult(long Version);
 
-public sealed class MySqlSitePresentationStore(DatabaseConnectionSettings settings, IdentitySecurity security, TimeProvider time)
+public sealed class MySqlSitePresentationStore(DatabaseConnectionSettings settings, IdentitySecurity security, TimeProvider time, SitePresentationImages images)
 {
     private sealed record EditLease(string? Author, string? Editor, DateTime? ExpiresAt);
     private const string Scope = "site-presentation";
@@ -49,8 +49,10 @@ public sealed class MySqlSitePresentationStore(DatabaseConnectionSettings settin
         try { if (await query.ExecuteScalarAsync(ct) is null) throw Unprepared(); }
         catch (MySqlException error) when (error.Number == 1146) { throw Unprepared(); }
         var published = await ReadPublished(connection, null, security, ct);
+        SiteImageField[]? imageFields = null;
+        if (section == "Therapist") SitePresentation.PublicTherapist(published, out imageFields);
         return new(published.Version, fields.Select(field => field with { Value = published.Text(field.Key, field.Value) }).ToArray(),
-            section == "Places" ? SiteLocations.Published(published) : null);
+            section == "Places" ? SiteLocations.Published(published) : null, imageFields);
     }
 
     public Task<bool> EditAsync(SiteEditSession input, string author, CancellationToken ct) =>
@@ -75,13 +77,18 @@ public sealed class MySqlSitePresentationStore(DatabaseConnectionSettings settin
     public Task<SitePublicationResult> PublishAsync(string section, SitePublishInput input, string author, string operation, CancellationToken ct) =>
         Write((connection, tx) => PublishInTransaction(connection, tx, section, input, author, operation, ct), ct);
 
+    internal Task<SitePublicationResult> PublishTherapistAsync(SitePublishInput input, SiteImageUpload[] uploads,
+        string author, string operation, CancellationToken ct) =>
+        Write((connection, tx) => PublishInTransaction(connection, tx, "Therapist", input, author, operation, ct, uploads), ct);
+
     internal async Task<SitePublicationResult> PublishInTransaction(MySqlConnection connection, MySqlTransaction tx, string section, SitePublishInput input,
-        string author, string operation, CancellationToken ct)
+        string author, string operation, CancellationToken ct, SiteImageUpload[]? uploads = null)
     {
         var lease = await ReadLease(connection, tx, ct);
         var now = time.GetUtcNow().UtcDateTime;
+        object command = uploads is null ? input : new { input, images = uploads.Select(upload => new { upload.Key, upload.Reference }).ToArray() };
         return await ClientCommands.Execute(MySqlClientStore.InTransaction(connection, tx, ct), security, operation, author,
-                "SitePresentation:" + section, input, now, async () =>
+                "SitePresentation:" + section, command, now, async () =>
             {
                 if (lease.Author != author || lease.Editor != input.Editor || lease.ExpiresAt is null || lease.ExpiresAt <= now)
                     throw EditingConflict();
@@ -96,6 +103,7 @@ public sealed class MySqlSitePresentationStore(DatabaseConnectionSettings settin
                     else changes[field.Key] = values[field.Key];
                 }
                 if (section == "Places") SiteLocations.Apply(published, input.Places, changes);
+                if (uploads is not null) await images.SaveAsync(uploads, changes, ct);
                 var version = published.Version + 1;
                 var bytes = security.Encrypt(Scope, "publication-" + version, JsonSerializer.Serialize(changes));
                 await using var write = MySqlManagementStore.Query(connection, tx,

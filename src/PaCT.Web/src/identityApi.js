@@ -43,7 +43,9 @@ export function sendConversationAudio(id, command, audio) {
   form.set('conversationVersion', String(command.conversationVersion))
   form.set('messageText', command.messageText)
   command.photoIds.forEach(photoId => form.append('photoIds', photoId))
+  command.messageIds?.forEach(messageId => form.append('messageIds', messageId))
   form.set('audio', audio)
+  if (command.messageVideoId) form.set('messageVideoId', command.messageVideoId)
   return submittedWrite(async sent => {
     const csrf = await apiRequest('identity/csrf')
     sent()
@@ -64,11 +66,41 @@ export function sendConversationAudio(id, command, audio) {
   }, true)
 }
 
+export function uploadConversationVideo(consultationId, item, version) {
+  return uploadPrivateAttachment(`consultations/${consultationId}/messages/video/${item.id}`, item, 'conversationVersion', version)
+}
+
+export function uploadClosureAttachment(consultationId, scope, item, version) {
+  return uploadPrivateAttachment(`consultations/${consultationId}/closure-media/${scope}/${item.id}`, item, 'version', version)
+}
+
+function uploadPrivateAttachment(path, item, versionField, version) {
+  const form = new FormData()
+  form.set(versionField, String(version))
+  form.set(item.kind === 'image' ? 'images' : item.kind, item.file)
+  return submittedWrite(async sent => {
+    const csrf = await apiRequest('identity/csrf')
+    sent()
+    const response = await fetch('/api/' + path, {
+      method: 'POST', credentials: 'same-origin', cache: 'no-store', headers: { 'X-PaCT-CSRF': csrf.token },
+      body: form, signal: AbortSignal.timeout(120000),
+    })
+    const result = await response.json().catch(() => ({}))
+    if (response.status === 401) window.dispatchEvent(new Event(SESSION_EXPIRED))
+    if (response.status === 429) throw rateLimitFailure(response, result.title)
+    if (!response.ok || result.id !== item.id || result.confirmed !== true) {
+      const error = new Error(result.title || 'Não foi possível preparar o anexo. O envio não foi confirmado.')
+      if (!response.ok) error.status = response.status
+      throw error
+    }
+  }, true)
+}
+
 export async function apiRequest(path, body, { signal, publicOnly = false, responseType = 'json' } = {}) {
   if (publicOnly && body !== undefined) throw new Error('A visualização de visitante permite apenas consultar.')
   if (body !== undefined) {
     if (path === 'identity/sign-out') cancelSubmittedWrites()
-    const submitted = JSON.stringify(body)
+    const submitted = body instanceof FormData ? body : JSON.stringify(body)
     const operationKey = clientOperation(path) ? crypto.randomUUID() : undefined
     let serverSupportsRecovery = !operationKey
     const result = await submittedWrite(sent => sendWrite(path, submitted, sent, operationKey, supported => { serverSupportsRecovery = supported }),
@@ -104,6 +136,7 @@ export async function apiRequest(path, body, { signal, publicOnly = false, respo
 }
 
 async function sendWrite(path, submitted, sent, operationKey, recoverySupport) {
+  const multipart = submitted instanceof FormData
   const options = { credentials: 'same-origin', cache: 'no-store', signal: AbortSignal.timeout(15000) }
   const csrf = await fetch('/api/identity/csrf', options)
   if (csrf.status === 429) throw rateLimitFailure(csrf)
@@ -112,7 +145,11 @@ async function sendWrite(path, submitted, sent, operationKey, recoverySupport) {
   const token = proof.token
   if (operationKey) recoverySupport(proof.clientWriteRecovery === true)
   sent()
-  const response = await fetch('/api/' + path, { ...options, method: 'POST', headers: { 'Content-Type': 'application/json', 'X-PaCT-CSRF': token, ...(operationKey ? { 'Idempotency-Key': operationKey } : {}) }, body: submitted })
+  const response = await fetch('/api/' + path, {
+    ...options, ...(multipart && { signal: AbortSignal.timeout(120000) }), method: 'POST',
+    headers: { ...(!multipart && { 'Content-Type': 'application/json' }), 'X-PaCT-CSRF': token, ...(operationKey ? { 'Idempotency-Key': operationKey } : {}) },
+    body: submitted,
+  })
   const result = await response.json().catch(() => ({}))
   if (response.status === 401) window.dispatchEvent(new Event(SESSION_EXPIRED))
   if (response.status === 429) throw rateLimitFailure(response, result.title)

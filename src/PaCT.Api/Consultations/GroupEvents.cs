@@ -72,6 +72,7 @@ public static class GroupEvents
         input = GuestConsultations.Normalize(input);
         var item = data.Events.SingleOrDefault(e => e.Id == eventId && e.Definition.Published && e.State == "Waiting") ?? throw new IdentityProblem(404, "Evento não encontrado.");
         Require(EventLifecycle.RegistrationOpen(item, now) && item.Service.Id == input.ServiceId && item.Definition.StartsAt == input.StartsAt, "O evento mudou ou já começou.", 409);
+        AgendaRules.ValidateGoogleAvailability(data, item.Definition.StartsAt, item.Definition.EndsAt);
         var waiting = Seats(data, item.Id) >= item.Definition.Capacity;
         var requestAcceptance = !IsFree(item.Service);
         if (requestAcceptance) GroupPaymentConditions.ValidateAcceptance(item, input.ConditionsAccepted, input.TermsVersion);
@@ -112,6 +113,7 @@ public static class GroupEvents
                     || existing.Service.ReferencePrice == price, "O preço não pode mudar depois de existirem inscrições confirmadas.", 409);
                 service = service with { ReferencePrice = price, PublicLocation = definition.PublicLocation };
             }
+            AgendaRules.ValidateGoogleAvailability(data, definition.StartsAt, definition.EndsAt, manager: true);
             Require(AgendaRules.ConfirmedConflicts(data, definition.StartsAt, definition.EndsAt, now, existing?.Id).Length == 0,
                 "Existe uma marcação ou evento com inscrições confirmadas. Resolve essa marcação antes de criar este evento.", 409);
             Require(existing is null || Seats(data, existing.Id) <= definition.Capacity || definition.Capacity >= existing.Definition.Capacity, "A lotação não pode ficar abaixo das vagas ocupadas ou provisórias.", 409);
@@ -183,6 +185,7 @@ public static class GroupEvents
             var item = ProcessLifecycle.At(data.Events.SingleOrDefault(e => e.Id == input.Id) ?? throw new IdentityProblem(404, "Evento não encontrado."), now);
             Require(item.Version == input.Version && (item.State == "Waiting" && item.Definition.StartsAt > now || actor.IsManager && item.State == "Performed"), "O evento mudou ou já não permite inscrições.", 409);
             Require(actor.IsManager || EventLifecycle.RegistrationOpen(item, now), "O evento não está publicado.", 409);
+            if (item.State == "Waiting") AgendaRules.ValidateGoogleAvailability(data, item.Definition.StartsAt, item.Definition.EndsAt, actor.IsManager);
             var person = actor.IsManager ? input.PersonId : actor.PersonId;
             Require(Guid.TryParse(person, out _) || actor.IsManager && input.Choice == "Anonymous", "Seleciona a ficha do participante.");
             Require(item.Service.ServiceKind != "Retreat" || person is not null, "A inscrição num retiro exige uma ficha, mesmo sem conta.");
@@ -220,6 +223,7 @@ public static class GroupEvents
         if (input.Action == "LinkEventGuest")
         {
             Manager(actor); Require(current.State == "Requested" && ev.State == "Waiting" && now < ev.Definition.StartsAt, "Este pedido já foi tratado ou expirou.", 409);
+            AgendaRules.ValidateGoogleAvailability(data, ev.Definition.StartsAt, ev.Definition.EndsAt, manager: true);
             Require(Guid.TryParse(input.PersonId, out _) && input.ConditionsAccepted, "Seleciona a ficha e confirma que verificaste a identidade.");
             Require(!data.Participations.Any(p => p.EventId == ev.Id && p.PersonId == input.PersonId && p.State is "Confirmed" or "Waiting"), "Esta pessoa já tem uma inscrição ativa.", 409);
             Require(Seats(data, ev.Id) <= ev.Definition.Capacity, "Revê a lotação antes de confirmar.", 409);
@@ -261,6 +265,7 @@ public static class GroupEvents
             Require(ev.State != "Cancelled" && current.Attendance is null && (actual
                 ? now >= ev.Definition.StartsAt && current.State == "Expired"
                 : ev.State == "Waiting" && now < ev.Definition.StartsAt && current.State == "Waiting"), "Este pedido já não permite esta confirmação.", 409);
+            if (!actual) AgendaRules.ValidateGoogleAvailability(data, ev.Definition.StartsAt, ev.Definition.EndsAt, manager: true);
             if (!actual) Require(data.Participations.Where(p => p.EventId == ev.Id && p.State == "Waiting").OrderBy(p => p.CreatedAt).ThenBy(p => p.Id, StringComparer.Ordinal).First().Id == current.Id,
                 "Confirma primeiro o pedido mais antigo da fila de desistências.", 409);
             Require(Seats(data, ev.Id) < ev.Definition.Capacity || input.ConfirmOvercapacity, "A lotação foi atingida. Confirma expressamente a inscrição acima do limite.", 409);

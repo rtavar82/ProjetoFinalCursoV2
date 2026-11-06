@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.RateLimiting;
 using MySql.Data.MySqlClient;
 using PaCT.Api.Configuration;
 using PaCT.Api.Identity;
+using PaCT.Api.Management;
 using System.Net;
 using System.Security.Claims;
 using System.Security.Cryptography;
@@ -53,7 +54,7 @@ public interface IBrowserPushStore
     Task RemoveEndpoint(string account, string endpoint, CancellationToken ct);
     Task<List<(string Id, BrowserPush Subscription)>> ForPerson(string? person, CancellationToken ct);
 }
-public sealed class BrowserPushStore(DatabaseConnectionSettings settings, IdentitySecurity security) : IBrowserPushStore
+public sealed class BrowserPushStore(DatabaseConnectionSettings settings, IdentitySecurity security, IHostEnvironment environment) : IBrowserPushStore
 {
     internal static bool Valid(BrowserPush value)
     {
@@ -74,10 +75,25 @@ public sealed class BrowserPushStore(DatabaseConnectionSettings settings, Identi
         if (!Valid(value)) throw new IdentityProblem(400, "A inscrição de notificações deste navegador é inválida.");
         var id = Key(value.Endpoint);
         await using var connection = settings.CreateConnection(); await connection.OpenAsync(ct);
-        await using var command = new MySqlCommand("INSERT INTO push_subscriptions(id,account_id,payload,updated_at) VALUES(@id,@account,@payload,UTC_TIMESTAMP(6)) ON DUPLICATE KEY UPDATE account_id=@account,payload=@payload,updated_at=UTC_TIMESTAMP(6)", connection);
+        await using var tx = await connection.BeginTransactionAsync(ct);
+        try
+        {
+            await using (var gate = new MySqlCommand("SELECT version FROM privacy_documents WHERE version=0 FOR UPDATE", connection, tx))
+                await gate.ExecuteScalarAsync(ct);
+            await using var permission = new MySqlCommand($"""
+                SELECT EXISTS(SELECT 1 FROM accounts a WHERE a.id=@account AND (a.role<>'Client' OR {PrivacyStore.PushPermitted}))
+                """, connection, tx);
+            permission.Parameters.AddWithValue("@account", account);
+            permission.Parameters.AddWithValue("@includeTests", environment.IsDevelopment());
+            if (!Convert.ToBoolean(await permission.ExecuteScalarAsync(ct)))
+                throw new IdentityProblem(403, "Autoriza primeiro as notificações no teu perfil.");
+        }
+        catch (MySqlException error) when (error.Number == 1146) { /* The privacy schema is installed separately. */ }
+        await using var command = new MySqlCommand("INSERT INTO push_subscriptions(id,account_id,payload,updated_at) VALUES(@id,@account,@payload,UTC_TIMESTAMP(6)) ON DUPLICATE KEY UPDATE account_id=@account,payload=@payload,updated_at=UTC_TIMESTAMP(6)", connection, tx);
         command.Parameters.AddWithValue("@id", id); command.Parameters.AddWithValue("@account", account);
         command.Parameters.AddWithValue("@payload", security.Encrypt(id, "browser-push", JsonSerializer.Serialize(value)));
         await command.ExecuteNonQueryAsync(ct);
+        await tx.CommitAsync(ct);
     }
     public async Task Remove(string id, string? account, CancellationToken ct)
     {
@@ -91,16 +107,31 @@ public sealed class BrowserPushStore(DatabaseConnectionSettings settings, Identi
     {
         var result = new List<(string, BrowserPush)>();
         await using var connection = settings.CreateConnection(); await connection.OpenAsync(ct);
-        await using var command = new MySqlCommand("SELECT s.id,s.payload FROM push_subscriptions s JOIN accounts a ON a.id=s.account_id JOIN people p ON p.id=a.origin_person_id WHERE ((@person IS NOT NULL AND a.origin_person_id=@person AND a.role='Client') OR (@person IS NULL AND a.role IN ('TechnicalManager','TherapistManager'))) AND a.closed_at IS NULL AND p.is_active=1 AND a.link_status='Verified' AND a.email_confirmed_at IS NOT NULL ORDER BY s.id LIMIT 20", connection);
-        command.Parameters.AddWithValue("@person", (object?)person ?? DBNull.Value);
-        await using var reader = await command.ExecuteReaderAsync(ct);
-        while (await reader.ReadAsync(ct))
+        if (person is null) return await Read("");
+        try { return await Read("AND " + PrivacyStore.PushPermitted); }
+        catch (MySqlException error) when (error.Number == 1146) { return await Read(""); }
+
+        async Task<List<(string Id, BrowserPush Subscription)>> Read(string privacyFilter)
         {
-            var id = reader.GetString(0);
-            var value = JsonSerializer.Deserialize<BrowserPush>(security.Decrypt(id, "browser-push", (byte[])reader[1]))!;
-            if (Valid(value)) result.Add((id, value));
+            await using var command = new MySqlCommand($"""
+                SELECT s.id,s.payload FROM push_subscriptions s JOIN accounts a ON a.id=s.account_id
+                JOIN people p ON p.id=a.origin_person_id
+                WHERE ((@person IS NOT NULL AND a.origin_person_id=@person AND a.role='Client')
+                    OR (@person IS NULL AND a.role IN ('TechnicalManager','TherapistManager')))
+                AND a.closed_at IS NULL AND p.is_active=1 AND a.link_status='Verified' AND a.email_confirmed_at IS NOT NULL
+                {privacyFilter} ORDER BY s.id LIMIT 20
+                """, connection);
+            command.Parameters.AddWithValue("@person", (object?)person ?? DBNull.Value);
+            command.Parameters.AddWithValue("@includeTests", environment.IsDevelopment());
+            await using var reader = await command.ExecuteReaderAsync(ct);
+            while (await reader.ReadAsync(ct))
+            {
+                var id = reader.GetString(0);
+                var value = JsonSerializer.Deserialize<BrowserPush>(security.Decrypt(id, "browser-push", (byte[])reader[1]))!;
+                if (Valid(value)) result.Add((id, value));
+            }
+            return result;
         }
-        return result;
     }
 }
 
@@ -138,10 +169,12 @@ public sealed class BrowserPushTransport(BalancePushKeys keys) : IBrowserPushTra
         using var client = new WebPushClient(http);
         // Lock-screen payload contains no name, amount or private reason. Details require authentication.
         var balance = kind == "Balance";
+        var task = kind == "ManagerTask";
         var waiting = kind is "Wait8" or "Wait12" or "EventWait8" or "EventWait12";
         var payload = JsonSerializer.Serialize(new { title = "PaCT", body = balance ? "Existe uma atualização no teu saldo. Consulta os pagamentos na aplicação."
-            : waiting ? "Existe um pagamento por confirmar. Consulta os detalhes na PaCT." : "Tens uma atualização na PaCT. Abre a aplicação para consultar.",
-            tag = (balance ? "balance-" : "consultation-") + noticeId, url = balance ? "/?view=payments" : "/#agenda" });
+            : task ? "Tens um lembrete na PaCT." : waiting ? "Existe um pagamento por confirmar. Consulta os detalhes na PaCT." : "Tens uma atualização na PaCT. Abre a aplicação para consultar.",
+            tag = (balance ? "balance-" : task ? "task-" : "consultation-") + noticeId,
+            url = balance ? "/?view=payments" : task ? "/#tarefas" : "/#agenda" });
         try { await client.SendNotificationAsync(new PushSubscription(subscription.Endpoint, subscription.Keys["p256dh"], subscription.Keys["auth"]), payload, keys.Details(), cancellationToken: ct); return true; }
         catch (WebPushException error) when (error.StatusCode is HttpStatusCode.Gone or HttpStatusCode.NotFound) { return false; }
     }

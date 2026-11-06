@@ -23,7 +23,8 @@ public static class AgendaRules
             .Concat(ActivityCatalogue.Complete(data.Services).OrderBy(s => s.Id, StringComparer.Ordinal).Select(s => $"s:{s.Id}:{s.Version}"))
             .Concat(data.Consultations.OrderBy(c => c.Id, StringComparer.Ordinal).Select(c => $"c:{c.Id}:{c.Version}"))
             .Concat(data.GuestRequests.OrderBy(c => c.Id, StringComparer.Ordinal).Select(c => $"g:{c.Id}:{c.Version}"))
-            .Concat(data.Events.OrderBy(e => e.Id, StringComparer.Ordinal).Select(e => $"e:{e.Id}:{e.Version}"));
+            .Concat(data.Events.OrderBy(e => e.Id, StringComparer.Ordinal).Select(e => $"e:{e.Id}:{e.Version}"))
+            .Concat(data.GoogleCalendar.Busy.Select(b => $"google:{b.StartsAt.UtcTicks}:{b.EndsAt.UtcTicks}"));
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(string.Join('\n', parts.Prepend($"site:{data.PublishedSite.Version}")))));
     }
 
@@ -76,8 +77,16 @@ public static class AgendaRules
         return false;
     }
 
-    public static void ValidateOccupation(ConsultationData data, DateTimeOffset start, DateTimeOffset end, DateTimeOffset now, string? excludingId = null, string? excludingGuestId = null, string? excludingEventId = null)
+    public static bool GoogleConflict(ConsultationData data, DateTimeOffset start, DateTimeOffset end) =>
+        data.GoogleCalendar.Busy.Any(block => Overlaps(start, end.AddMinutes(30), block.StartsAt, block.EndsAt));
+
+    public static void ValidateGoogleAvailability(ConsultationData data, DateTimeOffset start, DateTimeOffset end, bool manager = false) =>
+        Require(!GoogleConflict(data, start, end),
+            manager ? "O horário está ocupado no Google Calendar." : "Este horário já não está disponível.", 409);
+
+    public static void ValidateOccupation(ConsultationData data, DateTimeOffset start, DateTimeOffset end, DateTimeOffset now, string? excludingId = null, string? excludingGuestId = null, string? excludingEventId = null, bool manager = false)
     {
+        ValidateGoogleAvailability(data, start, end, manager);
         Require(!data.Consultations.Any(c => c.Id != excludingId && ConsultationRules.Occupies(c, now)
             && Overlaps(start, end.AddMinutes(30), c.StartsAt, c.EndsAt.AddMinutes(30))),
             "O horário está ocupado, incluindo o intervalo de recuperação.", 409);
@@ -147,11 +156,16 @@ public static class AgendaRules
         }
         var ranges = ReplacementRanges(publication, start, end, now);
         bool Touches(DateTimeOffset first, DateTimeOffset last) => ranges.Any(r => Overlaps(r.StartsAt, r.EndsAt, first, last));
+        var googleBlocks = data.GoogleCalendar.Busy.Where(block => Touches(block.StartsAt, block.EndsAt)).ToArray();
+        const string googleLabel = "Ocupado no Google Calendar";
         var conflicts = ranges.SelectMany(range => ConfirmedConflicts(data, range.StartsAt, range.EndsAt, now))
-            .Where(c => Touches(c.StartsAt, c.EndsAt.AddMinutes(30))).DistinctBy(c => c.Id).OrderBy(c => c.StartsAt).ThenBy(c => c.Id).ToArray();
-        // An occupied interval (including recovery) is excluded from the change itself,
-        // not merely kept as an appointment on top of a replaced availability window.
-        var protectedRanges = conflicts.Select(c => new AvailabilityRange(c.StartsAt, c.EndsAt.AddMinutes(30))).ToArray();
+            .Where(c => Touches(c.StartsAt, c.EndsAt.AddMinutes(30)))
+            .Concat(googleBlocks.Select(block => new AgendaConflict($"google:{block.StartsAt.UtcTicks}", block.StartsAt, block.EndsAt,
+                "GoogleCalendar", new("Availability", "Horário", googleLabel, googleLabel))))
+            .DistinctBy(c => c.Id).OrderBy(c => c.StartsAt).ThenBy(c => c.Id).ToArray();
+        // External blocks are excluded from the published changes, like protected bookings.
+        var protectedRanges = conflicts.Select(c => new AvailabilityRange(c.StartsAt,
+            c.State == "GoogleCalendar" ? c.EndsAt : c.EndsAt.AddMinutes(30))).ToArray();
         ranges = ranges.SelectMany(range => Remainders(range, protectedRanges)).ToArray();
         var affected = ActiveWindows(data).Where(w => ranges.Any(r => Overlaps(r.StartsAt, r.EndsAt, w.StartsAt, w.EndsAt))).ToArray();
         return new(publication.Revision, start, end, affected.Length,
@@ -189,7 +203,9 @@ public static class AgendaRules
         Require(actor.IsManager, "Esta ação exige a gestora-terapeuta.", 403);
         var preview = Preview(data, publication, now);
         Require(preview.Conflicts.Length == 0 || publication.ConfirmConflicts,
-            "Há horários com marcações. Revê-os e confirma a alteração apenas dos restantes horários.", 409);
+            preview.Conflicts.Any(c => c.State == "GoogleCalendar")
+                ? "Há horários protegidos. Revê-os e confirma a alteração apenas dos restantes horários."
+                : "Há horários com marcações. Revê-os e confirma a alteração apenas dos restantes horários.", 409);
         // Validate everything before changing the aggregate. The store commits the entire publication once.
         var ranges = preview.Ranges!;
         foreach (var range in ranges) ReplaceUnconfirmed(data, range.StartsAt, range.EndsAt, actor, now, encrypt ?? ((_, _, _) => throw new InvalidOperationException("Esta operação não utiliza conteúdo privado.")));
@@ -245,7 +261,9 @@ public static class AgendaRules
             .Concat(data.GuestRequests.Where(g => GuestConsultations.Occupies(g, now) && Overlaps(start, end, g.StartsAt, g.EndsAt.AddMinutes(30)))
                 .Select(g => new PublicAgendaSegment(g.StartsAt, g.EndsAt.AddMinutes(30), "Occupied")))
             .Concat(data.Events.Where(e => GroupEvents.Occupies(e) && Overlaps(start, end, e.Definition.StartsAt, e.Definition.EndsAt.AddMinutes(30)))
-                .Select(e => new PublicAgendaSegment(e.Definition.StartsAt, e.Definition.EndsAt.AddMinutes(30), e.State == "Cancelled" ? "Blocked" : "Occupied"))).ToArray();
+                .Select(e => new PublicAgendaSegment(e.Definition.StartsAt, e.Definition.EndsAt.AddMinutes(30), e.State == "Cancelled" ? "Blocked" : "Occupied")))
+            .Concat(data.GoogleCalendar.Busy.Where(b => Overlaps(start, end, b.StartsAt, b.EndsAt))
+                .Select(b => new PublicAgendaSegment(b.StartsAt, b.EndsAt, "Blocked"))).ToArray();
         var events = intervals.SelectMany(x => new[] {
             (At: x.StartsAt < start ? start : x.StartsAt, x.State, Delta: 1),
             (At: x.EndsAt > end ? end : x.EndsAt, x.State, Delta: -1) })

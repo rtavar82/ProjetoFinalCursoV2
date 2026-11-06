@@ -1,5 +1,6 @@
 namespace PaCT.Api.Identity;
 
+public sealed record PasswordRecoveryRequest(string Email);
 public sealed record PasswordChangeRequest(Guid OperationId, string Password);
 public sealed record PasswordChangeConfirmation(string Token, string Password, string ConfirmPassword);
 public sealed record GoogleStartRequest(string Mode, string? Password = null);

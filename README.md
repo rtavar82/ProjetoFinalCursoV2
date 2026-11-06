@@ -122,6 +122,16 @@ Cria as três tabelas da fundação numa base totalmente vazia e acrescenta os c
 DDL MySQL não tem rollback global; falha parcial não é resolvida com eliminação automática.
 Repetir sobre a estrutura inglesa válida apenas confere a instalação. Não gera novas chaves sobre registos existentes se as originais estiverem em falta.
 
+### Privacidade e proteção de dados
+
+Numa instalação existente, usar `--prepare-privacy` em vez de `--prepare-installation` no comando acima. Esta atualização adiciona o armazenamento da política e das escolhas com uma cópia de segurança cifrada. Uma instalação nova recolhe o nome e email de privacidade no registo inicial do gestor técnico.
+
+O gestor técnico completa o rascunho em **Gestão da aplicação → Documentos RGPD**, revê-o e publica uma versão. O modelo inicial contém campos a validar para a instalação concreta. As versões publicadas ficam no histórico. Visitantes podem consultar a política e confirmar a leitura neste navegador. Clientes podem confirmar a leitura e gerir a autorização de notificações em **Meu perfil → A minha conta**.
+
+Uma nova publicação volta a apresentar o aviso. A autorização de notificações de cliente está associada à versão e exige nova autorização quando esta muda. Os avisos na aplicação continuam disponíveis.
+
+No ambiente `Development`, o gestor técnico pode publicar uma versão de teste do texto atual, incluindo o modelo incompleto. Fora desse ambiente, só são apresentadas e consideradas as versões oficiais e as decisões associadas. A publicação oficial exige um rascunho guardado e sem as indicações de preenchimento do modelo.
+
 Para uma instalação já preparada com três tabelas, existe a atualização explícita `--prepare-therapist-invitations`, com as mesmas opções do comando anterior. Nesta instalação já foi aplicada. Cria apenas a quarta tabela, depois de guardar e conferir uma cópia cifrada do esquema e registos em `security/data-backups`, fora do projeto. Não é executada pelo frontend nem pelo arranque normal; o convite dos utilizadores não exige comandos.
 
 O incremento `--prepare-clients` prepara os campos de perfil, a criação posterior da palavra-passe, o código postal cifrado e as duas tabelas de Clientes. Nesta instalação já foi aplicado, com backup cifrado verificado e igualdade dos valores anteriores antes/depois. A validação contextual exige os obrigatórios de cada registo, sem inventar dados em contas anteriores incompletas. Repetir confere a estrutura de seis tabelas; não recria nem apaga dados. Preparação DDL não é executada no arranque normal e falha parcial exige revisão, sem eliminação automática.

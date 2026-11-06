@@ -1,0 +1,15 @@
+.notice {
+  position: fixed;
+  z-index: 30;
+  inset-inline: max(12px, env(safe-area-inset-left)) max(12px, env(safe-area-inset-right));
+  bottom: max(12px, env(safe-area-inset-bottom));
+  max-width: 580px;
+  max-height: 65dvh;
+  margin-inline: auto;
+  padding: 16px;
+  overflow: auto;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  box-shadow: 0 8px 28px rgb(0 0 0 / 16%);
+}

@@ -57,7 +57,7 @@ export default function GroupEventsPanel({ manager = false, send, disabled = fal
     </ConsultationDialog>}
     {detail && <ConsultationDialog title={detail.summary.title} label="Detalhe do evento" disabled={disabled} onClose={close}>
       <AppointmentSummary consultation={detail.summary} showTitle={false} stateLabel={eventStatusLabel(detail.summary, { manager, participations: manager ? [] : detail.ownParticipations })} typeLabel={detail.summary.kind === 'Retreat' ? 'Retiro' : 'Grupo'} />{feedback}{detail.instructions && <p className={styles.note}>{detail.instructions}</p>}
-      {!manager && <>{!detail.summary.hasParticipation && detail.summary.registrationOpen && detail.summary.eligible && (!detail.summary.isFree
+      {!manager && <>{detail.summary.registrationOpen && detail.summary.scheduleBlocked && <p>As inscrições estão temporariamente indisponíveis.</p>}{!detail.summary.hasParticipation && detail.summary.registrationOpen && !detail.summary.scheduleBlocked && detail.summary.eligible && (!detail.summary.isFree
         ? <section aria-label="Inscrição na consulta de grupo"><h3>Inscrição na consulta de grupo</h3>{detail.summary.remaining === 0 && <p>O evento está lotado. O pedido entra na fila de desistências; o prazo de pagamento só começa quando a gestão confirmar a entrada.</p>}<p>{detail.paymentConditions?.label}</p><p>{detail.summary.referencePrice === null ? 'Contribuição livre' : agendaMoney(detail.summary.referencePrice)}</p>
           <ConsultationConditionsForm consultation={{ paymentConditions: detail.paymentConditions, balance: detail.balance, referencePrice: detail.summary.referencePrice }} disabled={disabled}
             submitLabel={detail.summary.remaining === 0 ? 'Aceitar condições e pedir entrada na fila de desistências' : detail.paymentConditions?.mode === 'Prepayment' ? 'Confirmar inscrição. De seguida farei este pagamento.' : 'Aceitar condições e confirmar inscrição'}
@@ -72,7 +72,7 @@ export default function GroupEventsPanel({ manager = false, send, disabled = fal
           {detail.summary.state === 'AwaitingClosure' && <InformationCard as="form" title="Registar realização" headingLevel={3} cardId="event-outcome" data-protect-draft onSubmit={event => { event.preventDefault(); const fields = new FormData(event.currentTarget); try { command({ action: 'PerformEvent', id: detail.summary.id, version: detail.summary.version, startsAt: instant(fields.get('start')), endsAt: instant(fields.get('end')) }) } catch (failure) { setError(failure.message) } }}><DateRangeFields key={detail.summary.id} startLabel="Início efetivo" endLabel="Fim efetivo" required exclusive defaultValue={{ start: localDate(new Date(detail.summary.startsAt)), end: localDate(new Date(detail.summary.endsAt)) }} /><button disabled={disabled}>Confirmar realização</button></InformationCard>}
         </>}
         {detail.keepBlocked && <button className="secondary" disabled={disabled} onClick={() => command({ action: 'ReleaseEventBlock', id: detail.summary.id, version: detail.summary.version })}>Libertar horário cancelado</button>}
-        {detail.summary.state !== 'Cancelled' && <AddParticipant event={detail} disabled={disabled} send={command} />}
+        {detail.summary.state !== 'Cancelled' && !(detail.summary.state === 'Waiting' && detail.summary.scheduleBlocked) && <AddParticipant event={detail} disabled={disabled} send={command} />}
       </>}
     </ConsultationDialog>}
   </>

@@ -22,11 +22,14 @@ public static class AccountLoginSchema
         ) ENGINE=InnoDB DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci
         """;
     private const string ActionsCheck = """
-        ALTER TABLE account_security_actions DROP CHECK CK_account_security_actions_kind,
+        ALTER TABLE account_security_actions
+          MODIFY COLUMN created_by_account_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NULL,
+          DROP CHECK CK_account_security_actions_kind,
           ADD CONSTRAINT CK_account_security_actions_kind CHECK (
-            (kind='ChangeEmail' AND email_hash IS NOT NULL AND status IN ('Pending','Confirmed','Superseded'))
-            OR (kind='ChangePassword' AND email_hash IS NULL AND status IN ('Pending','Confirmed','Superseded'))
-            OR (kind IN ('ResetPasskeys','LinkGoogle','UnlinkGoogle') AND email_hash IS NULL AND status='Applied'))
+            (kind='ChangeEmail' AND created_by_account_id IS NOT NULL AND email_hash IS NOT NULL AND status IN ('Pending','Confirmed','Superseded'))
+            OR (kind='ChangePassword' AND created_by_account_id IS NOT NULL AND email_hash IS NULL AND status IN ('Pending','Confirmed','Superseded'))
+            OR (kind='RecoverPassword' AND created_by_account_id IS NULL AND email_hash IS NULL AND status IN ('Pending','Confirmed','Superseded'))
+            OR (kind IN ('ResetPasskeys','LinkGoogle','UnlinkGoogle') AND created_by_account_id IS NOT NULL AND email_hash IS NULL AND status='Applied'))
         """;
     public static async Task PrepareAsync(DatabaseConnectionSettings settings, InstallationPaths paths, IDataProtectionProvider provider, CancellationToken ct)
     {
@@ -45,10 +48,14 @@ public static class AccountLoginSchema
             if (!tables.Contains("account_security_actions")) throw new InvalidOperationException("Prepare client access first.");
             var hasFlag = Convert.ToInt32(await Scalar("SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='accounts' AND COLUMN_NAME='password_sign_in_required'")) == 1;
             var check = (string?)await Scalar("SELECT CHECK_CLAUSE FROM information_schema.CHECK_CONSTRAINTS WHERE CONSTRAINT_SCHEMA=DATABASE() AND CONSTRAINT_NAME='CK_account_security_actions_kind'");
-            var completeCheck = check is not null && check.Contains("ChangePassword", StringComparison.Ordinal) && check.Contains("LinkGoogle", StringComparison.Ordinal);
+            var completeCheck = check is not null && check.Contains("ChangePassword", StringComparison.Ordinal) && check.Contains("LinkGoogle", StringComparison.Ordinal)
+                && check.Contains("RecoverPassword", StringComparison.Ordinal);
             if (hasFlag && tables.Contains("account_external_logins") && completeCheck) return;
+            var affectedTables = new List<string>();
+            if (!completeCheck) affectedTables.Add("account_security_actions");
+            if (!hasFlag) affectedTables.Add("accounts");
             var columns = new Dictionary<string, string[]>();
-            foreach (var table in tables)
+            foreach (var table in affectedTables)
             {
                 var names = new List<string>();
                 await using var command = new MySqlCommand("SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME=@table ORDER BY ORDINAL_POSITION", connection);
@@ -56,7 +63,9 @@ public static class AccountLoginSchema
                 while (await reader.ReadAsync(ct)) names.Add(reader.GetString(0)); columns[table] = names.ToArray();
             }
             var before = await Rows(connection, columns, ct);
-            await SchemaBackup.SaveVerifiedAsync(await TherapistInvitationSchema.SnapshotAsync(connection, tables, ct), "google-password-change", paths, provider, ct);
+            if (affectedTables.Count > 0)
+                await SchemaBackup.SaveVerifiedAsync(await TherapistInvitationSchema.SnapshotAsync(connection, affectedTables, ct),
+                    "account-login-recovery", paths, provider, ct);
             if (!hasFlag) await Execute("ALTER TABLE accounts ADD COLUMN password_sign_in_required BOOLEAN NOT NULL DEFAULT 0");
             if (!completeCheck) await Execute(ActionsCheck);
             if (!tables.Contains("account_external_logins")) await Execute(GoogleSql);

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { apiRequest } from './identityApi'
 import { dismissSuccess, showSuccess, showWarning } from './actionNotices'
+import { usePrivacy } from './privacyContext'
 
 async function bounded(promise, message, milliseconds = 15000) {
   let timer
@@ -21,6 +22,8 @@ async function activeRegistration() {
 export default function PushConsent({ label = 'Ativar notificações neste dispositivo', primary = false, disabled = false }) {
   const [message, setMessage] = useState('')
   const [busy, setBusy] = useState(false)
+  const privacy = usePrivacy()
+  const needsConsent = privacy?.client && privacy.policy && (!privacy.push?.accepted || !!privacy.choices.error)
   const supported = 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window
   async function enable() {
     if (busy || disabled || !supported || !navigator.onLine) return
@@ -37,5 +40,5 @@ export default function PushConsent({ label = 'Ativar notificações neste dispo
     } catch (failure) { setMessage(failure.message || 'Não foi possível ativar as notificações neste dispositivo.'); showWarning('Não foi possível ativar as notificações. Consulta a indicação junto do botão.') }
     finally { setBusy(false) }
   }
-  return <div className="account-actions">{(supported || primary) && <button className={primary ? '' : 'secondary'} type="button" disabled={disabled || busy || !navigator.onLine || !supported} onClick={enable}>{busy ? 'A ativar…' : label}</button>}{!supported && <p>Este navegador não permite notificações no dispositivo. Os avisos continuam na aplicação.</p>}{message && <p role="status">{message}</p>}</div>
+  return <div className="account-actions">{(supported || primary) && <button className={primary ? '' : 'secondary'} type="button" disabled={disabled || busy || !navigator.onLine || !supported || needsConsent} onClick={enable}>{busy ? 'A ativar…' : label}</button>}{needsConsent && <p>Autoriza primeiro as notificações na secção de privacidade.</p>}{!supported && <p>Este navegador não permite notificações no dispositivo. Os avisos continuam na aplicação.</p>}{message && <p role="status">{message}</p>}</div>
 }

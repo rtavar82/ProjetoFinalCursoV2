@@ -4,8 +4,14 @@ import { observeResource } from './liveUpdates'
 import { agendaDate } from './agendaTime'
 import styles from './ConsultationAlerts.module.css'
 import useConsultationNames from './useConsultationNames'
+import useLiveResource from './useLiveResource'
+
+const readTaskReminders = () => apiRequest('management/tasks/reminders')
 
 const descriptions = {
+  GoogleCalendarUnavailable: 'A ligação ao Google Calendar está indisponível. Podes continuar a marcar. A PaCT verifica sobreposições quando a ligação voltar.',
+  GoogleCalendarConflict: 'Este horário sobrepõe-se a um compromisso no Google Calendar. Revê a marcação ou o bloqueio no Google.',
+  ManagerTask: 'Tens um lembrete de tarefa.',
   CreditProposal: 'O cliente propõe utilizar crédito. Revê o saldo e a dívida antes de confirmar.',
   FollowupMessage: 'Tens mensagens por ler no acompanhamento de uma consulta.',
   GuestRequest: 'Existe um pedido de marcação sem conta por analisar.',
@@ -41,19 +47,24 @@ function noticeDescription(notice) {
     : descriptions[notice.kind.split(':')[0]]
 }
 
-export default function ConsultationAlerts({ client = false, onOpen, onFinance, onGuests, onEvent, onPack, onFollowup }) {
+export default function ConsultationAlerts({ client = false, onOpen, onFinance, onGuests, onEvent, onPack, onFollowup, onTasks }) {
   const [notices, setNotices] = useState([])
   const [error, setError] = useState('')
   const [reading, setReading] = useState(null)
   const [uncertainRead, setUncertainRead] = useState(null)
   const pendingRead = useRef(new Map())
   const names = useConsultationNames(notices, null, !client)
+  const reminders = useLiveResource('managerTaskReminders', 'due', readTaskReminders, !client && !!onTasks)
+  const activeNotices = [...notices, ...(reminders.data || []).map(item => ({ ...item, kind: 'ManagerTask' }))]
   async function markRead(notice) {
     if (reading) return
     if (uncertainRead && uncertainRead !== notice.id) return
-    const command = pendingRead.current.get(notice.id) || { action: notice.kind === 'NegativeBalance' ? 'ReadBalanceNotice' : !client && notice.kind === 'FollowupMessage' ? 'ReadMessageNotice' : notice.guestRequestId || notice.packId || notice.eventId ? 'ReadDomainNotice' : 'ReadNotice', id: notice.id, ...(notice.guestRequestId || notice.packId || notice.eventId ? { choice: notice.guestRequestId ? 'Guest' : notice.packId ? 'Pack' : 'Event' } : {}), operationId: crypto.randomUUID() }
+    const command = pendingRead.current.get(notice.id) || { action: notice.kind === 'ManagerTask' ? 'ReadTaskReminder' : notice.kind === 'NegativeBalance' ? 'ReadBalanceNotice' : !client && notice.kind === 'FollowupMessage' ? 'ReadMessageNotice' : notice.guestRequestId || notice.packId || notice.eventId ? 'ReadDomainNotice' : 'ReadNotice', id: notice.id, ...(notice.guestRequestId || notice.packId || notice.eventId ? { choice: notice.guestRequestId ? 'Guest' : notice.packId ? 'Pack' : 'Event' } : {}), operationId: crypto.randomUUID() }
     pendingRead.current.set(notice.id, command); setReading(notice.id)
-    try { await apiRequest('consultations/commands', command); pendingRead.current.delete(notice.id); setNotices(current => current.filter(item => item.id !== notice.id)); setUncertainRead(null); setError('') }
+    try {
+      if (command.action === 'ReadTaskReminder') await apiRequest(`management/tasks/${notice.id}/read-reminder`, {})
+      else await apiRequest('consultations/commands', command)
+      pendingRead.current.delete(notice.id); setNotices(current => current.filter(item => item.id !== notice.id)); setUncertainRead(null); setError('') }
     catch (failure) { setError(failure.message); if (failure.status && failure.status < 500) { pendingRead.current.delete(notice.id); setUncertainRead(null) } else setUncertainRead(notice.id) }
     finally { setReading(null) }
   }
@@ -66,21 +77,21 @@ export default function ConsultationAlerts({ client = false, onOpen, onFinance, 
     const stop = observeResource('consultationNotices', load)
     return () => { active = false; stop() }
   }, [])
-  function open(n) { return n.kind === 'NegativeBalance' ? onFinance() : n.kind === 'GuestRequest' ? onGuests(n.guestRequestId || n.id) : n.eventId ? onEvent(n.eventId, n.participationId) : n.packId ? onPack(n.packId) : n.kind === 'FollowupMessage' || n.kind === 'Closed' || n.kind.startsWith('SharedReport:') ? (onFollowup || onOpen)(n.consultationId) : onOpen(n.consultationId) }
+  function open(n) { return n.kind === 'ManagerTask' ? onTasks() : n.kind === 'NegativeBalance' ? onFinance() : n.kind === 'GuestRequest' || n.guestRequestId ? onGuests(n.guestRequestId || n.id) : n.eventId ? onEvent(n.eventId, n.participationId) : n.packId ? onPack(n.packId) : n.kind === 'FollowupMessage' || n.kind === 'Closed' || n.kind.startsWith('SharedReport:') ? (onFollowup || onOpen)(n.consultationId) : onOpen(n.consultationId) }
   function dismissButton(notice) {
     return <button type="button" className={styles.dismiss} aria-label={uncertainRead === notice.id ? 'Verificar leitura do aviso' : 'Marcar aviso como lido'} title="Marcar como visto" disabled={!!reading || !!uncertainRead && uncertainRead !== notice.id} onClick={() => markRead(notice)}>×</button>
   }
-  const missingRead = uncertainRead && !notices.some(notice => notice.id === uncertainRead)
+  const missingRead = uncertainRead && !activeNotices.some(notice => notice.id === uncertainRead)
     ? <button type="button" className="text-button" disabled={!!reading} onClick={() => markRead({ id: uncertainRead })}>Verificar leitura do aviso</button> : null
   if (client) return <div data-pending-command={reading || uncertainRead ? 'true' : undefined}>{error && <p role="alert" className="notice error">{error}</p>}{missingRead}{notices.length > 0 && <details className={styles.panel}><summary>Avisos de consultas ({notices.length})</summary>{notices.map(n => <article className={styles.notice} key={n.id}><div><div className={styles.noticeHeader}><h2>{({ Expired: 'Pedido expirado', Closed: 'Consulta fechada', FollowupMessage: 'Mensagem de acompanhamento', Approved: 'Marcação confirmada', BookingConfirmed: 'Marcação confirmada', NegativeBalance: 'Saldo por regularizar' })[n.kind.split(':')[0]] || 'Aviso de consulta'}</h2>{dismissButton(n)}</div><p>{n.kind === 'Approved' && n.paymentLabel ? `A tua marcação foi confirmada. ${n.paymentLabel}. Abre a consulta para ler e aceitar as condições.` : clientDescriptions[n.kind.split(':')[0]] || noticeDescription(n) || 'Tens informação nova sobre a tua consulta.'}</p><p className={styles.date}>{agendaDate(n.dueAt)}</p><button type="button" className="text-button" onClick={() => open(n)}>Abrir para ver a informação partilhada</button></div></article>)}</details>}</div>
-  return <div aria-label="Avisos de consultas" data-pending-command={reading || uncertainRead ? 'true' : undefined}>{error && <p role="status">{error}</p>}{missingRead}{notices.map(n => <div className={`notice review-alert ${styles.managerNotice}`} key={n.id}>
+  return <div aria-label="Avisos da gestão" data-pending-command={reading || uncertainRead ? 'true' : undefined}>{error && <p role="status">{error}</p>}{missingRead}{activeNotices.map(n => <div className={`notice review-alert ${styles.managerNotice}`} key={n.id}>
     <div className={styles.noticeHeader}><p>{noticeDescription(n) || 'Existe informação nova sobre uma consulta.'}</p>
-      {dismissButton(n)}
+      {!n.kind.startsWith('GoogleCalendar') && dismissButton(n)}
     </div>
-    <div className={styles.metadata}>
-    <button className="text-button" onClick={() => open(n)}>{n.kind === 'NegativeBalance' ? 'Ver pagamentos e saldo' : n.kind === 'GuestRequest' || n.kind === 'EventGuestRequest' ? 'Analisar pedido' : n.eventId ? 'Ver evento' : n.packId ? 'Ver pack' : n.kind === 'FollowupMessage' ? 'Ver acompanhamento' : 'Ver consulta'}</button>
+    {n.kind !== 'GoogleCalendarUnavailable' && <div className={styles.metadata}>
+    <button className="text-button" onClick={() => open(n)}>{n.kind === 'ManagerTask' ? 'Ver tarefas' : n.kind === 'NegativeBalance' ? 'Ver pagamentos e saldo' : n.guestRequestId || n.kind === 'GuestRequest' || n.kind === 'EventGuestRequest' ? 'Analisar pedido' : n.eventId ? 'Ver evento' : n.packId ? 'Ver pack' : n.kind === 'FollowupMessage' ? 'Ver acompanhamento' : 'Ver consulta'}</button>
     {(n.personId || n.serviceTitle || n.startsAt) && <span className={styles.context}>{[n.personId ? names.data?.[n.personId] || (names.loading ? 'A consultar o cliente…' : 'Nome indisponível') : '', n.serviceTitle,
       n.modality === 'Remote' ? 'Online' : n.publicLocation, n.startsAt ? agendaDate(n.startsAt) : ''].filter(Boolean).join(' · ')}</span>}
-    </div>
+    </div>}
   </div>)}</div>
 }

@@ -42,6 +42,7 @@ public static class IdentityRegistration
         builder.Services.AddSingleton<ClientAccessService>();
         builder.AddGoogleAccountLogin();
         builder.Services.AddHostedService<SecurityEmailWorker>();
+        builder.Services.AddHostedService<PasswordRecoveryWorker>();
         builder.Services.AddAntiforgery(options =>
         {
             options.HeaderName = "X-PaCT-CSRF";

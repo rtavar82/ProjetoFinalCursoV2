@@ -106,6 +106,8 @@ public sealed record Consultation
     public string? SharedNoteCiphertext { get; init; }
     public string? PrivateNoteCiphertext { get; init; }
     public string[] PhotoIds { get; init; } = [];
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public ClosureMediaReference[]? SharedClosureMedia { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public ClosureMediaReference[]? PrivateClosureMedia { get; init; }
     public string? OverrideWindowId { get; init; }
     public string? OverrideBy { get; init; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -116,7 +118,8 @@ public sealed record ConversationDecision(string AccountId, bool Blocked, long V
 public sealed record ConsultationMessage(string Id, string? ConsultationId, string AuthorId, bool AuthorIsManager,
     long Sequence, DateTimeOffset CreatedAt, string TextCiphertext,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string[]? PhotoIds = null, string? ParticipationId = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? AudioType = null)
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? AudioType = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? VideoId = null)
 {
     [JsonIgnore] public string TargetId => ParticipationId ?? ConsultationId ?? throw new InvalidOperationException("Mensagem sem destinatário.");
 }
@@ -148,6 +151,7 @@ public sealed class ConsultationData
     internal PaCT.Api.Management.SitePublication PublishedSite { get; set; } = PaCT.Api.Management.SitePresentation.Default;
     public List<ConsultationService> Services { get; } = [];
     public List<AvailabilityWindow> Windows { get; } = [];
+    public GoogleCalendarSnapshot GoogleCalendar { get; set; } = GoogleCalendarSnapshot.Empty;
     public List<Consultation> Consultations { get; } = [];
     public List<GuestConsultationRequest> GuestRequests { get; } = [];
     // Current portal eligibility, loaded from accounts; never persisted in consultation snapshots.
@@ -203,6 +207,8 @@ public sealed record ConsultationCommand
     public string? SharedNote { get; init; }
     public string? PrivateNote { get; init; }
     public string[] PhotoIds { get; init; } = [];
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public ClosureMediaReference[]? SharedClosureMedia { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public ClosureMediaReference[]? PrivateClosureMedia { get; init; }
     public ConsultationService? Service { get; init; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public ConsultationRate? Rates { get; init; }
@@ -236,6 +242,7 @@ public sealed record ConsultationCommand
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? MessageText { get; init; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? MessageAudioType { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? MessageVideoId { get; init; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string[]? MessageIds { get; init; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]

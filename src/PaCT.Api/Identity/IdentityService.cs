@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using PaCT.Api.Management;
 
 namespace PaCT.Api.Identity;
 
@@ -21,7 +22,8 @@ public sealed class IdentityService(IIdentityStore store, IdentitySecurity secur
         var email = IdentityValidation.Email(input.Email);
         var (person, account) = PrepareRegistration(input.FirstName, input.LastName, input.Locality, input.DisplayName,
             email, input.Password, input.ConfirmPassword, Roles.TechnicalManager);
-        await store.CreateAsync(person, account, ConfirmationEmail(account, email), ct);
+        var privacy = new PrivacyControllerDetails(input.PrivacyControllerName ?? "", input.PrivacyContactEmail ?? "").Validate();
+        await store.CreateAsync(person, account, ConfirmationEmail(account, email), privacy, ct);
         return account;
     }
 
@@ -50,13 +52,20 @@ public sealed class IdentityService(IIdentityStore store, IdentitySecurity secur
             foreach (var expired in identifierAttempts.Where(item => item.Value.Start.AddMinutes(15) < Now)) identifierAttempts.TryRemove(expired.Key, out _);
         if (identifierAttempts.Count >= 10000 && !identifierAttempts.ContainsKey(key)) return new(null, 429, "Há demasiadas tentativas. Aguarda antes de voltar a tentar.");
         var attempts = identifierAttempts.AddOrUpdate(key, (Now, 1), (_, value) => value.Start.AddMinutes(15) <= Now ? (Now, 1) : (value.Start, value.Count + 1));
-        if (attempts.Count > 10) return new(null, 429, "Aguarda 15 minutos antes de voltar a tentar nesta conta.");
+        if (attempts.Count > 10) return new(null, 429, "Aguarda 15 minutos antes de voltar a tentar.");
         if (input.Password is null || input.Password.Length > 128) return RejectedSignIn();
         var account = await store.FindByEmailAsync(security.EmailHash(email), ct);
-        if (account is null || account.PasswordHash is null) { _ = security.VerifyPassword(dummyPasswordHash, input.Password); return RejectedSignIn(); }
-        if (!IsAccountAvailable(account)) return RejectedSignIn();
-        if (account.LockoutEnd > Now) return new(null, 429, "A conta está temporariamente bloqueada. Aguarda 15 minutos e volta a tentar.");
-        if (!security.VerifyPassword(account.PasswordHash, input.Password)) { await FailedAttemptAsync(account, ct); return RejectedSignIn(); }
+        if (account is null || account.PasswordHash is null || !IsAccountAvailable(account) || account.LockoutEnd > Now)
+        {
+            _ = security.VerifyPassword(dummyPasswordHash, input.Password);
+            return RejectedSignIn();
+        }
+        if (!security.VerifyPassword(account.PasswordHash, input.Password))
+        {
+            try { await FailedAttemptAsync(account, ct); }
+            catch (IdentityProblem error) when (error.Status == 409) { /* Concurrent updates must not distinguish an existing account. */ }
+            return RejectedSignIn();
+        }
         return new(account);
     }
 
@@ -137,7 +146,7 @@ public sealed class IdentityService(IIdentityStore store, IdentitySecurity secur
         var hashes = JsonSerializer.Deserialize<string[]>(account.RecoveryCodeHashes) ?? [];
         var recoveryHash = IdentitySecurity.RecoveryHash(code);
         var recovery = account.TwoFactorEnabledAt is not null && hashes.Contains(recoveryHash, StringComparer.Ordinal);
-        if (step is null && !recovery) { await FailedAttemptAsync(account, ct); throw new IdentityProblem(400, "Código inválido ou já utilizado. Usa o próximo código apresentado pelo Google Authenticator."); }
+        if (step is null && !recovery) { await FailedAttemptAsync(account, ct); throw new IdentityProblem(400, "Não foi possível confirmar a verificação. Tenta novamente."); }
         string[]? codes = null;
         if (account.TwoFactorEnabledAt is null) { codes = IdentitySecurity.CreateRecoveryCodes(); hashes = codes.Select(IdentitySecurity.RecoveryHash).ToArray(); }
         if (recovery) hashes = hashes.Where(value => value != recoveryHash).ToArray();

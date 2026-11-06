@@ -10,7 +10,8 @@ public static class AppointmentCommunications
     public static string? EmailKind(ConsultationNotice notice, Consultation c, DateTimeOffset now)
     {
         if (notice.Cancelled || notice.ExpiresAt <= now || notice.DueAt > now || notice.PersonId != c.PersonId) return null;
-        if (notice.Kind == "BookingConfirmed" && c.State == "Confirmed" && c.StartsAt > now) return "BookingConfirmation";
+        if (notice.Kind == "BookingConfirmed" && c.State == "Confirmed" && c.StartsAt > now && c.FinancialChoice != "Prepayment")
+            return "BookingConfirmation";
         if (notice.Kind == "Approved" && c.State == "Confirmed" && c.StartsAt > now)
             return c.FinancialChoice == "Prepayment" ? "PrepaymentApproval" : "BookingConfirmation";
         if (notice.Kind == "Reminder26" && c.State == "Confirmed" && c.StartsAt > now) return "AppointmentReminder";

@@ -1,6 +1,7 @@
 using System.Data.Common;
 using MySql.Data.MySqlClient;
 using PaCT.Api.Configuration;
+using PaCT.Api.Management;
 
 namespace PaCT.Api.Identity;
 
@@ -71,13 +72,14 @@ public sealed partial class MySqlIdentityStore(DatabaseConnectionSettings settin
 
     private static DateTime? Date(DbDataReader reader, string name) => reader.IsDBNull(reader.GetOrdinal(name)) ? null : reader.GetDateTime(reader.GetOrdinal(name));
 
-    public async Task CreateAsync(PrivatePerson person, IdentityAccount account, EmailJob email, CancellationToken ct)
+    public async Task CreateAsync(PrivatePerson person, IdentityAccount account, EmailJob email, PrivacyControllerDetails privacy, CancellationToken ct)
     {
         await using var connection = await OpenAsync(ct);
         await using var transaction = await connection.BeginTransactionAsync(ct);
         try
         {
             await InsertIdentityAsync(connection, transaction, person, account, email, ct);
+            await PrivacyStore.SetInstallationDraft(connection, transaction, account.Id, privacy, account.CreatedAt, ct);
             await transaction.CommitAsync(ct);
         }
         catch (MySqlException error) when (error.Number == 1062)

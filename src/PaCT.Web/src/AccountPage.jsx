@@ -9,10 +9,12 @@ import ActionButton from './ActionButton'
 import { isManager } from './identityRoles'
 import SessionPacksPanel from './SessionPacksPanel'
 import FinancialSalesPanel from './FinancialSalesPanel'
+import ClientPrivacyCard from './ClientPrivacyCard'
 
 export default function AccountPage({ profile, busy, perform, notify, guard, onPasskeyUpdated, onSecuritySignedOut, onAccountClosed, onForgetBrowser, packEntry }) {
   const client = profile.role === 'Client'
   return <section aria-label="Definições da conta">
+    {client && <ClientPrivacyCard />}
     {client && <InformationCard cardId="notifications"><PushConsent /></InformationCard>}
     <CardGrid>
       {client && <InformationCard title="As minhas sessões em pack" cardId="client-session-packs"><SessionPacksPanel key={packEntry?.revision || 'own-packs'} manager={false} disabled={busy} guard={guard} initialId={packEntry?.id} /></InformationCard>}

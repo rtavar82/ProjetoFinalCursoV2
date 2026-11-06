@@ -11,6 +11,7 @@ import FinancePage from './FinancePage'
 import ConsultationAlerts from './ConsultationAlerts'
 import TestimonialManager from './TestimonialManager'
 import ManagementPage from './ManagementPage'
+import ManagerTasksPage from './ManagerTasksPage'
 import PublicPresentation from './PublicPresentation'
 import PublicTestimonials from './PublicTestimonials'
 import SharingFeed from './SharingFeed'
@@ -31,10 +32,15 @@ function WorkspaceContent({ profile: initialProfile, busy, perform, notify, erro
   const profile = account.data || initialProfile
   const client = profile.role === 'Client'
   const operational = isManager(profile.role)
-  const [page, setPage] = useState(() => window.location.hash === '#partilhas' ? 'Sharing' : 'Agenda')
+  const [page, setPage] = useState(() => {
+    const hash = window.location.hash.split('?')[0]
+    return operational && hash === '#calendario-google' ? 'Management' : operational && hash === '#tarefas' ? 'Tasks' : hash === '#partilhas' ? 'Sharing' : 'Agenda'
+  })
   useEffect(() => {
-    if (page === 'Sharing' && window.location.hash !== '#partilhas') window.history.replaceState(null, '', '#partilhas')
-    else if (page !== 'Sharing' && window.location.hash === '#partilhas') window.history.replaceState(null, '', '#inicio')
+    const hash = page === 'Sharing' ? '#partilhas' : page === 'Tasks' ? '#tarefas' : ''
+    if (hash && window.location.hash !== hash) window.history.replaceState(null, '', hash)
+    else if (!hash && (['#partilhas', '#tarefas'].includes(window.location.hash)
+      || page !== 'Management' && window.location.hash.split('?')[0] === '#calendario-google')) window.history.replaceState(null, '', '#inicio')
   }, [page])
   const [homePage, setHomePage] = useState('PublicHome')
   const [consultationEntry, setConsultationEntry] = useState(null)
@@ -70,14 +76,17 @@ function WorkspaceContent({ profile: initialProfile, busy, perform, notify, erro
   useEffect(() => {
     async function openPayments(event) {
       const agenda = event.data?.type === 'PACT_OPEN_AGENDA'
-      if (!agenda && (event.data?.type !== 'PACT_OPEN_PAYMENTS' || !client)) return
+      const tasks = operational && event.data?.type === 'PACT_OPEN_TASKS'
+      if (!agenda && !tasks && (event.data?.type !== 'PACT_OPEN_PAYMENTS' || !client)) return
       if (document.querySelector('[data-pending-command="true"]')) { setDraftError('Aguarda a confirmação da operação antes de sair desta área.'); return }
-      if ([...dirty.current].some(form => form.isConnected) && !window.confirm('Tens alterações por guardar. Queres ver os pagamentos e descartá-las?')) return
-      dirty.current.clear(); setConsultationEntry({ payments: client, revision: Date.now() }); setPage('Agenda')
+      if ([...dirty.current].some(form => form.isConnected) && !window.confirm('Tens alterações por guardar. Queres abrir o aviso e descartá-las?')) return
+      dirty.current.clear()
+      setConsultationEntry(tasks ? null : { payments: client, revision: Date.now() })
+      setPage(tasks ? 'Tasks' : 'Agenda')
     }
     navigator.serviceWorker?.addEventListener('message', openPayments)
     return () => navigator.serviceWorker?.removeEventListener('message', openPayments)
-  }, [client])
+  }, [client, operational])
   function confirmLeaving() {
     if (document.querySelector('[data-pending-command="true"]')) { setDraftError('Aguarda a confirmação da operação antes de sair desta área.'); return false }
     return !hasDraft() || window.confirm('Tens alterações por guardar. Queres sair desta área e descartá-las?')
@@ -105,6 +114,7 @@ function WorkspaceContent({ profile: initialProfile, busy, perform, notify, erro
     ...((client || operational) ? [{ id: 'Sharing', label: 'Partilhas', icon: 'heart', active: page === 'Sharing' }] : []),
     ...(!client ? [{ id: 'Clients', label: 'Clientes', icon: 'people', active: page === 'Clients' }] : []),
     ...(operational ? [{ id: 'Testimonials', label: 'Testemunhos', icon: 'heart', active: page === 'Testimonials' }] : []),
+    ...(operational ? [{ id: 'Tasks', label: 'Tarefas', icon: 'tasks', active: page === 'Tasks' }] : []),
     ...(operational ? [{ id: 'Management', label: 'Gestão da aplicação', icon: 'settings', active: page === 'Management' }] : []),
     { id: client ? 'Profile' : 'Account', label: 'Meu perfil', icon: 'user', active: ['Profile', 'Account'].includes(page) },
   ]
@@ -117,6 +127,7 @@ function WorkspaceContent({ profile: initialProfile, busy, perform, notify, erro
         onFollowup={id => guard(() => { setConsultationEntry({ id, followup: client, conversation: client, revision: Date.now() }); setPage('Agenda') })}
         onEvent={(id, participationId) => guard(() => { setConsultationEntry({ events: true, id, participationId, revision: Date.now() }); setPage('Agenda') })}
         onPack={openPack}
+        onTasks={() => navigate('Tasks')}
         onGuests={id => guard(() => { setConsultationEntry({ guests: true, id, revision: Date.now() }); setPage('Agenda') })}
         onFinance={() => guard(() => { setConsultationEntry(client ? { payments: true, revision: Date.now() } : null); setPage(operational ? 'Finance' : 'Agenda') })}
         onOpen={id => guard(() => { setConsultationEntry({ id, revision: Date.now() }); setPage('Agenda') })} />}
@@ -137,7 +148,8 @@ function WorkspaceContent({ profile: initialProfile, busy, perform, notify, erro
       {(client || operational) && ['Agenda', 'Consultations', 'Finance'].includes(page) && <ActiveConsultationPage key={`${page}:${operational ? 'manager' : consultationEntry?.payments ? 'payments' : consultationEntry?.events ? 'events' : consultationEntry?.packs ? 'packs' : consultationEntry?.guests ? 'guests' : 'default'}`} manager={operational} initialEntry={consultationEntry} guard={guard} perform={perform} notify={notify} profileBusy={busy} onCreateClient={() => { setClientEntry(previous => ({ version: previous.version + 1, view: 'Create' })); setPage('Clients') }} />}
       {(client || operational) && page === 'Sharing' && <SharingFeed profile={profile} guard={guard} />}
       {operational && page === 'Testimonials' && <TestimonialManager guard={guard} onPublic={onPublicTestimonials} />}
-      {operational && page === 'Management' && <ManagementPage guard={guard} busy={busy} />}
+      {operational && page === 'Tasks' && <ManagerTasksPage guard={guard} />}
+      {operational && page === 'Management' && <ManagementPage role={profile.role} guard={guard} busy={busy} />}
       {page === 'Account' && <AccountPage profile={profile} busy={busy} perform={perform} notify={notify} guard={guard} onPasskeyUpdated={onPasskeyUpdated} onSecuritySignedOut={onSecuritySignedOut} onAccountClosed={onAccountClosed} onForgetBrowser={onForgetBrowser} packEntry={packEntry} />}
   </AppLayout>
 }

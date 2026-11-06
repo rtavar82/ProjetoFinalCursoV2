@@ -71,7 +71,7 @@ public static class ManagementAgenda
                 Upcoming: state == "Confirmed" && !conditions && !c.ExpectationOpen && !ConsultationCredit.OpenPrepayment(c), Validation: state == "Requested",
                 Payment: !ConsultationRules.HasOldDebt(c) && !conditions && (c.ExpectationOpen && state is "Confirmed" or "AwaitingClosure" || ConsultationCredit.OpenPrepayment(c) || ConsultationRules.HasDebt(c)
                     || data.Notices.Any(n => n.ConsultationId == c.Id && ConsultationRules.PaymentNoticeActive(n))),
-                HasNotes: c.SharedNoteCiphertext is not null || c.PrivateNoteCiphertext is not null, OldDebt: ConsultationRules.HasOldDebt(c), Conditions: conditions);
+                HasNotes: c.SharedNoteCiphertext is not null || c.PrivateNoteCiphertext is not null || c.SharedClosureMedia is { Length: > 0 } || c.PrivateClosureMedia is { Length: > 0 }, OldDebt: ConsultationRules.HasOldDebt(c), Conditions: conditions);
         }
         foreach (var g in data.GuestRequests.Where(g => g.ConsultationId is null))
         {

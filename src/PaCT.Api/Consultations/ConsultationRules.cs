@@ -92,7 +92,8 @@ public static class ConsultationRules
         if (person is not null && data.GuestRequests.Any(g => g.ConsultationId == c.Id) && !data.ClientAccountPeople.Contains(person)) return;
         if (!data.Notices.Any(n => n.ConsultationId == c.Id && n.Kind == kind && n.PersonId == person))
             data.Notices.Add(new(Id(), person, c.Id, kind, due, expires, PushState: kind.StartsWith("CreditProposal:", StringComparison.Ordinal) ? null : "Pending",
-                EmailPending: kind is "Approved" or "Reminder26" or "Closed" || kind.StartsWith("SharedReport:", StringComparison.Ordinal)));
+                EmailPending: kind == "BookingConfirmed" && c.FinancialChoice != "Prepayment"
+                    || kind is "Approved" or "Reminder26" or "Closed" || kind.StartsWith("SharedReport:", StringComparison.Ordinal)));
     }
     public static void Advance(ConsultationData data, DateTimeOffset now)
     {
@@ -286,7 +287,7 @@ public static class ConsultationRules
                 AgendaRules.ReplaceUnconfirmed(data, start, end, actor, now, encrypt);
                 AgendaRules.RetireWindows(data, start, end, actor, now, blockedOnly: true);
             }
-            AgendaRules.ValidateOccupation(data, start, end, now);
+            AgendaRules.ValidateOccupation(data, start, end, now, manager: actor.IsManager);
             var blocks = AgendaRules.ActiveWindows(data).Where(w => !w.Available && Overlap(start, end, w.StartsAt, w.EndsAt)).ToArray();
             Require(blocks.Length == 0, "O horário está bloqueado para pedidos de clientes.", 409);
             Require(input.Action == "Manual" || AgendaRules.Allows(data, service, start, end, registered: true), "As opções devem corresponder a um horário disponibilizado.", 409);
@@ -458,7 +459,8 @@ public static class ConsultationRules
                 var final = noDebt is not null ? 0m : input.Method == "Undefined" ? (decimal?)null : input.Amount;
                 Require(!performed || noDebt is not null || input.Method == "Undefined" || Money(final), "Indica o valor final positivo ou uma oferta explícita.");
                 Require((input.SharedNote?.Length ?? 0) <= 8000 && (input.PrivateNote?.Length ?? 0) <= 8000, "As notas não podem exceder 8000 caracteres.");
-                Require(input.PhotoIds.Length <= 20 && input.PhotoIds.Distinct(StringComparer.Ordinal).Count() == input.PhotoIds.Length && (performed || input.PhotoIds.Length == 0), "As fotografias exigem uma consulta realizada e até 20 referências diferentes.");
+                ClosureMediaStore.ValidateReferences(input);
+                Require(input.PhotoIds.Distinct(StringComparer.Ordinal).Count() == input.PhotoIds.Length && (performed || input.PhotoIds.Length == 0), "As fotografias exigem uma consulta realizada e referências diferentes.");
                 next = current with { State = input.Choice!, ClosedAt = now, ClosedBy = actor.AccountId, FinalAmount = final, NoDebtReason = noDebt,
                     CancellationOrigin = input.Choice == "CancelledManager" ? "Management" : null,
                     CancelledBy = input.Choice == "CancelledManager" ? actor.AccountId : null,
@@ -469,7 +471,8 @@ public static class ConsultationRules
                     ActualStartsAt = performed ? input.StartsAt : null, ActualEndsAt = performed ? input.EndsAt : null,
                     ExpectationOpen = noDebt is null && current.ExpectationOpen,
                     SharedNoteCiphertext = performed && !string.IsNullOrWhiteSpace(input.SharedNote) ? encrypt(current.Id, "shared", input.SharedNote) : null,
-                    PrivateNoteCiphertext = !string.IsNullOrWhiteSpace(input.PrivateNote) ? encrypt(current.Id, "private", input.PrivateNote) : null, PhotoIds = performed ? input.PhotoIds : [] };
+                    PrivateNoteCiphertext = !string.IsNullOrWhiteSpace(input.PrivateNote) ? encrypt(current.Id, "private", input.PrivateNote) : null, PhotoIds = performed ? input.PhotoIds : [],
+                    SharedClosureMedia = performed ? input.SharedClosureMedia : null, PrivateClosureMedia = input.PrivateClosureMedia };
                 next = next with { NoteHistory = [..next.NoteHistory,
                     new(next.PublicContentVersion, "Shared", actor.AccountId, now, next.SharedNoteCiphertext),
                     new(next.PublicContentVersion, "Private", actor.AccountId, now, next.PrivateNoteCiphertext)] };
@@ -642,7 +645,7 @@ public static class ConsultationRules
         Require(ProcessLifecycle.Substate(c, now) == "Requested", "O pedido não está disponível para aprovação.", 409);
         Require(c.AcceptedAt is null || choice == c.Service.PaymentMode,
             "O cliente já aceitou as condições do pedido. Não podes alterar o formato de pagamento na aprovação.", 409);
-        AgendaRules.ValidateOccupation(data, c.StartsAt, c.EndsAt, now, c.Id);
+        AgendaRules.ValidateOccupation(data, c.StartsAt, c.EndsAt, now, c.Id, manager: true);
         ValidateFinancialChoice(data, c.Service, c.PersonId, choice);
         c = c with { State = "Confirmed", Stage = ProcessStage.Booking,
             StageHistory = [..c.StageHistory, new(c.Stage, ProcessStage.Booking, now, actor.AccountId)],

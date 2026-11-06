@@ -7,8 +7,15 @@ namespace PaCT.Api.Controllers;
 
 [ApiController, Route("api/public/presentation"), AllowAnonymous]
 [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
-public sealed class PublicPresentationController(IConsultationStore store, MySqlSitePresentationStore presentation) : ControllerBase
+public sealed class PublicPresentationController(IConsultationStore store, MySqlSitePresentationStore presentation, SitePresentationImages images) : ControllerBase
 {
+    [HttpGet("images/{key}/{reference}")]
+    public async Task<IActionResult> Image(string key, string reference, CancellationToken ct)
+    {
+        var file = images.PublishedFile(await presentation.PublishedAsync(ct), key, reference);
+        return file is { } published ? PhysicalFile(published.Path, published.Type) : NotFound();
+    }
+
     [HttpGet]
     public async Task<IActionResult> Read(CancellationToken ct)
     {

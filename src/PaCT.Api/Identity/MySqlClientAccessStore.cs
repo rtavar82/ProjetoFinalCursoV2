@@ -44,7 +44,7 @@ public sealed class MySqlClientAccessStore(DatabaseConnectionSettings settings) 
             return await reader.ReadAsync(ct) ? MySqlIdentityStore.ReadAccount(reader) : null;
         }
         private static ClientAccessAction Read(MySqlDataReader r) => new(r.GetGuid("id").ToString("D"), r.GetGuid("account_id").ToString("D"),
-            r.GetGuid("person_id").ToString("D"), r.GetGuid("created_by_account_id").ToString("D"), r.GetString("kind"), r.GetString("status"),
+            r.GetGuid("person_id").ToString("D"), r["created_by_account_id"] is DBNull ? null : r.GetGuid("created_by_account_id").ToString("D"), r.GetString("kind"), r.GetString("status"),
             r.GetGuid("security_stamp").ToString("D"), (byte[])r["previous_email_hash"], r["email_hash"] as byte[], (byte[])r["details_ciphertext"],
             r.GetDateTime("created_at"), r.GetDateTime("expires_at"), r["completed_at"] is DBNull ? null : r.GetDateTime("completed_at"));
         public async Task<ClientAccessAction?> ActionAsync(string id)

@@ -9,6 +9,7 @@ import ClientEventDetail from './ClientEventDetail'
 import ClientHistorySearch from './ClientHistorySearch'
 import ClientPaymentPanel from './ClientPaymentPanel'
 import ConsultationPaymentHistory from './ConsultationPaymentHistory'
+import { ClosureAttachmentList } from './ClosureAttachments'
 import ConsultationConversation from './ConsultationConversation'
 import ConsultationDialog from './ConsultationDialog'
 import ConsultationLocation from './ConsultationLocation'
@@ -192,7 +193,8 @@ function ClientFollowupDetail({ detail: c, latest, feedback, disabled, act, init
     <ConsultationPaymentHistory entries={c.paymentHistory} />
     {c.section === 'Payments' && <button type="button" className="secondary" disabled={disabled} onClick={onPayment}>Ver pagamento</button>}
     <div className={styles.sharedImages}>{(c.photoIds || []).map((id, index) => <img key={id} loading="lazy" src={`/api/consultations/${c.id}/photos/${id}`} alt={`Fotografia partilhada ${index + 1}`} />)}</div>
-    <div className={styles.sharedNote}>{c.sharedNote || 'Sem notas partilhadas.'}</div>
+    <ClosureAttachmentList consultationId={c.id} scope="shared" items={c.sharedClosureMedia} />
+    <div className={styles.sharedNote}>{c.sharedNote || (c.sharedClosureMedia?.length ? null : 'Sem notas partilhadas.')}</div>
     {!conversation && <a href={'#acompanhamento-' + c.id} aria-disabled={disabled} onClick={event => { event.preventDefault(); if (!disabled) setConversation(true) }}>Abrir conversas de acompanhamento</a>}
     {conversation && <ConsultationConversation id={c.id} onMessagesPresented={rememberPresented} />}
     {(unread || c.unreadMessages > 0) && c.section === 'Closed' && <button disabled={disabled || changed} onClick={() => void act('Archive', { publicContentVersion: c.publicContentVersion, messageIds: [...presented.current] })}>Vi as informações do acompanhamento - quero arquivar</button>}

@@ -69,6 +69,9 @@ public static class SitePresentation
         Home.ToDictionary(field => field.Key, field => publication.Text(field.Key, field.Value));
 
     public static JsonObject PublicTherapist(SitePublication publication)
+        => PublicTherapist(publication, out _);
+
+    internal static JsonObject PublicTherapist(SitePublication publication, out SiteImageField[] images)
     {
         var person = JsonSerializer.SerializeToNode(PublicPresentationContent.Therapist)!.AsObject();
         foreach (var field in TherapistFields().Concat(ContactFields()))
@@ -77,6 +80,7 @@ public static class SitePresentation
             if (path.Length == 2) person[path[1]] = publication.Text(field.Key, field.Value);
             else person[path[1]]![int.Parse(path[2])]![path[3]] = publication.Text(field.Key, field.Value);
         }
+        images = SitePresentationImages.Project(publication, person);
         return person;
     }
 

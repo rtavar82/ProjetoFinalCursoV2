@@ -58,8 +58,9 @@ export default function SharingFeed({ profile, onSignIn, guard = action => actio
       {feed.error && <InformationCard error={feed.error} onRetry={feed.refresh} />}
       {feed.data?.items.length === 0 && <InformationCard><p>{scope === 'moderation' ? 'Não há publicações por rever, ocultadas ou rejeitadas.' : 'Ainda não há publicações nesta lista.'}</p></InformationCard>}
       {feed.data?.items.map(post => <SharingCard key={post.id} post={post} profile={profile} canPublish={canPublish}
-        onEdit={() => setEditor(post)} onAgenda={setReference} refresh={feed.refresh} />)}
-      {feed.data && <Pagination total={feed.data.total} pageSize={feed.data.pageSize} page={paging.page}
+        onEdit={() => setEditor(post)} onAgenda={setReference} refresh={feed.refresh}
+        onNewComment={() => { if (scope === 'feed' && paging.page > 1) setPaging({ page: 1, before: '' }) }} />)}
+      {feed.data && <Pagination total={feed.data.total} pageSize={feed.data.pageSize} page={feed.data.page}
         label="Páginas de Partilhas" onChange={page => setPaging({ page, before: page > 1 ? feed.data.before : '' })} />}
     </>}
     {editor && <PostEditor key={editor.id} post={editor} manager={manager} onClose={() => guard(() => setEditor(null))}
@@ -68,7 +69,7 @@ export default function SharingFeed({ profile, onSignIn, guard = action => actio
   </section>
 }
 
-function SharingCard({ post, profile, canPublish, onEdit, onAgenda, refresh }) {
+function SharingCard({ post, profile, canPublish, onEdit, onAgenda, refresh, onNewComment }) {
   const manager = isManager(profile?.role)
   const publicPost = post.status === 'Pending' || post.status === 'Approved'
   const [busy, setBusy] = useState(false)
@@ -145,8 +146,9 @@ function SharingCard({ post, profile, canPublish, onEdit, onAgenda, refresh }) {
     </div>
     {comment && <CommentEditor comment={comment} onClose={() => setComment(null)} onSave={async text => {
       const result = await act('/comments/' + comment.id, { text, version: comment.version }, 'Comentário guardado.')
-      if (result) setComment(null)
-      else throw new Error('Não foi possível guardar. Confirma se a publicação ainda aceita comentários.')
+      if (!result) throw new Error('Não foi possível guardar. Confirma se a publicação ainda aceita comentários.')
+      setComment(null)
+      if (!comment.version) onNewComment()
     }} />}
     {history && <ConsultationDialog title="Histórico da publicação" onClose={() => setHistory(null)}>
       {history.map((change, i) => <InformationCard key={i} title={labels[change.action] || change.action} headingLevel={3}>

@@ -1,3 +1,5 @@
+using PaCT.Api.Management;
+
 namespace PaCT.Api.Identity;
 
 public static class Roles
@@ -11,7 +13,8 @@ public static class Roles
 }
 
 public sealed record ManagerRegistration(string InstallationCode, string FirstName, string LastName,
-    string Locality, string DisplayName, string Email, string Password, string ConfirmPassword);
+    string Locality, string DisplayName, string Email, string Password, string ConfirmPassword,
+    string? PrivacyControllerName = null, string? PrivacyContactEmail = null);
 public sealed record PasswordSignIn(string Email, string Password);
 public sealed record AccountClosure(string Password, bool Confirm);
 public sealed record PasswordSignInResult(IdentityAccount? Account, int Status = 200, string? Message = null);
@@ -79,7 +82,7 @@ public interface IIdentityStore
     Task<bool> HasTechnicalManagerAsync(CancellationToken ct);
     Task<IdentityAccount?> FindAsync(string id, CancellationToken ct);
     Task<IdentityAccount?> FindByEmailAsync(byte[] hash, CancellationToken ct);
-    Task CreateAsync(PrivatePerson person, IdentityAccount account, EmailJob email, CancellationToken ct);
+    Task CreateAsync(PrivatePerson person, IdentityAccount account, EmailJob email, PrivacyControllerDetails privacy, CancellationToken ct);
     Task<bool> UpdateAsync(IdentityAccount account, DateTime now, CancellationToken ct);
     Task QueueConfirmationAsync(EmailJob email, CancellationToken ct);
     Task<bool> IsConfirmationCurrentAsync(string emailId, string accountId, CancellationToken ct);

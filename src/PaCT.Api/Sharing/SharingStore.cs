@@ -26,7 +26,7 @@ internal static class SharingReactions
 
 public sealed class SharingStore(DatabaseConnectionSettings settings, IdentitySecurity security)
 {
-    public static async Task PrepareAsync(DatabaseConnectionSettings settings, CancellationToken ct)
+    public async Task PrepareAsync(CancellationToken ct)
     {
         await using var connection = settings.CreateConnection();
         await connection.OpenAsync(ct);
@@ -37,10 +37,12 @@ public sealed class SharingStore(DatabaseConnectionSettings settings, IdentitySe
                 id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin PRIMARY KEY,
                 author_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
                 created_at DATETIME(6) NOT NULL,
+                activity_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
                 status VARCHAR(12) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
                 version BIGINT NOT NULL,
                 data LONGBLOB NOT NULL,
                 KEY IX_sharing_feed (status,created_at,id),
+                KEY IX_sharing_activity (status,activity_at,id),
                 KEY IX_sharing_author (author_id,created_at,id)
             ) ENGINE=InnoDB
             """,
@@ -76,6 +78,63 @@ public sealed class SharingStore(DatabaseConnectionSettings settings, IdentitySe
             try { await add.ExecuteNonQueryAsync(ct); }
             catch (MySqlException error) when (error.Number == 1060) { }
         }
+        await PrepareActivityAsync(connection, ct);
+    }
+
+    private async Task PrepareActivityAsync(MySqlConnection connection, CancellationToken ct)
+    {
+        await using var check = new MySqlCommand("""
+            SELECT IS_NULLABLE FROM information_schema.COLUMNS
+            WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='sharing_posts' AND COLUMN_NAME='activity_at'
+            """, connection);
+        var nullable = await check.ExecuteScalarAsync(ct) as string;
+        if (nullable == "NO") return;
+        if (nullable is null)
+        {
+            await using var add = new MySqlCommand("""
+                ALTER TABLE sharing_posts ADD COLUMN activity_at DATETIME(6) NULL,
+                    ADD INDEX IX_sharing_activity (status,activity_at,id)
+                """, connection);
+            await add.ExecuteNonQueryAsync(ct);
+        }
+
+        while (true)
+        {
+            await using var transaction = await connection.BeginTransactionAsync(ct);
+            await using var query = new MySqlCommand("""
+                SELECT id,data FROM sharing_posts WHERE activity_at IS NULL ORDER BY id LIMIT 64 FOR UPDATE
+                """, connection, transaction);
+            var rows = new List<(string Id, DateTime At)>();
+            await using (var reader = await query.ExecuteReaderAsync(ct))
+                while (await reader.ReadAsync(ct))
+                {
+                    var id = reader.GetGuid(0).ToString("D");
+                    rows.Add((id, FeedActivity(Decode(id, (byte[])reader[1])).UtcDateTime));
+                }
+
+            await using var update = new MySqlCommand("UPDATE sharing_posts SET activity_at=@at WHERE id=@id", connection, transaction);
+            var at = update.Parameters.AddWithValue("@at", DBNull.Value);
+            var postId = update.Parameters.AddWithValue("@id", DBNull.Value);
+            foreach (var row in rows)
+            {
+                at.Value = row.At;
+                postId.Value = row.Id;
+                await update.ExecuteNonQueryAsync(ct);
+            }
+            await transaction.CommitAsync(ct);
+            if (rows.Count == 0) break;
+        }
+
+        await using var finish = new MySqlCommand("ALTER TABLE sharing_posts MODIFY COLUMN activity_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)", connection);
+        await finish.ExecuteNonQueryAsync(ct);
+    }
+
+    internal static DateTimeOffset FeedActivity(SharePost post)
+    {
+        var lastEdit = post.History.Where(change => change.Action == "Edited")
+            .Select(change => change.At).DefaultIfEmpty(post.CreatedAt).Max();
+        var lastComment = post.Comments.Select(comment => comment.CreatedAt).DefaultIfEmpty(post.CreatedAt).Max();
+        return lastEdit >= lastComment ? lastEdit : lastComment;
     }
 
     private async Task<MySqlConnection> OpenAsync(CancellationToken ct)
@@ -97,7 +156,8 @@ public sealed class SharingStore(DatabaseConnectionSettings settings, IdentitySe
         return post with { Reactions = likes.Distinct(StringComparer.Ordinal).ToDictionary(id => id, _ => SharingReactions.Like, StringComparer.Ordinal) };
     }
 
-    public async Task<(int Total, SharePost[] Items)> ListAsync(string scope, string? author, DateTimeOffset before, int page, int pageSize, CancellationToken ct)
+    public async Task<(int Total, SharePost[] Items, int Page, DateTimeOffset Before)> ListAsync(
+        string scope, string? author, DateTimeOffset before, DateTimeOffset now, int page, int pageSize, CancellationToken ct)
     {
         var filter = scope switch
         {
@@ -107,12 +167,27 @@ public sealed class SharingStore(DatabaseConnectionSettings settings, IdentitySe
         };
         await using var connection = await OpenAsync(ct);
         await using var transaction = await connection.BeginTransactionAsync(System.Data.IsolationLevel.RepeatableRead, ct);
+        if (scope == "feed" && page > 1 && before < now)
+        {
+            // Activity can move a post across page boundaries. Start a fresh list instead of skipping or duplicating posts.
+            await using var changed = new MySqlCommand("""
+                SELECT EXISTS(SELECT 1 FROM sharing_posts
+                    WHERE status IN ('Pending','Approved') AND activity_at>@before AND created_at<=@before)
+                """, connection, transaction);
+            changed.Parameters.AddWithValue("@before", before.UtcDateTime);
+            if (Convert.ToBoolean(await changed.ExecuteScalarAsync(ct)))
+            {
+                page = 1;
+                before = now;
+            }
+        }
+        var orderBy = scope == "feed" ? "activity_at" : "created_at";
         await using var count = new MySqlCommand("SELECT COUNT(*) FROM sharing_posts WHERE created_at<=@before AND " + filter, connection, transaction);
         count.Parameters.AddWithValue("@before", before.UtcDateTime);
         if (scope == "mine") count.Parameters.AddWithValue("@author", author);
         var total = Convert.ToInt32(await count.ExecuteScalarAsync(ct));
         await using var query = new MySqlCommand("SELECT id,data FROM sharing_posts WHERE created_at<=@before AND " + filter
-            + " ORDER BY created_at DESC,id DESC LIMIT @size OFFSET @offset", connection, transaction);
+            + $" ORDER BY {orderBy} DESC,id DESC LIMIT @size OFFSET @offset", connection, transaction);
         query.Parameters.AddWithValue("@before", before.UtcDateTime);
         if (scope == "mine") query.Parameters.AddWithValue("@author", author);
         query.Parameters.AddWithValue("@size", pageSize);
@@ -121,7 +196,7 @@ public sealed class SharingStore(DatabaseConnectionSettings settings, IdentitySe
         await using (var reader = await query.ExecuteReaderAsync(ct))
             while (await reader.ReadAsync(ct)) rows.Add(Decode(reader.GetGuid(0).ToString("D"), (byte[])reader[1]));
         await transaction.CommitAsync(ct);
-        return (total, rows.ToArray());
+        return (total, rows.ToArray(), page, before);
     }
 
     public async Task<SharePost?> FindAsync(string id, CancellationToken ct)
@@ -193,14 +268,15 @@ public sealed class SharingStore(DatabaseConnectionSettings settings, IdentitySe
         if (next != current)
         {
             await using var command = new MySqlCommand(current is null
-                ? "INSERT INTO sharing_posts(id,author_id,created_at,status,version,data) VALUES(@id,@author,@created,@status,@version,@data)"
-                : "UPDATE sharing_posts SET status=@status,version=@version,data=@data WHERE id=@id", connection, transaction);
+                ? "INSERT INTO sharing_posts(id,author_id,created_at,activity_at,status,version,data) VALUES(@id,@author,@created,@activity,@status,@version,@data)"
+                : "UPDATE sharing_posts SET activity_at=@activity,status=@status,version=@version,data=@data WHERE id=@id", connection, transaction);
             command.Parameters.AddWithValue("@id", next.Id);
             if (current is null)
             {
                 command.Parameters.AddWithValue("@author", next.AuthorId);
                 command.Parameters.AddWithValue("@created", next.CreatedAt.UtcDateTime);
             }
+            command.Parameters.AddWithValue("@activity", FeedActivity(next).UtcDateTime);
             command.Parameters.AddWithValue("@status", next.Status);
             command.Parameters.AddWithValue("@version", next.Version);
             command.Parameters.AddWithValue("@data", security.Encrypt(next.Id, "sharing-post", JsonSerializer.Serialize(next)));

@@ -29,6 +29,7 @@ import ConsultationConditionsForm from './ConsultationConditionsForm'
 import GuestRequests from './GuestRequests'
 import SessionPacksPanel from './SessionPacksPanel'
 import GroupEventsPanel from './GroupEventsPanel'
+import { ClosureAttachmentList } from './ClosureAttachments'
 import ConsultationConversation from './ConsultationConversation'
 import ManagerAgenda from './ManagerAgenda'
 import ManagerVisitorAgenda from './ManagerVisitorAgenda'
@@ -228,8 +229,8 @@ export default function Consultations({ manager, area, initialEntry, onCreateCli
       {manager && detail.state === 'Confirmed' && <ManagerCancellation key={'cancel:' + detail.id} detail={detail} disabled={busy || uncertain} submit={submit} />}
       {manager && !detail.actions?.includes('Close') && detail.actions?.includes('Settle') && <CreditSettlementForm key={detail.id} record={detail} manager disabled={busy || uncertain} act={act} />}
       <ConsultationPaymentHistory entries={detail.paymentHistory} />
-      {detail.state === 'Performed' && (manager || followup) && <>{detail.photoIds?.map((id, index) => <img key={id} src={`/api/consultations/${detail.id}/photos/${id}`} alt={`Fotografia partilhada ${index + 1}`} style={{ maxWidth: '100%', height: 'auto' }} />)}<h3>Informação partilhada</h3><div className="shared-consultation-note">{detail.sharedNote || 'Sem notas partilhadas.'}</div>{!manager && detail.section === 'Closed' && !detail.archivedAt && <button disabled={busy || uncertain} onClick={() => act('Archive', { publicContentVersion: detail.publicContentVersion })}>Vi as informações do acompanhamento - quero arquivar</button>}</>}
-      {manager && detail.privateNote && <><h3>Nota privada — apenas gestão</h3><p className="shared-consultation-note">{detail.privateNote}</p></>}
+      {detail.state === 'Performed' && (manager || followup) && <>{detail.photoIds?.map((id, index) => <img key={id} src={`/api/consultations/${detail.id}/photos/${id}`} alt={`Fotografia partilhada ${index + 1}`} style={{ maxWidth: '100%', height: 'auto' }} />)}<h3>Informação partilhada</h3><ClosureAttachmentList consultationId={detail.id} scope="shared" items={detail.sharedClosureMedia} /><div className="shared-consultation-note">{detail.sharedNote || (detail.sharedClosureMedia?.length ? null : 'Sem notas partilhadas.')}</div>{!manager && detail.section === 'Closed' && !detail.archivedAt && <button disabled={busy || uncertain} onClick={() => act('Archive', { publicContentVersion: detail.publicContentVersion })}>Vi as informações do acompanhamento - quero arquivar</button>}</>}
+      {manager && (detail.privateNote || detail.privateClosureMedia?.length > 0) && <><h3>Nota privada — apenas gestão</h3><ClosureAttachmentList consultationId={detail.id} scope="private" items={detail.privateClosureMedia} />{detail.privateNote && <p className="shared-consultation-note">{detail.privateNote}</p>}</>}
       {!manager && detail.state === 'Performed' && !followup && <button className="text-button" onClick={() => setFollowup(true)}>Ver consulta e acompanhamento com a terapeuta</button>}
       {manager && detail.state === 'Performed' && <ConsultationConversation key={'conversation:' + detail.id} id={detail.id} manager />}
     </ConsultationDialog>}

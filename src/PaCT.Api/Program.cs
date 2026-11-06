@@ -1,10 +1,12 @@
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.DataProtection;
 using PaCT.Api.Configuration;
+using PaCT.Api.Consultations;
 using PaCT.Api.Data;
 using PaCT.Api.Health;
 using PaCT.Api.Infrastructure;
 using PaCT.Api.Identity;
+using PaCT.Api.Management;
 using PaCT.Api.Sharing;
 using System.Text.Json;
 
@@ -18,10 +20,14 @@ public partial class Program
         var prepareEvents = args.Contains("--prepare-event-rules", StringComparer.Ordinal);
         const string prepareSalesOption = "--prepare-sales";
         var prepareSales = args.Contains(prepareSalesOption, StringComparer.Ordinal);
+        const string prepareManagerTasksOption = "--prepare-manager-tasks";
+        var prepareManagerTasks = args.Contains(prepareManagerTasksOption, StringComparer.Ordinal);
         const string prepareManagementOption = "--prepare-management";
         var prepareManagement = args.Contains(prepareManagementOption, StringComparer.Ordinal);
         const string preparePresentationOption = "--prepare-site-presentation";
         var preparePresentation = args.Contains(preparePresentationOption, StringComparer.Ordinal);
+        const string preparePrivacyOption = "--prepare-privacy";
+        var preparePrivacy = args.Contains(preparePrivacyOption, StringComparer.Ordinal);
         const string prepareExpensesOption = "--prepare-expenses";
         var prepareExpenses = args.Contains(prepareExpensesOption, StringComparer.Ordinal);
         const string prepareOption = "--prepare-installation";
@@ -62,7 +68,7 @@ public partial class Program
         var showCode = args.Contains(showCodeOption, StringComparer.Ordinal);
         var prepareInvitations = args.Contains(prepareInvitationsOption, StringComparer.Ordinal);
         var prepareClients = args.Contains(prepareClientsOption, StringComparer.Ordinal);
-        var builder = WebApplication.CreateBuilder(args.Where(argument => argument != prepareSalesOption && argument != prepareManagementOption && argument != prepareExpensesOption && argument != preparePresentationOption)
+        var builder = WebApplication.CreateBuilder(args.Where(argument => argument != prepareManagerTasksOption && argument != prepareSalesOption && argument != prepareManagementOption && argument != prepareExpensesOption && argument != preparePresentationOption && argument != preparePrivacyOption)
             .Where(argument => argument != "--audit-event-rules" && argument != "--prepare-event-rules" && argument != auditFinanceOption && argument != prepareFinanceOption && argument != prepareOption && argument != showCodeOption && argument != prepareInvitationsOption && argument != prepareClientsOption && argument != prepareConsultationsOption && argument != preparePasskeysOption && argument != resetManagerFactorsOption && argument != prepareClientAccessOption && argument != prepareAccountLoginOption && argument != configureCatalogueOption && argument != prepareAudioOption && argument != prepareSharingOption && argument != prepareTestimonialsOption && argument != auditProcessStagesOption && argument != prepareProcessStagesOption && argument != prepareRequestRecoveryOption && argument != prepareEmailOperationsOption)
             .ToArray());
 
@@ -73,11 +79,15 @@ public partial class Program
         builder.Services.AddOpenApi();
         builder.Services.AddHealthChecks().AddCheck<MySqlReadinessCheck>("mysql", tags: ["ready"]);
         builder.AddAccountSecurity();
+        builder.AddGoogleCalendar();
         builder.Services.AddSingleton<PaCT.Api.Consultations.IConsultationStore, PaCT.Api.Consultations.MySqlConsultationStore>();
         builder.Services.AddSingleton<PaCT.Api.Management.IManagementStore, PaCT.Api.Management.MySqlManagementStore>();
         builder.Services.AddSingleton<PaCT.Api.Management.MySqlSitePresentationStore>();
+        builder.Services.AddSingleton<PaCT.Api.Management.SitePresentationImages>();
+        builder.Services.AddSingleton<PrivacyStore>();
         builder.Services.AddSingleton<PaCT.Api.Finance.IExpenseStore, PaCT.Api.Finance.MySqlExpenseStore>();
         builder.Services.AddSingleton<PaCT.Api.Consultations.ConsultationPhotoStore>();
+        builder.Services.AddSingleton<PaCT.Api.Consultations.ClosureMediaStore>();
         builder.Services.AddSingleton<PaCT.Api.Testimonials.ITestimonialStore, PaCT.Api.Testimonials.MySqlTestimonialStore>();
         builder.Services.AddSingleton<PaCT.Api.Testimonials.TestimonialImageStore>();
         builder.Services.AddSingleton<SharingStore>();
@@ -89,16 +99,24 @@ public partial class Program
         builder.Services.AddSingleton<PaCT.Api.Consultations.IBrowserPushTransport, PaCT.Api.Consultations.BrowserPushTransport>();
         builder.Services.AddHostedService<PaCT.Api.Consultations.BalancePushWorker>();
         builder.Services.AddHostedService<PaCT.Api.Consultations.ConsultationPushWorker>();
+        builder.Services.AddSingleton<ManagerTaskStore>();
+        builder.Services.AddHostedService<ManagerTaskPushWorker>();
         var app = builder.Build();
         var database = app.Services.GetRequiredService<DatabaseConnectionSettings>();
 
-        if (prepareExpenses || prepareManagement || preparePresentation || prepareSales || auditEvents || prepareEvents || auditFinance || prepareFinance || prepare || showCode || prepareInvitations || prepareClients || prepareConsultations || preparePasskeys || resetManagerFactors || prepareClientAccess || prepareAccountLogin || configureCatalogue || prepareAudio || prepareSharing || prepareTestimonials || auditProcessStages || prepareProcessStages || prepareRequestRecovery || prepareEmailOperations)
+        if (prepareManagerTasks || prepareExpenses || prepareManagement || preparePresentation || preparePrivacy || prepareSales || auditEvents || prepareEvents || auditFinance || prepareFinance || prepare || showCode || prepareInvitations || prepareClients || prepareConsultations || preparePasskeys || resetManagerFactors || prepareClientAccess || prepareAccountLogin || configureCatalogue || prepareAudio || prepareSharing || prepareTestimonials || auditProcessStages || prepareProcessStages || prepareRequestRecovery || prepareEmailOperations)
         {
             try
             {
-                if (new[] { prepareExpenses, prepareManagement, preparePresentation, prepareSales, auditEvents, prepareEvents, auditFinance, prepareFinance, prepare, showCode, prepareInvitations, prepareClients, prepareConsultations, preparePasskeys, resetManagerFactors, prepareClientAccess, prepareAccountLogin, configureCatalogue, prepareAudio, prepareSharing, prepareTestimonials, auditProcessStages, prepareProcessStages, prepareRequestRecovery, prepareEmailOperations }.Count(value => value) != 1) throw new InvalidOperationException("Use one installation command at a time.");
+                if (new[] { prepareManagerTasks, prepareExpenses, prepareManagement, preparePresentation, preparePrivacy, prepareSales, auditEvents, prepareEvents, auditFinance, prepareFinance, prepare, showCode, prepareInvitations, prepareClients, prepareConsultations, preparePasskeys, resetManagerFactors, prepareClientAccess, prepareAccountLogin, configureCatalogue, prepareAudio, prepareSharing, prepareTestimonials, auditProcessStages, prepareProcessStages, prepareRequestRecovery, prepareEmailOperations }.Count(value => value) != 1) throw new InvalidOperationException("Use one installation command at a time.");
                 var secrets = app.Services.GetRequiredService<InstallationSecrets>();
-                if (prepareExpenses)
+                if (prepareManagerTasks)
+                {
+                    await ManagerTaskSchema.PrepareAsync(database, app.Services.GetRequiredService<InstallationPaths>(),
+                        app.Services.GetRequiredService<IDataProtectionProvider>(), CancellationToken.None);
+                    Console.WriteLine(JsonSerializer.Serialize(new { status = "prepared", module = "manager-tasks" }));
+                }
+                else if (prepareExpenses)
                     Console.WriteLine(JsonSerializer.Serialize(await ExpenseSchema.PrepareAsync(database, app.Services.GetRequiredService<InstallationPaths>(), app.Services.GetRequiredService<IDataProtectionProvider>(), CancellationToken.None)));
                 else if (prepareManagement)
                     Console.WriteLine(JsonSerializer.Serialize(await ManagementDirectorySchema.PrepareAsync(database, app.Services.GetRequiredService<InstallationPaths>(), app.Services.GetRequiredService<IDataProtectionProvider>(), app.Services.GetRequiredService<IdentitySecurity>(), CancellationToken.None)));
@@ -106,6 +124,11 @@ public partial class Program
                 {
                     await SitePresentationSchema.PrepareAsync(database, CancellationToken.None);
                     Console.WriteLine(JsonSerializer.Serialize(new { status = "prepared", module = "site-presentation" }));
+                }
+                else if (preparePrivacy)
+                {
+                    await PrivacySchema.PrepareAsync(database, app.Services.GetRequiredService<InstallationPaths>(), app.Services.GetRequiredService<IDataProtectionProvider>(), CancellationToken.None);
+                    Console.WriteLine(JsonSerializer.Serialize(new { status = "prepared", module = "privacy" }));
                 }
                 else if (prepareSales)
                     Console.WriteLine(JsonSerializer.Serialize(await FinancialSalesSchema.PrepareAsync(database, app.Services.GetRequiredService<InstallationPaths>(), app.Services.GetRequiredService<IDataProtectionProvider>(), CancellationToken.None)));
@@ -137,6 +160,7 @@ public partial class Program
                     tables = tables.Where(table => table.Name != invitationTable.Name).Append(invitationTable).ToArray();
                     await ClientSchema.PrepareAsync(database, app.Services.GetRequiredService<InstallationPaths>(), app.Services.GetRequiredService<IDataProtectionProvider>(), CancellationToken.None);
                     tables = await EnglishIdentityUpgrade.PrepareAsync(database, app.Services.GetRequiredService<InstallationPaths>(), CancellationToken.None);
+                    await PrivacySchema.PrepareAsync(database, app.Services.GetRequiredService<InstallationPaths>(), app.Services.GetRequiredService<IDataProtectionProvider>(), CancellationToken.None);
                     var security = app.Services.GetRequiredService<IdentitySecurity>();
                     var measurements = new List<long>();
                     for (var index = 0; index < 3; index++)
@@ -158,7 +182,7 @@ public partial class Program
                 else if (prepareSharing)
                 {
                     _ = secrets.SearchKey;
-                    await SharingStore.PrepareAsync(database, CancellationToken.None);
+                    await app.Services.GetRequiredService<SharingStore>().PrepareAsync(CancellationToken.None);
                     Console.WriteLine(JsonSerializer.Serialize(new { status = "prepared", module = "sharing" }));
                 }
                 else if (prepareTestimonials)

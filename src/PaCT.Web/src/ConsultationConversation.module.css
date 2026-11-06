@@ -11,3 +11,5 @@
 .photo { min-width: 0; overflow-wrap: anywhere; }
 .images { display: grid; gap: .5rem; }
 .images img { display: block; max-width: 100%; height: auto; border-radius: .5rem; }
+
+.video { display: block; max-inline-size: 100%; max-block-size: 28rem; object-fit: contain; }
