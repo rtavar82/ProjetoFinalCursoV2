@@ -37,8 +37,14 @@ public static class ProcessLifecycle
     }
     public static ProcessStatus Status(Consultation c, DateTimeOffset now)
     {
+        var conditions = ConsultationConditions.Pending(c, now);
         var result = Describe(At(c, now).Stage, Substate(c, now), c.CancellationOrigin,
-            ConsultationConditions.Pending(c, now) ? "ConditionsPending" : ConsultationRules.FinancialState(c));
+            conditions ? "ConditionsPending" : ConsultationRules.FinancialState(c));
+        if (!conditions && c.AdvanceSatisfiedAt is not null && ConsultationCredit.OpenPrepayment(c))
+            return result with { ProcessLabel = result.ProcessLabel + " · Recebimento confirmado · Falta liquidar" };
+        if (!conditions && result.Stage is ProcessStage.Booking && c.State == "Confirmed"
+            && c.FinancialChoice == "Prepayment" && c.SettlementId is not null)
+            return result with { ProcessLabel = result.ProcessLabel + " · Paga" };
         if (c.PaymentDeclaredAt is not null && ConsultationRules.ActiveObligation(c))
             return result with { ProcessLabel = result.ProcessLabel + " · Aguarda confirmação de recebimento pela terapeuta" };
         if (c.State == "Performed" && c.FinalAmount > 0 && c.ReceivedAmount >= c.FinalAmount && ConsultationRules.HasDebt(c))

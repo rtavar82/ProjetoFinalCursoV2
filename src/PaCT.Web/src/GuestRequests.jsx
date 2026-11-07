@@ -8,6 +8,7 @@ import InformationCard from './InformationCard'
 import AppointmentSummary from './AppointmentSummary'
 import CreditAuthorizationCard from './CreditAuthorizationCard'
 import ConsultationDialog from './ConsultationDialog'
+import WhatsAppMessage from './WhatsAppMessage'
 import { agendaDate } from './agendaTime'
 import styles from './GuestRequests.module.css'
 
@@ -37,6 +38,7 @@ export default function GuestRequests({ send, disabled, guard, onCreateClient, f
       {feedback}
       <p>+{detail.contact.dialCode} {detail.contact.phone}</p>{detail.contact.email && <p>{detail.contact.email}</p>}
       {detail.contact.locality && <p>Localidade: {detail.contact.locality}</p>}
+      <WhatsAppMessage contact={detail.contact} startsAt={detail.startsAt} disabled={disabled || !!latestDetail.error} />
       {['Requested', 'InTreatment'].includes(detail.state) && <>
         {changed && <p className="notice" role="status">O pedido mudou entretanto. Fecha e volta a abrir antes de decidir. O preenchimento foi mantido.</p>}
         <GuestApproval key={`${openedDetail.id}:${openedDetail.version}`} detail={openedDetail} disabled={disabled || changed} decide={decide}

@@ -57,20 +57,22 @@ public static class ManagementAgenda
         foreach (var c in data.Consultations)
         {
             var state = ProcessLifecycle.Substate(c, now);
-            var conditions = ConsultationConditions.Pending(c, now);
+            var section = ConsultationRules.ManagerSection(c, now);
+            var conditions = section == "Conditions";
+            var awaitingReceipt = state is "Confirmed" or "AwaitingClosure" && ConsultationRules.AwaitingAdvanceReceipt(c);
+            var paymentCommunication = !(state is "Confirmed" or "AwaitingClosure" && c.AdvanceSatisfiedAt is not null)
+                && data.Notices.Any(n => n.ConsultationId == c.Id && ConsultationRules.PaymentNoticeActive(n));
             var reasons = new List<string>();
             if (state == "Requested") reasons.Add("Pedido por validar");
             if (conditions) reasons.Add("Condições por aceitar");
-            else if (c.ExpectationOpen && state is "Confirmed" or "AwaitingClosure") reasons.Add("Pagamento antecipado por validar");
-            else if (ConsultationCredit.OpenPrepayment(c)) reasons.Add("Pré-pagamento por liquidar");
+            else if (awaitingReceipt) reasons.Add("Pagamento antecipado por validar");
             if (ConsultationRules.HasDebt(c) && c.PaymentDeclaredAt is null) reasons.Add(c.OldDebt ? "Dívida antiga" : c.FinalAmount is null ? "Contribuição por definir" : "Valor em dívida");
-            if (data.Notices.Any(n => n.ConsultationId == c.Id && ConsultationRules.PaymentNoticeActive(n))) reasons.Add("Comunicação de pagamento por analisar");
+            if (paymentCommunication) reasons.Add("Comunicação de pagamento por analisar");
             if (state is "CancelledClient" or "CancelledManager" && c.AvailabilityDecidedAt is null) reasons.Add("Disponibilidade por decidir");
             yield return new(new(c.Id, "Consultation", c.Id, c.PersonId, c.Service.Title, c.StartsAt, c.EndsAt, c.CreatedAt,
                 state, ConsultationRules.FinancialState(c), ProcessLifecycle.Status(c, now), reasons.ToArray(), ConsultationCredit.Payable(c) ? ConsultationRules.Remaining(c) : null, c.Service.Modality, c.Service.PublicLocation),
-                Upcoming: state == "Confirmed" && !conditions && !c.ExpectationOpen && !ConsultationCredit.OpenPrepayment(c), Validation: state == "Requested",
-                Payment: !ConsultationRules.HasOldDebt(c) && !conditions && (c.ExpectationOpen && state is "Confirmed" or "AwaitingClosure" || ConsultationCredit.OpenPrepayment(c) || ConsultationRules.HasDebt(c)
-                    || data.Notices.Any(n => n.ConsultationId == c.Id && ConsultationRules.PaymentNoticeActive(n))),
+                Upcoming: section == "Upcoming", Validation: state == "Requested",
+                Payment: !ConsultationRules.HasOldDebt(c) && !conditions && (awaitingReceipt || ConsultationRules.HasDebt(c) || paymentCommunication),
                 HasNotes: c.SharedNoteCiphertext is not null || c.PrivateNoteCiphertext is not null || c.SharedClosureMedia is { Length: > 0 } || c.PrivateClosureMedia is { Length: > 0 }, OldDebt: ConsultationRules.HasOldDebt(c), Conditions: conditions);
         }
         foreach (var g in data.GuestRequests.Where(g => g.ConsultationId is null))

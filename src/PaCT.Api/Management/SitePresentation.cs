@@ -35,12 +35,23 @@ public static class SitePresentation
         new("socialTitle", "Título da secção de redes sociais", "Acompanha-me também nas redes sociais.", 160)
     ];
 
+    private static readonly SiteField[] WhatsApp =
+    [
+        new("whatsapp.contact", "Contacto sobre a marcação",
+            "{saudacao} Falo-te da PaCT sobre a tua marcação{horario}. Quando puderes, responde por aqui.", 800, true),
+        new("whatsapp.availability", "Combinar um horário",
+            "{saudacao} Gostaria de combinar contigo uma data para a tua marcação. Que horários te dão mais jeito?", 800, true),
+        new("whatsapp.change", "Combinar uma alteração",
+            "{saudacao} Gostaria de falar contigo sobre uma alteração ao horário da tua marcação{horario}. Podes responder por aqui?", 800, true)
+    ];
+
     public static SiteField[] Fields(string section) => section switch
     {
         "Home" => Home,
         "Therapist" => TherapistFields(),
         "Contacts" => ContactFields(),
         "Payment" => PaymentFields(),
+        "WhatsApp" => WhatsApp,
         "Places" => [new("place.Online.description", "Online — descrição pública", PublicPresentationContent.LocationDescription("Remote"), 600, true)],
         _ => throw new IdentityProblem(404, "Área de edição desconhecida.")
     };
@@ -62,6 +73,9 @@ public static class SitePresentation
             throw new IdentityProblem(400, "O conteúdo desta secção é demasiado longo.");
         if (section == "Contacts") ValidateContacts(normalized);
         if (section == "Payment") ValidatePayment(normalized);
+        if (section == "WhatsApp" && normalized.Values.Any(text =>
+            text.Replace("{saudacao}", "").Replace("{horario}", "").IndexOfAny(['{', '}']) >= 0))
+            throw new IdentityProblem(400, "Nos modelos do WhatsApp, usa apenas os campos {saudacao} e {horario}.");
         return normalized;
     }
 

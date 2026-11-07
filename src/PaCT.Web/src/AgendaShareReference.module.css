@@ -7,3 +7,5 @@
   padding-inline: .5rem;
   overflow-wrap: anywhere;
 }
+.compact { justify-content: flex-end; padding-inline: .8rem; }
+.compact button { width: auto; margin: 0; padding: 0; }

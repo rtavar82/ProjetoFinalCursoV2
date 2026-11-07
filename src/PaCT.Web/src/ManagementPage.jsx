@@ -30,7 +30,7 @@ const decisions = { Activate: 'Reativar', Deactivate: 'Desativar', Delete: 'Elim
 export default function ManagementPage({ role, guard, busy }) {
   const [kind, setKind] = useState(() => window.location.hash.split('?')[0] === '#calendario-google' ? 'GoogleCalendar' : 'Supplier')
   const presentation = { Home: 'Página inicial', Therapist: 'Apresentação da terapeuta', Places: 'Locais e moradas',
-    Contacts: 'Contactos e redes sociais', Payment: 'Formas de pagamento' }
+    Contacts: 'Contactos e redes sociais', Payment: 'Formas de pagamento', WhatsApp: 'Gestão de mensagens' }
   const technical = role === 'TechnicalManager'
   const tabs = [...Object.entries(areas).map(([key, area]) => [key, area.title]), ...Object.entries(presentation), ['Catalogue', 'Catálogo de consultas'], ['GoogleCalendar', 'Google Calendar'],
     ...(technical ? [['Privacy', 'Documentos RGPD']] : [])]

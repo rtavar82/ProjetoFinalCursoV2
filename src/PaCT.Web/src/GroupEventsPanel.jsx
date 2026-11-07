@@ -17,6 +17,7 @@ import InformationCard from './InformationCard'
 import AppointmentSummary from './AppointmentSummary'
 import Pagination from './Pagination'
 import ConsultationDialog from './ConsultationDialog'
+import WhatsAppMessage from './WhatsAppMessage'
 import ConsultationConditionsForm, { ConditionsContent } from './ConsultationConditionsForm'
 import ClientPaymentPanel from './ClientPaymentPanel'
 import { FinancialEntryForm } from './FinancePanel'
@@ -183,6 +184,8 @@ export function Participation({ participation: p, event, disabled, send, manager
 
   return <div className={styles.participation}>
     {showStatus && <AppointmentSummary consultation={event.summary} showTitle={false} stateLabel={eventStatusLabel(event.summary, { manager, participation: p })} typeLabel={event.summary.kind === 'Retreat' ? 'Retiro' : 'Grupo'} />}
+    {manager && <WhatsAppMessage personId={p.personId} contact={p.personId ? undefined : p.guestContact}
+      startsAt={event.summary.startsAt} disabled={disabled} />}
     {!manager && paymentVisible && <ClientPaymentPanel consultation={clientPayment} disabled={disabled} act={clientAct} participation />}
     {p.acceptedConditions && <details><summary>Condições aceites na inscrição</summary><ConditionsContent conditions={{ ...p.acceptedConditions, paymentInformation: null }} /></details>}
     {manager && p.canReceive && <FinancialEntryForm people={[{ id: p.personId, data: { firstName: names?.[p.personId] || 'Ficha de cliente' } }]} participation={{ ...p, paymentMode: event.summary.paymentMode }} disabled={disabled} instant={instant} reviewBeforeSubmit submit={async (e, input) => { e.preventDefault(); return send(input(new FormData(e.currentTarget))) }} />}

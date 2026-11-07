@@ -35,6 +35,43 @@ public sealed class MySqlConsultationStore(DatabaseConnectionSettings settings, 
     IDataProtectionProvider? protection = null, GoogleCalendarAvailability? googleCalendar = null) : IConsultationStore
 {
     private string Encrypt(string id, string field, string value) => Convert.ToBase64String(security.Encrypt(id, "consultation-" + field, value));
+    internal async Task<GoogleCalendarBooking[]> ReadGoogleCalendarBookingsAsync(DateTimeOffset now, CancellationToken ct)
+    {
+        await using var connection = settings.CreateConnection();
+        await connection.OpenAsync(ct);
+        return await ReadGoogleCalendarBookingsAsync(connection, null, security, now, ct);
+    }
+
+    internal static async Task<GoogleCalendarBooking[]> ReadGoogleCalendarBookingsAsync(MySqlConnection connection,
+        MySqlTransaction? transaction, IdentitySecurity security, DateTimeOffset now, CancellationToken ct)
+    {
+        await using var command = Command(connection, transaction, """
+            SELECT c.data, p.first_name_ciphertext, p.last_name_ciphertext, p.email_ciphertext,
+                p.dial_code_ciphertext, p.phone_ciphertext
+            FROM consultations c JOIN people p ON p.id=c.person_id
+            WHERE JSON_UNQUOTE(JSON_EXTRACT(c.data,'$.State'))='Confirmed'
+            """);
+        await using var reader = await command.ExecuteReaderAsync(ct);
+        var bookings = new List<GoogleCalendarBooking>();
+        while (await reader.ReadAsync(ct))
+        {
+            var booking = JsonSerializer.Deserialize<Consultation>(reader.GetString(0))!;
+            if (booking.StartsAt <= now) continue;
+
+            string? Field(int column, string field) =>
+                reader[column] is byte[] value ? security.Decrypt(booking.PersonId, field, value) : null;
+
+            var name = $"{Field(1, "first-name")} {Field(2, "last-name")}".Trim();
+            var phone = Field(5, "phone");
+            var dialCode = Field(4, "dial-code");
+            if (!string.IsNullOrWhiteSpace(phone) && !string.IsNullOrWhiteSpace(dialCode))
+                phone = $"+{dialCode.TrimStart('+')} {phone}";
+            bookings.Add(new(booking.Id, booking.StartsAt, booking.EndsAt, booking.Service.Title, booking.Service.Modality,
+                name, phone, Field(3, "email")));
+        }
+        return bookings.ToArray();
+    }
+
     public Task<T> ReadAsync<T>(Func<ConsultationData, T> read, CancellationToken ct) => ReadCore(read, false, ct);
     public Task<T> ReadAgendaAsync<T>(Func<ConsultationData, T> read, CancellationToken ct) =>
         WithCalendar(() => ReadCore(read, true, ct), ct);
@@ -402,7 +439,7 @@ public sealed class MySqlConsultationStore(DatabaseConnectionSettings settings, 
             data.PackNotices[i] = notice with { EmailQueuedAt = now };
         }
     }
-    private static MySqlCommand Command(MySqlConnection connection, MySqlTransaction transaction, string sql, params (string, object?)[] values)
+    private static MySqlCommand Command(MySqlConnection connection, MySqlTransaction? transaction, string sql, params (string, object?)[] values)
     {
         var command = new MySqlCommand(sql, connection, transaction);
         foreach (var (name, value) in values) command.Parameters.AddWithValue(name, value ?? DBNull.Value);
@@ -506,13 +543,18 @@ public sealed class MySqlConsultationStore(DatabaseConnectionSettings settings, 
     }
 }
 
-public sealed class ConsultationClockWorker(IConsultationStore store, ILogger<ConsultationClockWorker> logger) : BackgroundService
+public sealed class ConsultationClockWorker(MySqlConsultationStore store, GoogleCalendarAvailability calendar,
+    ILogger<ConsultationClockWorker> logger) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         while (!stoppingToken.IsCancellationRequested)
         {
-            try { await store.AdvanceAsync(stoppingToken); }
+            try
+            {
+                await store.AdvanceAsync(stoppingToken);
+                await calendar.PublishBookingsAsync(store.ReadGoogleCalendarBookingsAsync, stoppingToken);
+            }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { break; }
             catch (Exception error) { logger.LogWarning("Consultation clock unavailable: {ErrorType}", error.GetType().Name); }
             try { await Task.Delay(TimeSpan.FromSeconds(30), stoppingToken); }

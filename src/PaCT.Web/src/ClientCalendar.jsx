@@ -60,9 +60,24 @@ export default function ClientCalendar({ onChoose, onEvent, enabled = true, visi
     <section className={styles.schedule} aria-label="Disponibilidade do dia"><p className={styles.eyebrow}>Disponibilidade do dia</p><div className={visitor ? publicStyles.dayHeading : undefined}><h2>{visitor ? new Intl.DateTimeFormat('pt-PT', { timeZone: 'Europe/Lisbon', weekday: 'long', day: 'numeric' }).format(new Date(instant(selection.day + 'T12:00'))) : agendaDay(selection.day)}</h2>{visitor && <span>{new Intl.DateTimeFormat('pt-PT', { timeZone: 'UTC', month: 'long' }).format(new Date(selection.day + 'T12:00:00Z'))}</span>}</div>
       {data && <><p className={styles.muted}>{slots.length} {slots.length === 1 ? 'horário individual' : 'horários individuais'}{visibleEvents.length ? ` · ${visibleEvents.length} ${visibleEvents.length === 1 ? 'atividade' : 'atividades'}` : ''}</p>
         {rows.map(row => {
-          if (row.event) { const event = row.event; return <AgendaShareRow key={event.id} reference={canShare && event.state === 'Waiting' && Date.parse(event.startsAt) > Date.parse(data.serverTime) ? event.id : ''}><button type="button" className={styles.slot} onClick={() => onEvent(event.id, { ...event, services })}><time dateTime={event.startsAt} className={styles.hour}>{agendaClock(event.startsAt)}</time><span><strong>{event.title}</strong><small>{event.kind === 'Retreat' ? 'Retiro' : 'Grupo'} · {event.publicLocation}</small>{visitor && event.kind === 'Retreat' && <small>{agendaDate(event.startsAt)} — {agendaDate(event.endsAt)}</small>}<small>{event.state === 'Cancelled' ? 'Cancelado' : event.state === 'Performed' ? 'Realizado' : event.scheduleBlocked ? 'Inscrições indisponíveis' : event.remaining ? `${event.remaining} vagas disponíveis` : 'Inscrições completas'}</small></span><AppIcon name="arrow" /></button></AgendaShareRow> }
+          if (row.event) {
+            const event = row.event
+            const reference = canShare && event.state === 'Waiting' && Date.parse(event.startsAt) > Date.parse(data.serverTime) ? event.id : ''
+            return <AgendaSlotCard key={event.id} startsAt={event.startsAt} reference={reference} onOpen={() => onEvent(event.id, { ...event, services })}>
+              <strong>{event.title}</strong>
+              <small>{event.kind === 'Retreat' ? 'Retiro' : 'Grupo'} · {event.publicLocation}</small>
+              {visitor && event.kind === 'Retreat' && <small>{agendaDate(event.startsAt)} — {agendaDate(event.endsAt)}</small>}
+              <small>{event.state === 'Cancelled' ? 'Cancelado' : event.state === 'Performed' ? 'Realizado' : event.scheduleBlocked ? 'Inscrições indisponíveis' : event.remaining ? `${event.remaining} vagas disponíveis` : 'Inscrições completas'}</small>
+            </AgendaSlotCard>
+          }
           const slot = row.slot, details = publishedSlotDetails(slot, services)
-          return <AgendaShareRow key={slot.startsAt} reference={canShare && slot.windowIds[0] ? slot.windowIds[0] + '@' + Math.floor(Date.parse(slot.startsAt) / 1000) : ''}><button type="button" className={styles.slot} onClick={() => onChoose({ ...slot, services })}><time dateTime={slot.startsAt} className={styles.hour}>{agendaClock(slot.startsAt)}</time><span><strong>{details.title}</strong><small>{[details.modality, details.location].filter(Boolean).join(' · ')}</small>{details.registeredOnly && <small>Só registados</small>}</span><AppIcon name="arrow" /></button></AgendaShareRow>
+          const reference = canShare && slot.windowIds[0] ? slot.windowIds[0] + '@' + Math.floor(Date.parse(slot.startsAt) / 1000) : ''
+          return <AgendaSlotCard key={slot.startsAt} startsAt={slot.startsAt} reference={reference} copyLabel="Copiar referência do horário"
+            onOpen={() => onChoose({ ...slot, services })}>
+            <strong>{details.title}</strong>
+            <small>{[details.modality, details.location].filter(Boolean).join(' · ')}</small>
+            {details.registeredOnly && <small>Só registados</small>}
+          </AgendaSlotCard>
         })}
         {!slots.length && !visibleEvents.length && <div className={styles.empty}><AppIcon name="calendar" /><h3>Sem horários disponíveis</h3><p>Escolhe outro dia ou ajusta os filtros.</p></div>}
       </>}
@@ -70,7 +85,11 @@ export default function ClientCalendar({ onChoose, onEvent, enabled = true, visi
   </section>
 }
 
-function AgendaShareRow({ reference, children }) {
-  if (!reference) return children
-  return <div className={styles.shareRow}>{children}<AgendaShareReference reference={reference} /></div>
+function AgendaSlotCard({ startsAt, reference, copyLabel, onOpen, children }) {
+  return <div className={styles.slotCard}>
+    <button type="button" className={styles.slot} onClick={onOpen}>
+      <time dateTime={startsAt} className={styles.hour}>{agendaClock(startsAt)}</time><span>{children}</span><AppIcon name="arrow" />
+    </button>
+    {reference && <AgendaShareReference reference={reference} label={copyLabel} showReference={false} />}
+  </div>
 }

@@ -20,9 +20,11 @@ public static class ConsultationRules
     }
     public static bool CanArchive(Consultation c, DateTimeOffset now) => !HasDebt(c) && !c.ExpectationOpen
         && ProcessLifecycle.Substate(c, now) is "Performed" or "NoShow" or "Expired" or "Rejected" or "CancelledClient" or "CancelledManager";
+    internal static bool AwaitingAdvanceReceipt(Consultation c) => c.AdvanceSatisfiedAt is null
+        && (c.ExpectationOpen || ConsultationCredit.OpenPrepayment(c));
     public static string ManagerSection(Consultation c, DateTimeOffset now) => ProcessLifecycle.Substate(c, now) switch
     {
-        "Requested" => "Requests", "Confirmed" => ConsultationConditions.Pending(c, now) ? "Conditions" : c.ExpectationOpen || ConsultationCredit.OpenPrepayment(c) ? "AwaitingReceipt" : "Upcoming", "AwaitingClosure" => "Closure",
+        "Requested" => "Requests", "Confirmed" => ConsultationConditions.Pending(c, now) ? "Conditions" : AwaitingAdvanceReceipt(c) ? "AwaitingReceipt" : "Upcoming", "AwaitingClosure" => "Closure",
         "Performed" => "Performed", "NoShow" => "NoShow", "CancelledClient" or "CancelledManager" or "Rejected" or "Expired" => "Cancelled", _ => "Ended"
     };
     public static string FinancialState(Consultation c) => HasDebt(c) ? c.FinalAmount is null ? "ContributionUndefined" : c.Service.PaymentMode == "Contribution" ? "ContributionPending" : "Unpaid"

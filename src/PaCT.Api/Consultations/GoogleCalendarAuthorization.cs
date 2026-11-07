@@ -30,7 +30,9 @@ public static class GoogleCalendarAuthorization
             options.SaveTokens = true;
             options.BackchannelTimeout = TimeSpan.FromSeconds(8);
             options.RemoteAuthenticationTimeout = TimeSpan.FromMinutes(5);
-            options.Scope.Add("https://www.googleapis.com/auth/calendar.freebusy");
+            options.Scope.Add("https://www.googleapis.com/auth/calendar.events.freebusy");
+            options.Scope.Add("https://www.googleapis.com/auth/calendar.calendarlist.readonly");
+            options.Scope.Add("https://www.googleapis.com/auth/calendar.app.created");
             options.CorrelationCookie.Name = "__Host-PaCT.GoogleCalendarCorrelation.";
             options.CorrelationCookie.Path = "/";
             options.Events.OnRedirectToAuthorizationEndpoint = async context =>
@@ -56,9 +58,14 @@ public static class GoogleCalendarAuthorization
                 var account = accountId is not null ? await services.GetRequiredService<IIdentityStore>().FindAsync(accountId, ct) : null;
                 var refreshToken = properties.GetTokenValue("refresh_token");
                 if (account is not { PersonActive: true, ClosedAt: null, LinkStatus: "Verified" } || !Roles.IsManager(account.Role)
-                    || account.SecurityStamp != stamp || string.IsNullOrWhiteSpace(refreshToken))
+                    || account.SecurityStamp != stamp)
                 {
-                    context.Response.Redirect(ReturnPath + "?ligacao=falhou");
+                    RedirectFailure(context.HttpContext, "sessao");
+                    return;
+                }
+                if (string.IsNullOrWhiteSpace(refreshToken))
+                {
+                    RedirectFailure(context.HttpContext, "autorizacao");
                     return;
                 }
                 try
@@ -66,17 +73,38 @@ public static class GoogleCalendarAuthorization
                     await services.GetRequiredService<GoogleCalendarAvailability>().ConnectAsync(refreshToken, ct);
                     context.Response.Redirect(ReturnPath);
                 }
-                catch (Exception error) when (!ct.IsCancellationRequested && (GoogleCalendarAvailability.IsUnavailable(error) || error is IdentityProblem))
+                catch (GoogleCalendarLinkFailure error)
                 {
-                    context.Response.Redirect(ReturnPath + "?ligacao=falhou");
+                    RedirectFailure(context.HttpContext, error.Step, error.InnerException);
+                }
+                catch (IdentityProblem)
+                {
+                    RedirectFailure(context.HttpContext, "autorizacao");
                 }
             };
             options.Events.OnRemoteFailure = context =>
             {
                 context.HandleResponse();
-                context.Response.Redirect(ReturnPath + "?ligacao=falhou");
+                var reason = context.Failure?.Data["error"] as string;
+                var step = reason switch
+                {
+                    "access_denied" or "admin_policy_enforced" => "permissao",
+                    "invalid_client" or "deleted_client" or "unauthorized_client" or "redirect_uri_mismatch" => "configuracao",
+                    "invalid_grant" => "sessao",
+                    _ when context.Failure?.Message is "Correlation failed." or "The oauth state was missing or invalid." => "sessao",
+                    _ => "regresso"
+                };
+                RedirectFailure(context.HttpContext, step, context.Failure);
                 return Task.CompletedTask;
             };
         });
+    }
+
+    private static void RedirectFailure(HttpContext context, string step, Exception? error = null)
+    {
+        context.RequestServices.GetRequiredService<ILogger<GoogleCalendarAvailability>>()
+            .LogWarning("Ligação ao Google Calendar não concluída. Etapa: {Step}; erro: {ErrorType}; HTTP: {StatusCode}.",
+                step, error?.GetType().Name, (int?)(error as HttpRequestException)?.StatusCode);
+        context.Response.Redirect(ReturnPath + "?ligacao=" + step);
     }
 }

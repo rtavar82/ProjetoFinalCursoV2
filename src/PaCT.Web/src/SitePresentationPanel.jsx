@@ -11,6 +11,7 @@ import formStyles from './ManagerScheduling.module.css'
 
 export default function SitePresentationPanel({ section, title, guard, busy }) {
   const path = `management/presentation/${section}`
+  const messaging = section === 'WhatsApp'
   const read = useCallback(signal => apiRequest(path, undefined, { signal }), [path])
   const resource = useLiveResource('management', path, read)
   const [session, setSession] = useState(null), [opening, setOpening] = useState(false), [error, setError] = useState('')
@@ -40,11 +41,13 @@ export default function SitePresentationPanel({ section, title, guard, busy }) {
     <InformationCard title={title} cardId="site-presentation" loading={resource.loading}
       error={resource.error || error} onRetry={resource.error ? resource.refresh : undefined}
       actions={<ActionButton disabled={busy || opening || !resource.data || !!resource.error} onClick={() => guard(open)}>Editar</ActionButton>}>
-      <p>{section === 'Places' ? 'As descrições são públicas. A morada completa segue as regras de acesso da Agenda e será usada nos novos registos.' : 'Revê as alterações antes de as publicar na apresentação da PaCT.'}</p>
+      <p>{messaging ? 'Edita os modelos que a gestão pode escolher ao preparar uma mensagem no WhatsApp.' : section === 'Places'
+        ? 'As descrições são públicas. A morada completa segue as regras de acesso da Agenda e será usada nos novos registos.'
+        : 'Revê as alterações antes de as publicar na apresentação da PaCT.'}</p>
       {section === 'Payment' && <p>Para retirar a transferência bancária, limpa o IBAN e o BIC/SWIFT. Para retirar o MB WAY, limpa o número.</p>}
-      {resource.data && <p>{resource.data.version ? `Versão publicada ${resource.data.version}` : 'Conteúdo inicial'}</p>}
+      {!messaging && resource.data && <p>{resource.data.version ? `Versão publicada ${resource.data.version}` : 'Conteúdo inicial'}</p>}
     </InformationCard>
-    {session && <SiteEditor title={title} session={session} path={path} guard={guard} busy={busy} onClose={close} />}
+    {session && <SiteEditor title={title} session={session} path={path} guard={guard} busy={busy} onClose={close} messaging={messaging} />}
   </>
 }
 
@@ -53,7 +56,7 @@ function release(editor) {
   if (navigator.onLine) void apiRequest('management/presentation/editor', { editor, release: true }).catch(() => {})
 }
 
-function SiteEditor({ title, session, path, guard, busy, onClose }) {
+function SiteEditor({ title, session, path, guard, busy, onClose, messaging }) {
   const { editor, fields, version, places: publishedPlaces, images = [] } = session
   const imageFields = images ?? []
   const [draft, setDraft] = useState(() => Object.fromEntries(fields.map(field => [field.key, field.value])))
@@ -129,16 +132,16 @@ function SiteEditor({ title, session, path, guard, busy, onClose }) {
         for (const [key, file] of Object.entries(files)) body.set(key, file)
       }
       await apiRequest(`${path}/publish`, body)
-      showSuccess('Alterações publicadas.')
+      showSuccess(messaging ? 'Modelos de WhatsApp guardados.' : 'Alterações publicadas.')
       onClose()
     } catch (failure) { setError(failure.message) }
     finally { setSending(false) }
   }
 
-  return <ManagerSchedulingDialog title={review ? 'Rever publicação' : title} disabled={disabled} onClose={() => guard(onClose)}>
+  return <ManagerSchedulingDialog title={review ? (messaging ? 'Rever mensagens' : 'Rever publicação') : title} disabled={disabled} onClose={() => guard(onClose)}>
     {error && <p className="notice error" role="alert">{error}</p>}
     {review && <>
-      <InformationCard title="Alterações a publicar" headingLevel={3}>
+      <InformationCard title={messaging ? 'Alterações aos modelos' : 'Alterações a publicar'} headingLevel={3}>
         {fields.filter(field => review.values[field.key] !== field.value).map(field => <p key={field.key}><strong>{field.label}</strong> · {review.values[field.key] || 'Retirar da apresentação'}</p>)}
         {review.places?.filter(place => !publishedPlaces.some(old => old.name === place.name && old.description === place.description && old.address === place.address))
           .map(place => <div key={place.name}><p><strong>{place.name}</strong> · {place.description}</p><p>{place.address}</p></div>)}
@@ -151,11 +154,13 @@ function SiteEditor({ title, session, path, guard, busy, onClose }) {
       </InformationCard>
       <div className="button-row">
         <ActionButton variant="secondary" disabled={disabled} onClick={() => setReview(null)}>Voltar à edição</ActionButton>
-        <ActionButton disabled={disabled} onClick={publish}>Publicar</ActionButton>
+        <ActionButton disabled={disabled} onClick={publish}>{messaging ? 'Guardar modelos' : 'Publicar'}</ActionButton>
       </div>
     </>}
     <div hidden={!!review}><form data-protect-draft onSubmit={prepare}>
       <fieldset className={formStyles.fields} disabled={disabled}>
+        {messaging && <p><code>{'{saudacao}'}</code> preenche «Olá» com o primeiro nome quando disponível.
+          <br /><code>{'{horario}'}</code> insere a data e a hora, precedidas de « para », quando a mensagem tem cliente e horário.</p>}
         {fields.filter(field => !imageTextKeys.has(field.key)).map(editField)}
         {imageFields.length > 0 && <>
           <h3>Imagens da apresentação</h3>
@@ -187,7 +192,7 @@ function SiteEditor({ title, session, path, guard, busy, onClose }) {
         </>}
         <div className="button-row">
           <ActionButton variant="secondary" onClick={() => guard(onClose)}>Voltar à gestão</ActionButton>
-          <ActionButton type="submit" disabled={!dirty}>Rever antes de publicar</ActionButton>
+          <ActionButton type="submit" disabled={!dirty}>{messaging ? 'Rever antes de guardar' : 'Rever antes de publicar'}</ActionButton>
         </div>
       </fieldset>
     </form></div>

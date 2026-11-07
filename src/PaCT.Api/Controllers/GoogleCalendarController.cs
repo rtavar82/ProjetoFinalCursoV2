@@ -16,7 +16,8 @@ public sealed class GoogleCalendarController(GoogleCalendarSettings settings, Go
     {
         await availability.RefreshAsync(ct);
         var state = availability.Current;
-        return Ok(new { settings.Configured, state.Connected, state.Unavailable, state.CheckedAt });
+        return Ok(new { settings.Configured, state.Connected, state.Unavailable, state.CheckedAt,
+            state.FamilyIncluded, state.NeedsReconnect, state.PublishedAt, state.PublicationUnavailable });
     }
 
     [HttpPost("connect")]

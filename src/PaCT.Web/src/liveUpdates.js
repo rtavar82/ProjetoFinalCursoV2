@@ -32,7 +32,7 @@ export function announceSuccessfulWrite(path, body) {
   if (endpoint.startsWith('privacy/')) resources.push('privacy')
   if (/^management\/tasks(?:\/|$)/.test(endpoint)) resources.push('managerTasks', 'managerTaskReminders')
   else if (/^management\//.test(endpoint) && endpoint !== 'management/presentation/editor') resources.push('management')
-  if (/^management\/presentation\/[^/]+\/publish$/.test(endpoint)) resources.push('publicPresentation')
+  if (endpoint !== 'management/presentation/WhatsApp/publish' && /^management\/presentation\/[^/]+\/publish$/.test(endpoint)) resources.push('publicPresentation')
   if (endpoint === 'management/presentation/Places/publish') resources.push('agenda', 'expenses', 'events')
   if (endpoint === 'management/presentation/Payment/publish') resources.push('agenda', 'events', 'consultations')
   if (/^finance\/expenses(?:\/|$)/.test(endpoint)) resources.push('expenses', 'management', 'finance')

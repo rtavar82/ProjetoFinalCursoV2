@@ -36,8 +36,11 @@
 .schedule { margin-block: 1.8rem; }
 .schedule h2 { margin-block: .4rem; }
 .muted { color: var(--muted); font-size: var(--font-size-label); }
-.slot { display: flex; gap: .8rem; align-items: center; text-align: left; padding: 1rem .8rem; background: var(--surface); border: 1px solid var(--line); color: var(--ink); border-radius: 1rem; margin-block: .6rem; }
-.slot:hover:not(:disabled) { border-color: var(--accent); background: var(--tint); }
+.slotCard { min-width: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 1rem; margin-block: .6rem; }
+.slotCard:has(> .slot:hover) { border-color: var(--accent); }
+.slot { display: flex; gap: .8rem; align-items: center; text-align: left; padding: 1rem .8rem; background: transparent; border: 0; color: var(--ink); border-radius: inherit; margin: 0; }
+.slot:not(:last-child) { padding-bottom: .4rem; }
+.slot:hover:not(:disabled) { background: var(--tint); }
 .hour { font-size: var(--font-size-lead); background: var(--tint); padding: .65rem .4rem; border-radius: .7rem; font-variant-numeric: tabular-nums; }
 .slot > span { flex: 1; min-width: 0; }
 .slot strong { display: block; font-weight: 600; overflow-wrap: anywhere; }
@@ -85,12 +88,9 @@
 .visitorCalendar .calendarLayout { grid-template-columns: minmax(0, 1fr); gap: 0; }
 .visitorCalendar .calendar { margin-inline: 0; padding: 1rem .5rem; }
 .visitorCalendar .schedule { margin-block: 1.8rem .5rem; }
-.visitorCalendar .slot { min-height: 78px; margin-block: .55rem; }
+.visitorCalendar .slotCard { margin-block: .55rem; }
+.visitorCalendar .slot { min-height: 76px; }
 .visitorCalendar .hour { background: transparent; padding: 0; min-width: 3rem; }
 @media (min-width: 480px) { .visitorCalendar .filterFields { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 @media (min-width: 640px) { .visitorCalendar .calendar { padding: 1.3rem; } }
 @media (max-width: 359px) { .visitorCalendar .calendar { padding-inline: .3rem; } }
-
-.shareRow {
-  min-width: 0;
-}

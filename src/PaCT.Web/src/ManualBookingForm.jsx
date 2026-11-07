@@ -5,6 +5,7 @@ import { apiRequest } from './identityApi'
 import ClientSearch from './ClientSearch'
 import CreditAuthorizationCard from './CreditAuthorizationCard'
 import ManualEventBooking from './ManualEventBooking'
+import WhatsAppMessage from './WhatsAppMessage'
 import { bookingVariants, canBookForClient } from './clientBookingOptions'
 import { agendaDate, dayKey, instant, localDate, servicePrice } from './agendaTime'
 import styles from './ManagerScheduling.module.css'
@@ -50,12 +51,15 @@ export default function ManualBookingForm({ setup, disabled, publish, onBack, on
   }
   const servicePicker = <label>Tipo de consulta<AdaptiveSelect aria-label="Tipo de consulta" required value={serviceId} onChange={event => selectService(event.target.value)}><option value="">Seleciona a consulta</option>{setup.services.filter(s => s.active !== false).map(service => <option key={service.id} value={service.id}>{service.title}</option>)}</AdaptiveSelect></label>
   const activity = setup.services.find(service => service.id === serviceId && service.serviceKind)
-  if (activity) return <div data-card-id="manual-booking-form">{feedback}<fieldset className={styles.fields} disabled={disabled}><ClientSearch canSelect={canBookForClient} selected={person} onSelect={setPerson} disabled={disabled} />{servicePicker}</fieldset><ManualEventBooking key={serviceId} service={activity} person={person} seed={seed} disabled={disabled} publish={publish} onBack={onBack} onSaved={onSaved} onWorking={onWorking} onReviewStart={onReviewStart} /></div>
+  const message = <WhatsAppMessage key={person?.id || 'generic'} personId={person?.id} startsAt={stale ? undefined : review?.result.startsAt}
+    disabled={disabled || reviewing} />
+  if (activity) return <div data-card-id="manual-booking-form">{feedback}<fieldset className={styles.fields} disabled={disabled}><ClientSearch canSelect={canBookForClient} selected={person} onSelect={setPerson} disabled={disabled} />{message}{servicePicker}</fieldset><ManualEventBooking key={serviceId} service={activity} person={person} seed={seed} disabled={disabled} publish={publish} onBack={onBack} onSaved={onSaved} onWorking={onWorking} onReviewStart={onReviewStart} /></div>
   return <div data-card-id="manual-booking-form"><p className={styles.intro}>Podes marcar a qualquer hora, mesmo fora dos horários publicados.</p>
     {feedback}{error && <p role="alert" className="notice error">{error}</p>}
     {!review ? <form ref={form} data-protect-draft onSubmit={preview}>
       <fieldset disabled={disabled || reviewing} className={styles.fields}>
         <ClientSearch canSelect={canBookForClient} selected={person} onSelect={setPerson} disabled={disabled || reviewing} />
+        {message}
         {servicePicker}
         <label>Modalidade<AdaptiveSelect aria-label="Modalidade" required value={mode} onChange={event => selectMode(event.target.value)}><option value="">Seleciona a modalidade</option>{[...new Set(serviceVariants.map(v => v.modality))].map(value => <option value={value} key={value}>{value === 'Remote' ? 'Remota' : 'Presencial'}</option>)}</AdaptiveSelect></label>
         {mode !== 'Remote' && <label>Local<AdaptiveSelect aria-label="Local" required value={place} onChange={event => selectPlace(event.target.value)}><option value="">Seleciona o local</option>{[...new Set(serviceVariants.filter(v => v.modality === mode).map(v => v.publicLocation))].map(value => <option key={value}>{value}</option>)}</AdaptiveSelect></label>}
@@ -67,6 +71,7 @@ export default function ManualBookingForm({ setup, disabled, publish, onBack, on
       </fieldset><div className={styles.actions}><button type="button" className="secondary" disabled={disabled || reviewing} onClick={onBack}>Voltar à agenda</button><button disabled={disabled || reviewing || variants.length === 0}>{reviewing ? 'A verificar horário…' : 'Rever antes de validar'}</button></div>
     </form> : <>
       <section className={styles.summary} aria-label="Rever marcação"><h3>Rever marcação</h3><p><strong>{[person.data.firstName, person.data.lastName].filter(Boolean).join(' ')}</strong></p><p>{review.result.title} · {review.result.modality === 'Remote' ? 'Remota' : 'Presencial'}{review.result.modality !== 'Remote' ? ' · ' + review.result.publicLocation : ''}</p><p>Início: {agendaDate(review.result.startsAt)}<br />Fim: {agendaDate(review.result.endsAt)}<br />Duração: {review.result.durationMinutes} minutos</p><p>Valor: {servicePrice({ ...review.result, paymentMode: review.input.choice === 'Gift' ? 'Free' : review.result.paymentMode })}</p></section>
+      {message}
       {review.result.conflicts.length > 0 ? <section className={styles.conflicts}><h3>Conflitos encontrados</h3><ul>{review.result.conflicts.map(c => <li key={c.kind + c.id}>{conflictNames[c.kind] || 'Horário indisponível'} · {agendaDate(c.startsAt)} — {agendaDate(c.endsAt)}</li>)}</ul><p>{'Escolhe outro horário. O conflito impede guardar; não será criada uma marcação pendente.'}</p></section> : <p className={styles.help} role="status">Não foram encontrados conflitos. A agenda é verificada novamente ao guardar.</p>}
 
       <p className={styles.help}>Guardar confirma a marcação. Esta ação não regista dinheiro recebido nem liquida a consulta.</p>

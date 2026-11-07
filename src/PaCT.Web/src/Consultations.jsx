@@ -35,6 +35,7 @@ import ManagerAgenda from './ManagerAgenda'
 import ManagerVisitorAgenda from './ManagerVisitorAgenda'
 import ManagerSchedulingDialog from './ManagerSchedulingDialog'
 import ManualBookingForm from './ManualBookingForm'
+import WhatsAppMessage from './WhatsAppMessage'
 import AvailabilityEditorForm from './AvailabilityEditorForm'
 import { agendaMoney as money, agendaDate as date, instant, setDateRangeParams } from './agendaTime'
 
@@ -211,6 +212,8 @@ export default function Consultations({ manager, area, initialEntry, onCreateCli
       {feedback}
       {latestDetail.error && <p className="notice error" role="status">Não foi possível atualizar esta consulta. Os campos em edição foram mantidos.</p>}
       {latestDetail.data && latestDetail.data.version !== detail.version && <p className="notice" role="status">Esta consulta foi alterada. Os teus campos não foram substituídos. Fecha e volta a abrir para rever a informação antes de guardar.</p>}
+      {manager && <WhatsAppMessage key={'whatsapp:' + detail.id} personId={detail.personId} startsAt={detail.startsAt}
+        disabled={busy || uncertain || !!latestDetail.error || !!latestDetail.data && latestDetail.data.version !== detail.version} />}
       {(!followup || manager) && <><ConsultationValue consultation={detail} manager={manager} /><p>Crédito disponível: {money(detail.balance)}</p></>}
       {detail.advanceSatisfiedAt && <p>Condição de antecipação satisfeita.</p>}
 

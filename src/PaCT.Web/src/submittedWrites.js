@@ -58,7 +58,7 @@ export async function submittedWrite(attempt, replaySafe = false) {
 export function clientOperation(path) {
   if (/^finance\/expenses(?:\/[0-9a-f-]+)?$/.test(path)) return true
   if (/^management\/(Supplier|ExpenseCategory)(\/[0-9a-f-]+)?$/.test(path)) return true
-  if (/^management\/presentation\/(Home|Therapist|Places)\/publish$/.test(path)) return true
+  if (/^management\/presentation\/(Home|Therapist|Places|WhatsApp)\/publish$/.test(path)) return true
   return /^(clients(?:\/[0-9a-f-]+(?:\/notes(?:\/[0-9a-f-]+)?)?|\/reviews\/[0-9a-f-]+)?|profile|identity\/client-registration|identity\/email-operations\/[0-9a-f-]+\/review)$/.test(path)
 }
 

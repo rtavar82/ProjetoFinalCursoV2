@@ -80,7 +80,9 @@ public partial class Program
         builder.Services.AddHealthChecks().AddCheck<MySqlReadinessCheck>("mysql", tags: ["ready"]);
         builder.AddAccountSecurity();
         builder.AddGoogleCalendar();
-        builder.Services.AddSingleton<PaCT.Api.Consultations.IConsultationStore, PaCT.Api.Consultations.MySqlConsultationStore>();
+        builder.Services.AddSingleton<PaCT.Api.Consultations.MySqlConsultationStore>();
+        builder.Services.AddSingleton<PaCT.Api.Consultations.IConsultationStore>(services =>
+            services.GetRequiredService<PaCT.Api.Consultations.MySqlConsultationStore>());
         builder.Services.AddSingleton<PaCT.Api.Management.IManagementStore, PaCT.Api.Management.MySqlManagementStore>();
         builder.Services.AddSingleton<PaCT.Api.Management.MySqlSitePresentationStore>();
         builder.Services.AddSingleton<PaCT.Api.Management.SitePresentationImages>();
