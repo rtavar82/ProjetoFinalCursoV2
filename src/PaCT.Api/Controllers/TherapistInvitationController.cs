@@ -26,14 +26,14 @@ public sealed class TherapistInvitationController(TherapistInvitationService ser
             ? Ok(new { message = "Convite cancelado. O link deixou de ser válido." })
             : Conflict(new ProblemDetails { Status = 409, Title = "O convite mudou ou já foi utilizado. Atualiza a informação." });
 
-    [HttpPost("therapist-invitation/preview"), EnableRateLimiting("account")]
+    [AllowAnonymous, HttpPost("therapist-invitation/preview"), EnableRateLimiting("account")]
     public async Task<IActionResult> Preview(InvitationPreviewRequest input, CancellationToken ct)
     {
         var invitation = await service.ValidInvitationAsync(input.Token, ct);
         return invitation is null ? InvalidInvitation() : Ok(service.Preview(invitation));
     }
 
-    [HttpPost("therapist-registration"), EnableRateLimiting("email")]
+    [AllowAnonymous, HttpPost("therapist-registration"), EnableRateLimiting("email")]
     public async Task<IActionResult> Register(TherapistRegistration input, CancellationToken ct)
     {
         if (User.Identity?.IsAuthenticated == true) return Conflict(new ProblemDetails

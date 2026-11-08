@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using PaCT.Api.Configuration;
 
@@ -8,7 +9,7 @@ namespace PaCT.Api.Controllers;
 [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
 public sealed class StatusController(DatabaseConnectionSettings database) : ControllerBase
 {
-    [HttpGet]
+    [AllowAnonymous, HttpGet]
     public IActionResult Get() => Ok(new
     {
         application = "PaCT",

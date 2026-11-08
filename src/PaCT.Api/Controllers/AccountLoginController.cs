@@ -19,18 +19,18 @@ public sealed class PasswordChangeController(PasswordChangeService passwords) : 
         await passwords.RequestAsync(User.FindFirstValue(ClaimTypes.NameIdentifier)!, input, ct);
         return Ok(new { message = "Pedido recebido. Abre o email da tua conta para escolheres a nova palavra-passe." });
     }
-    [HttpPost("confirm"), EnableRateLimiting("account")]
+    [AllowAnonymous, HttpPost("confirm"), EnableRateLimiting("account")]
     public Task<IActionResult> Confirm(PasswordChangeConfirmation input, CancellationToken ct) =>
         ConfirmPassword(input, PasswordChangeService.ChangeKind, ct);
 
-    [HttpPost("recovery"), EnableRateLimiting("email")]
+    [AllowAnonymous, HttpPost("recovery"), EnableRateLimiting("email")]
     public IActionResult RequestRecovery(PasswordRecoveryRequest input)
     {
         passwords.RequestRecovery(input);
         return Accepted(new { message = "Se o email estiver associado a uma conta elegível, receberás um link para recuperares o acesso." });
     }
 
-    [HttpPost("recovery/confirm"), EnableRateLimiting("account")]
+    [AllowAnonymous, HttpPost("recovery/confirm"), EnableRateLimiting("account")]
     public Task<IActionResult> ConfirmRecovery(PasswordChangeConfirmation input, CancellationToken ct) =>
         ConfirmPassword(input, PasswordChangeService.RecoveryKind, ct);
 
@@ -47,11 +47,11 @@ public sealed class PasswordChangeController(PasswordChangeService passwords) : 
 public sealed class AccountLoginController(GoogleLoginSettings settings, GoogleFlows flows, GoogleAccountService google,
     PasswordChangeService passwords, IdentityService identity, IdentityCookies cookies) : ControllerBase
 {
-    [HttpGet("status")]
+    [AllowAnonymous, HttpGet("status")]
     public async Task<IActionResult> Status(CancellationToken ct) => User.Identity?.IsAuthenticated == true
         ? Ok(await google.StatusAsync(User.FindFirstValue(ClaimTypes.NameIdentifier)!, settings.Enabled, ct)) : Ok(new { enabled = settings.Enabled });
 
-    [HttpPost("start"), EnableRateLimiting("identity")]
+    [AllowAnonymous, HttpPost("start"), EnableRateLimiting("identity")]
     public async Task<IActionResult> Start(GoogleStartRequest input, CancellationToken ct)
     {
         settings.Check();
@@ -69,7 +69,7 @@ public sealed class AccountLoginController(GoogleLoginSettings settings, GoogleF
         return Ok(new { url = "/api/identity/google/challenge" });
     }
 
-    [HttpGet("challenge"), EnableRateLimiting("identity")]
+    [AllowAnonymous, HttpGet("challenge"), EnableRateLimiting("identity")]
     public IActionResult ChallengeGoogle()
     {
         settings.Check();
@@ -80,7 +80,7 @@ public sealed class AccountLoginController(GoogleLoginSettings settings, GoogleF
         return Challenge(properties, GoogleDefaults.AuthenticationScheme);
     }
 
-    [HttpGet("complete"), EnableRateLimiting("identity")]
+    [AllowAnonymous, HttpGet("complete"), EnableRateLimiting("identity")]
     public async Task<IActionResult> Complete(CancellationToken ct)
     {
         var ticket = await HttpContext.AuthenticateAsync(GoogleAuthentication.ExternalScheme);

@@ -5,18 +5,18 @@ using PaCT.Api.Management;
 
 namespace PaCT.Api.Controllers;
 
-[ApiController, Route("api/public/presentation"), AllowAnonymous]
+[ApiController, Route("api/public/presentation")]
 [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
 public sealed class PublicPresentationController(IConsultationStore store, MySqlSitePresentationStore presentation, SitePresentationImages images) : ControllerBase
 {
-    [HttpGet("images/{key}/{reference}")]
+    [AllowAnonymous, HttpGet("images/{key}/{reference}")]
     public async Task<IActionResult> Image(string key, string reference, CancellationToken ct)
     {
         var file = images.PublishedFile(await presentation.PublishedAsync(ct), key, reference);
         return file is { } published ? PhysicalFile(published.Path, published.Type) : NotFound();
     }
 
-    [HttpGet]
+    [AllowAnonymous, HttpGet]
     public async Task<IActionResult> Read(CancellationToken ct)
     {
         var fallback = await presentation.PublishedAsync(ct);

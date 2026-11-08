@@ -38,7 +38,7 @@ public sealed class PasskeysController(IIdentityStore store, IPasskeyStore crede
             TwoFactorEnabledAt: null, AuthenticatorSecret: null } ? pending : null;
     }
 
-    [HttpPost("registration/options"), EnableRateLimiting("account")]
+    [AllowAnonymous, HttpPost("registration/options"), EnableRateLimiting("account")]
     public async Task<IActionResult> RegisterOptions(PasskeyEnrollmentOptions input, CancellationToken ct)
     {
         var account = await EnrollmentAccount(ct); if (account is null) return Expired();
@@ -46,7 +46,7 @@ public sealed class PasskeysController(IIdentityStore store, IPasskeyStore crede
         var result = await passkeys.RegistrationOptions(account, NewBinding(), ct);
         return Ok(new { challengeId = result.Id, publicKey = result.Options });
     }
-    [HttpPost("registration/finish"), EnableRateLimiting("account")]
+    [AllowAnonymous, HttpPost("registration/finish"), EnableRateLimiting("account")]
     public async Task<IActionResult> RegisterFinish(PasskeyRegistration input, CancellationToken ct)
     {
         var account = await EnrollmentAccount(ct); if (account is null) return Expired();
@@ -61,14 +61,14 @@ public sealed class PasskeysController(IIdentityStore store, IPasskeyStore crede
         Response.Cookies.Delete(BindingCookie, IdentityCookies.Options(TimeSpan.Zero));
         return Ok(new { stage = "SignedIn", message = "Passkey adicionada à tua conta." });
     }
-    [HttpPost("assertion/options"), EnableRateLimiting("identity")]
+    [AllowAnonymous, HttpPost("assertion/options"), EnableRateLimiting("identity")]
     public async Task<IActionResult> AssertOptions(CancellationToken ct)
     {
         var account = await identity.PendingAccountAsync(cookies.ReadPending(HttpContext), ct); if (account is null) return Expired();
         var result = await passkeys.AssertionOptions(account, NewBinding(), ct);
         return Ok(new { challengeId = result.Id, publicKey = result.Options });
     }
-    [HttpPost("assertion/finish"), EnableRateLimiting("identity")]
+    [AllowAnonymous, HttpPost("assertion/finish"), EnableRateLimiting("identity")]
     public async Task<IActionResult> AssertFinish(PasskeyAssertion input, CancellationToken ct)
     {
         var account = await identity.PendingAccountAsync(cookies.ReadPending(HttpContext), ct); if (account is null) return Expired();

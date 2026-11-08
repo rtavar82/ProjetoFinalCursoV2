@@ -276,21 +276,40 @@ public partial class Program
         app.UseRouting();
         app.UseAuthentication();
         app.UseRateLimiter();
+        app.Use(async (context, next) =>
+        {
+            var endpoint = context.GetEndpoint();
+            if (endpoint is null)
+            {
+                context.Response.StatusCode = StatusCodes.Status404NotFound;
+                return;
+            }
+
+            // Endpoint routing uses a synthetic endpoint to return 405 with its Allow header.
+            if (endpoint is not RouteEndpoint && endpoint.DisplayName == "405 HTTP Method Not Supported"
+                && endpoint.RequestDelegate is { } rejectMethod)
+            {
+                await rejectMethod(context);
+                return;
+            }
+
+            await next(context);
+        });
         app.UseAuthorization();
 
         if (app.Environment.IsDevelopment())
-            app.MapOpenApi();
+            app.MapOpenApi().AllowAnonymous();
 
         app.MapHealthChecks("/health/live", new HealthCheckOptions
         {
             Predicate = _ => false,
             ResponseWriter = HealthResponse.WriteAsync
-        });
+        }).AllowAnonymous();
         app.MapHealthChecks("/health/ready", new HealthCheckOptions
         {
             Predicate = registration => registration.Tags.Contains("ready"),
             ResponseWriter = HealthResponse.WriteAsync
-        });
+        }).AllowAnonymous();
         app.MapControllers();
         app.Run();
     }

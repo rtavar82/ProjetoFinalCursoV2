@@ -20,7 +20,7 @@ public sealed class ClientAccessController(ClientAccessService access) : Control
 [RequestSizeLimit(16384), ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
 public sealed class ClientAccessConfirmationController(ClientAccessService access) : ControllerBase
 {
-    [HttpPost, EnableRateLimiting("account")] public async Task<IActionResult> Confirm(EmailConfirmation input, CancellationToken ct)
+    [AllowAnonymous, HttpPost, EnableRateLimiting("account")] public async Task<IActionResult> Confirm(EmailConfirmation input, CancellationToken ct)
     {
         if (User.Identity?.IsAuthenticated == true)
             return Conflict(new ProblemDetails { Status = 409, Title = "Termina a sessão atual ou abre o link numa janela privada para confirmar o novo email." });

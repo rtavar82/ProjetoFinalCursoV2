@@ -4,11 +4,11 @@ using PaCT.Api.Consultations;
 
 namespace PaCT.Api.Controllers;
 
-[ApiController, Route("api/consultations/promotions"), AllowAnonymous]
+[ApiController, Route("api/consultations/promotions")]
 [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
 public sealed class PromotionsController(IConsultationStore store, TimeProvider time) : ControllerBase
 {
-    [HttpGet]
+    [AllowAnonymous, HttpGet]
     public async Task<IActionResult> List(CancellationToken ct) => Ok(await store.ReadAgendaAsync(data => new
     {
         packs = data.Services.Where(s => s.Active && s.ServiceKind != "Retreat" && s.PaymentMode != "Free" && !SharingWorkshop.Matches(s.Title) && s.Presentation?.PackPromotionPublished == true && !string.IsNullOrWhiteSpace(s.Presentation?.PackPromotion))

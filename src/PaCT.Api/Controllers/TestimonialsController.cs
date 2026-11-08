@@ -57,14 +57,14 @@ public sealed class TestimonialsController(ITestimonialStore store, TestimonialI
     }
 }
 
-[ApiController, Route("api/public/testimonials"), AllowAnonymous]
+[ApiController, Route("api/public/testimonials")]
 [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
 public sealed class PublicTestimonialsController(ITestimonialStore store, TestimonialImageStore images) : ControllerBase
 {
-    [HttpGet]
+    [AllowAnonymous, HttpGet]
     public async Task<IActionResult> List(CancellationToken ct) => Ok((await store.ReadAsync(true, ct)).Where(row => row.Published).Select(row => new
     { row.Id, row.Text, imageUrl = row.ImageId is null ? null : $"/api/public/testimonials/{row.Id}/images/{row.ImageId}" }));
-    [HttpGet("{id:guid}/images/{imageId:guid}")]
+    [AllowAnonymous, HttpGet("{id:guid}/images/{imageId:guid}")]
     public async Task<IActionResult> Image(string id, string imageId, CancellationToken ct)
     {
         var row = await store.FindAsync(id, ct);

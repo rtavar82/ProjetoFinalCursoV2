@@ -16,17 +16,17 @@ namespace PaCT.Api.Controllers;
 public sealed class IdentityController(IIdentityStore store, IInstallationSecrets installation, IdentityService service,
     IdentityCookies cookies) : ControllerBase
 {
-    [HttpGet("installation")]
+    [AllowAnonymous, HttpGet("installation")]
     public async Task<IActionResult> Installation(CancellationToken ct) => Ok(new
     {
         prepared = installation.IsPrepared,
         managerExists = installation.IsPrepared && await store.HasTechnicalManagerAsync(ct)
     });
 
-    [HttpGet("csrf")]
+    [AllowAnonymous, HttpGet("csrf")]
     public IActionResult Csrf([FromServices] IAntiforgery antiforgery) => Ok(new { token = antiforgery.GetAndStoreTokens(HttpContext).RequestToken, clientWriteRecovery = true });
 
-    [HttpPost("technical-manager"), EnableRateLimiting("email")]
+    [AllowAnonymous, HttpPost("technical-manager"), EnableRateLimiting("email")]
     public async Task<IActionResult> Register(ManagerRegistration input, CancellationToken ct)
     {
         if (IdentityValidation.MissingNameMessage(input.FirstName, input.LastName) is { } missingName)
@@ -36,7 +36,7 @@ public sealed class IdentityController(IIdentityStore store, IInstallationSecret
         return Ok(new { stage = "ConfirmEmail", message = "Conta criada. A confirmação de email ficou em fila de envio. O acesso à gestão ainda não está ativo." });
     }
 
-    [HttpPost("sign-in"), EnableRateLimiting("identity")]
+    [AllowAnonymous, HttpPost("sign-in"), EnableRateLimiting("identity")]
     public async Task<IActionResult> SignIn(PasswordSignIn input, CancellationToken ct)
     {
         var result = await service.SignInAsync(input, HttpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown", ct);
@@ -63,7 +63,7 @@ public sealed class IdentityController(IIdentityStore store, IInstallationSecret
         return Ok(new { stage = Stage(account) });
     }
 
-    [HttpGet("progress")]
+    [AllowAnonymous, HttpGet("progress")]
     public async Task<IActionResult> Progress(CancellationToken ct)
     {
         var account = await service.PendingAccountAsync(cookies.ReadPending(HttpContext), ct);
@@ -71,7 +71,7 @@ public sealed class IdentityController(IIdentityStore store, IInstallationSecret
         return Ok(new { stage = Stage(account), displayName = account.DisplayName, emailState = await store.LatestEmailStateAsync(account.Id, ct) });
     }
 
-    [HttpPost("confirm-email"), EnableRateLimiting("account")]
+    [AllowAnonymous, HttpPost("confirm-email"), EnableRateLimiting("account")]
     public async Task<IActionResult> ConfirmEmail(RegistrationEmailConfirmation input, CancellationToken ct)
     {
         if (User.Identity?.IsAuthenticated == true) return Conflict(new ProblemDetails { Status = 409, Title = "Termina a sessão atual ou abre o link numa janela privada antes de confirmar outra conta." });
@@ -85,7 +85,7 @@ public sealed class IdentityController(IIdentityStore store, IInstallationSecret
         return Ok(new { message = "Email confirmado. Continua a configuração no navegador onde criaste a conta, ou entra com a tua palavra-passe." });
     }
 
-    [HttpPost("client-registration"), EnableRateLimiting("email")]
+    [AllowAnonymous, HttpPost("client-registration"), EnableRateLimiting("email")]
     public async Task<IActionResult> RegisterClient(ClientProfile input, [FromServices] ClientService clients, CancellationToken ct)
     {
         if (User.Identity?.IsAuthenticated == true) return Conflict(new ProblemDetails { Status = 409, Title = "Termina a sessão atual para iniciar um registo pessoal." });
@@ -94,7 +94,7 @@ public sealed class IdentityController(IIdentityStore store, IInstallationSecret
         return Ok(await clients.RegisterAsync(input, ct, ClientCommands.Key(Request)));
     }
 
-    [HttpPost("first-password"), EnableRateLimiting("account")]
+    [AllowAnonymous, HttpPost("first-password"), EnableRateLimiting("account")]
     public async Task<IActionResult> FirstPassword(FirstPassword input, CancellationToken ct)
     {
         var account = await service.PendingAccountAsync(cookies.ReadPending(HttpContext), ct);
@@ -104,7 +104,7 @@ public sealed class IdentityController(IIdentityStore store, IInstallationSecret
         return Ok(new { stage = "SignedIn", message = "Palavra-passe criada. Podes completar a ficha sem deixar de utilizar a conta." });
     }
 
-    [HttpPost("client-registration-review"), EnableRateLimiting("account")]
+    [AllowAnonymous, HttpPost("client-registration-review"), EnableRateLimiting("account")]
     public async Task<IActionResult> RegistrationReview(RegistrationReviewStatus input, [FromServices] ClientService clients, CancellationToken ct) =>
         Ok(await clients.RegistrationReviewAsync(input.Token, ct));
 
@@ -118,7 +118,7 @@ public sealed class IdentityController(IIdentityStore store, IInstallationSecret
         return Ok(new { stage = "ConfigureAuthenticator" });
     }
 
-    [HttpPost("resend-email"), EnableRateLimiting("email")]
+    [AllowAnonymous, HttpPost("resend-email"), EnableRateLimiting("email")]
     public async Task<IActionResult> ResendEmail(CancellationToken ct)
     {
         var account = await service.PendingAccountAsync(cookies.ReadPending(HttpContext), ct);
@@ -127,7 +127,7 @@ public sealed class IdentityController(IIdentityStore store, IInstallationSecret
         return Ok(new { message = "Foi pedido um novo envio. Os links anteriores foram substituídos. Não é garantida a entrega na caixa de entrada." });
     }
 
-    [HttpPost("authenticator"), EnableRateLimiting("account")]
+    [AllowAnonymous, HttpPost("authenticator"), EnableRateLimiting("account")]
     public async Task<IActionResult> Authenticator(CancellationToken ct)
     {
         var account = await service.PendingAccountAsync(cookies.ReadPending(HttpContext), ct);
@@ -135,7 +135,7 @@ public sealed class IdentityController(IIdentityStore store, IInstallationSecret
         return Ok(await service.AuthenticatorAsync(account, ct));
     }
 
-    [HttpPost("verify-factor"), EnableRateLimiting("identity")]
+    [AllowAnonymous, HttpPost("verify-factor"), EnableRateLimiting("identity")]
     public async Task<IActionResult> VerifyFactor(FactorVerification input, CancellationToken ct)
     {
         var account = await service.PendingAccountAsync(cookies.ReadPending(HttpContext), ct);
@@ -186,7 +186,7 @@ public sealed class IdentityController(IIdentityStore store, IInstallationSecret
         return Ok(new { message = "Sessão terminada." });
     }
 
-    [HttpPost("forget-browser")]
+    [AllowAnonymous, HttpPost("forget-browser")]
     public IActionResult ForgetBrowser([FromServices] GoogleFlows flows)
     {
         Response.Cookies.Delete(IdentityCookies.Trusted, IdentityCookies.Options(TimeSpan.Zero));
