@@ -78,18 +78,31 @@ public sealed class IdentityService(IIdentityStore store, IdentitySecurity secur
         return account;
     }
 
-    public async Task<IdentityAccount> ConfirmEmailAsync(string token, CancellationToken ct)
+    public async Task<(IdentityAccount? Account, int Status, string? Message)> ConfirmEmailAsync(string token, string? email, CancellationToken ct)
     {
-        var action = security.ReadAction("confirm-email", token);
-        var account = await PendingAccountAsync(action, ct)
-            ?? throw new IdentityProblem(401, "Esta verificação expirou. Inicia sessão novamente.");
-        if (action.EmailId is null || !await store.IsConfirmationCurrentAsync(action.EmailId, account.Id, ct))
-            throw new IdentityProblem(400, "O link foi substituído ou já não é válido.");
-        if (account.Role == Roles.Client && account.PasswordHash is not null) throw new IdentityProblem(400, "A conta já tem palavra-passe. Usa a opção de entrada.");
+        const string invalidLink = "Este link já foi usado, foi substituído ou expirou. Entra na tua conta ou pede um novo email se ainda estás a concluir o registo.";
+        if (!security.TryReadAction("confirm-email", token, out var action, out _) || action.EmailId is null)
+            return (null, 400, invalidLink);
+        var account = await store.FindAsync(action.AccountId, ct);
+        if (account is null || account.SecurityStamp != action.Stamp || !IsAccountAvailable(account))
+            return (null, 400, invalidLink);
+        if (account.LockoutEnd > Now)
+            return (null, 429, "A conta está temporariamente bloqueada. Aguarda 15 minutos e volta a tentar.");
+        if (!await store.IsConfirmationCurrentAsync(action.EmailId, account.Id, ct)
+            || account.Role == Roles.Client && account.PasswordHash is not null)
+            return (null, 400, invalidLink);
+        if (account.Role == Roles.Client)
+        {
+            if (string.IsNullOrWhiteSpace(email))
+                return (null, 422, "Introduz o email que usaste no registo.");
+            if (email.Length > 256 || !CryptographicOperations.FixedTimeEquals(security.EmailHash(email.Trim()), account.EmailHash))
+                return (null, 422, "O email indicado não corresponde ao registo. Verifica o endereço e tenta novamente.");
+        }
         var updated = account with { EmailConfirmedAt = account.EmailConfirmedAt ?? Now,
             SecurityStamp = account.Role == Roles.Client ? Guid.NewGuid().ToString() : account.SecurityStamp };
-        if (account.EmailConfirmedAt is null || account.Role == Roles.Client) await SaveAsync(updated, ct);
-        return updated;
+        if ((account.EmailConfirmedAt is null || account.Role == Roles.Client) && !await store.UpdateAsync(updated, Now, ct))
+            return (null, 409, "O estado da conta mudou. Tenta entrar ou usa o link mais recente.");
+        return (updated, 200, null);
     }
 
     public async Task<IdentityAccount> SetFirstPasswordAsync(IdentityAccount account, string password, string confirmation, CancellationToken ct)

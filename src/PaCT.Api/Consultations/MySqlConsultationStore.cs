@@ -51,8 +51,8 @@ public sealed class MySqlConsultationStore(DatabaseConnectionSettings settings, 
             FROM consultations c JOIN people p ON p.id=c.person_id
             WHERE JSON_UNQUOTE(JSON_EXTRACT(c.data,'$.State'))='Confirmed'
             """);
-        await using var reader = await command.ExecuteReaderAsync(ct);
         var bookings = new List<GoogleCalendarBooking>();
+        await using (var reader = await command.ExecuteReaderAsync(ct))
         while (await reader.ReadAsync(ct))
         {
             var booking = JsonSerializer.Deserialize<Consultation>(reader.GetString(0))!;
@@ -68,6 +68,21 @@ public sealed class MySqlConsultationStore(DatabaseConnectionSettings settings, 
                 phone = $"+{dialCode.TrimStart('+')} {phone}";
             bookings.Add(new(booking.Id, booking.StartsAt, booking.EndsAt, booking.Service.Title, booking.Service.Modality,
                 name, phone, Field(3, "email")));
+        }
+
+        await using var events = Command(connection, transaction, """
+            SELECT data FROM group_events
+            WHERE JSON_UNQUOTE(JSON_EXTRACT(data,'$.State'))='Waiting'
+                AND JSON_UNQUOTE(JSON_EXTRACT(data,'$.Definition.Published'))='true'
+            """);
+        await using var rows = await events.ExecuteReaderAsync(ct);
+        while (await rows.ReadAsync(ct))
+        {
+            var occurrence = JsonSerializer.Deserialize<GroupEvent>(rows.GetString(0))!;
+            var definition = occurrence.Definition;
+            if (definition.StartsAt <= now) continue;
+            bookings.Add(new("event:" + occurrence.Id, definition.StartsAt, definition.EndsAt, occurrence.Service.Title,
+                occurrence.Service.Modality, null, null, null, EventLocation: definition.PublicLocation));
         }
         return bookings.ToArray();
     }
@@ -180,12 +195,18 @@ public sealed class MySqlConsultationStore(DatabaseConnectionSettings settings, 
         var before = Snapshot(data); ProcessLifecycle.Advance(data, now);
         await Save(connection, transaction, data, before, ct);
     }
-    public Task<ConsultationResult> ExecuteAsync(ConsultationCommand input, ConsultationActor actor, CancellationToken ct) =>
-        input.Action is "Request" or "Manual" or "Approve" or "LinkGuestRequest" or "PublishAvailability"
+    public async Task<ConsultationResult> ExecuteAsync(ConsultationCommand input, ConsultationActor actor, CancellationToken ct)
+    {
+        var result = await (input.Action is "Request" or "Manual" or "Approve" or "LinkGuestRequest" or "PublishAvailability"
             or "SaveEvent" or "JoinEvent" or "LinkEventGuest" or "ConfirmParticipation"
             ? WithCalendar(() => Execute(input, actor, null, ct), ct, force: true,
                 through: input.Action == "SaveEvent" && actor.IsManager ? input.Event?.EndsAt : null)
-            : Execute(input, actor, null, ct);
+            : Execute(input, actor, null, ct));
+
+        if (input.Action is "SaveEvent" or "CancelEvent" or "PublishAvailability")
+            googleCalendar?.RequestPublication();
+        return result;
+    }
 
     public Task<ConsultationResult> ExecuteAudioMessageAsync(ConsultationCommand input, ConsultationActor actor, AudioAttachment audio, CancellationToken ct) =>
         Execute(input, actor, audio, ct);
@@ -557,7 +578,7 @@ public sealed class ConsultationClockWorker(MySqlConsultationStore store, Google
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { break; }
             catch (Exception error) { logger.LogWarning("Consultation clock unavailable: {ErrorType}", error.GetType().Name); }
-            try { await Task.Delay(TimeSpan.FromSeconds(30), stoppingToken); }
+            try { await calendar.WaitForPublicationAsync(TimeSpan.FromSeconds(30), stoppingToken); }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { break; }
         }
     }

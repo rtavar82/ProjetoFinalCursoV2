@@ -76,9 +76,13 @@ internal static class SecurityEmailContent
         "ConfirmEmail" => ("PaCT — confirma o teu email", "Confirma o email da tua conta de gestão PaCT.\n\n"
             + publicWebUrl + "/#confirm-email=" + Uri.EscapeDataString(payload.Token)
             + "\n\nO link é pessoal e válido durante 24 horas. Abri-lo não confirma a ação. Se não fizeste este pedido, ignora esta mensagem."),
-        "ClientConfirmEmail" => ("PaCT — confirma o teu email", "Confirma o teu email para criar a tua conta de cliente PaCT. Depois da confirmação, poderás definir a tua palavra-passe.\n\n"
-            + publicWebUrl + "/#confirm-email=" + Uri.EscapeDataString(payload.Token)
-            + "\n\nO link é pessoal, válido durante 24 horas e de uso único. Abrir o link não confirma o email nem inicia sessão. Se não fizeste este pedido, ignora esta mensagem."),
+        "ClientConfirmEmail" => ("PaCT — confirma o teu email", "Para concluir o registo da tua conta de cliente PaCT:\n"
+            + "• Abre o link abaixo, introduz o email do registo e carrega em Confirmar.\n"
+            + "• Depois de confirmares o email, define a tua palavra-passe.\n\n"
+            + publicWebUrl + "/#confirm-email=" + Uri.EscapeDataString(payload.Token) + "&client=1"
+            + "\n\n• O link é pessoal, válido durante 24 horas e de uso único.\n"
+            + "• Abrir o link não confirma o email nem inicia sessão.\n"
+            + "• Se não fizeste este pedido, ignora esta mensagem."),
         "TherapistInvitation" => ("PaCT — convite para gestora-terapeuta", "O gestor técnico convidou-te para seres a gestora-terapeuta desta instalação PaCT.\n\n"
             + publicWebUrl + "/#therapist-invitation=" + Uri.EscapeDataString(payload.Token)
             + "\n\nO convite é pessoal, válido durante 24 horas e só pode ser utilizado uma vez. Abrir o link não cria uma conta."

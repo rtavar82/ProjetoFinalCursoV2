@@ -51,8 +51,9 @@ public sealed partial class GoogleCalendarAvailability
     private readonly SemaphoreSlim gate = new(1);
     private Connection? connection;
     private GoogleCalendarSnapshot snapshot = GoogleCalendarSnapshot.Empty;
-    private string? accessToken;
-    private DateTimeOffset accessExpiresAt, nextCheck, checkedThrough;
+    private AccessToken? accessToken;
+    private DateTimeOffset nextCheck, checkedThrough;
+    private sealed record AccessToken(string Value, DateTimeOffset ExpiresAt, bool? CanReadEvents);
     private sealed record Connection(string RefreshToken, AvailabilityRange[] Busy, DateTimeOffset CheckedAt,
         string? PrimaryId = null, string? FamilyId = null, string? PublicationMarker = null, string? PublicationCalendarId = null);
 
@@ -107,13 +108,12 @@ public sealed partial class GoogleCalendarAvailability
             var family = calendars.Where(calendar => !calendar.Primary && calendar.Id is { Length: > 0 }
                 && IsFamilyCalendar(calendar.SummaryOverride ?? calendar.Summary)).Take(2).ToArray();
             var familyId = family.Length == 1 ? family[0].Id : null;
-            var busy = await GetBusyAsync(client, token.Value, now, through, familyId, ct);
+            var busy = await GetBusyAsync(client, token, now, through, primary.Id, familyId, ct);
             step = "guardar";
             var previous = connection?.PrimaryId == primary.Id ? connection : null;
             Save(new(refreshToken, busy, now, primary.Id, familyId,
                 previous?.PublicationMarker ?? "PaCT " + Guid.NewGuid().ToString("N"), previous?.PublicationCalendarId));
-            accessToken = token.Value;
-            accessExpiresAt = token.ExpiresAt;
+            accessToken = token;
             checkedThrough = through;
             nextCheck = now.AddSeconds(45);
             Volatile.Write(ref snapshot, new(busy, now, true, false, FamilyIncluded: familyId is not null));
@@ -141,9 +141,8 @@ public sealed partial class GoogleCalendarAvailability
             try
             {
                 using var client = clients.CreateClient(Client);
-                if (accessToken is null || accessExpiresAt <= now.AddMinutes(1))
-                    (accessToken, accessExpiresAt) = await GetTokenAsync(client, connection.RefreshToken, ct);
-                var busy = await GetBusyAsync(client, accessToken, now, through, connection.FamilyId, ct);
+                var access = await GetAccessAsync(client, connection, ct);
+                var busy = await GetBusyAsync(client, access, now, through, connection.PrimaryId ?? "primary", connection.FamilyId, ct);
                 checkedThrough = through;
                 nextCheck = now.AddSeconds(45);
                 Volatile.Write(ref snapshot, Current with { Busy = busy, CheckedAt = now, Unavailable = false });
@@ -176,7 +175,11 @@ public sealed partial class GoogleCalendarAvailability
         finally { if (File.Exists(temporary)) File.Delete(temporary); }
     }
 
-    private async Task<(string Value, DateTimeOffset ExpiresAt)> GetTokenAsync(HttpClient client, string refreshToken, CancellationToken ct)
+    private async Task<AccessToken> GetAccessAsync(HttpClient client, Connection linked, CancellationToken ct) =>
+        accessToken is { } cached && cached.ExpiresAt > time.GetUtcNow().AddMinutes(1)
+            ? cached : accessToken = await GetTokenAsync(client, linked.RefreshToken, ct);
+
+    private async Task<AccessToken> GetTokenAsync(HttpClient client, string refreshToken, CancellationToken ct)
     {
         using var form = new FormUrlEncodedContent(new Dictionary<string, string>
         {
@@ -187,34 +190,60 @@ public sealed partial class GoogleCalendarAvailability
         response.EnsureSuccessStatusCode();
         var token = await response.Content.ReadFromJsonAsync<Token>(cancellationToken: ct);
         if (token is not { Value.Length: > 0, Lifetime: > 0 }) throw new JsonException("Resposta de autorização incompleta.");
-        return (token.Value, time.GetUtcNow().AddSeconds(token.Lifetime));
+        var canReadEvents = token.Scope?.Split(' ', StringSplitOptions.RemoveEmptyEntries).Any(scope => scope is
+            GoogleCalendarAuthorization.EventReadScope or "https://www.googleapis.com/auth/calendar.events"
+            or "https://www.googleapis.com/auth/calendar.readonly" or "https://www.googleapis.com/auth/calendar");
+        return new(token.Value, time.GetUtcNow().AddSeconds(token.Lifetime), canReadEvents);
     }
 
     private static bool IsFamilyCalendar(string? name) =>
         string.Equals(name?.Trim(), "Família", StringComparison.OrdinalIgnoreCase)
         || string.Equals(name?.Trim(), "Family", StringComparison.OrdinalIgnoreCase);
 
-    private static async Task<AvailabilityRange[]> GetBusyAsync(HttpClient client, string token, DateTimeOffset now, DateTimeOffset through,
-        string? familyId, CancellationToken ct)
+    private static async Task<AvailabilityRange[]> GetBusyAsync(HttpClient client, AccessToken access, DateTimeOffset now,
+        DateTimeOffset through, string primaryId, string? familyId, CancellationToken ct)
+    {
+        var start = AgendaRules.Midnight(AgendaRules.LocalDate(now)).ToUniversalTime();
+        var freeBusy = ReadFreeBusyInPeriodAsync(client, access.Value, start, through, familyId, ct);
+        var scheduled = ReadCalendarOccupationsAsync(client, access, primaryId, familyId, start, through, includeTitles: false, ct);
+        await Task.WhenAll(freeBusy, scheduled);
+
+        var calendars = await scheduled;
+        if (calendars.Any(calendar => calendar.Unavailable && !calendar.Denied))
+            throw new HttpRequestException("Não foi possível verificar os eventos dos calendários ligados.");
+
+        var eventBlocks = calendars.SelectMany(calendar => calendar.Events)
+            .Where(item => item.BlocksTime)
+            .Select(item => new AvailabilityRange(item.StartsAt, item.EndsAt));
+        return MergeBusy((await freeBusy).Concat(eventBlocks), now);
+    }
+
+    private static async Task<List<AvailabilityRange>> ReadFreeBusyInPeriodAsync(HttpClient client, string token, DateTimeOffset start,
+        DateTimeOffset through, string? familyId, CancellationToken ct)
     {
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
         deadline.CancelAfter(client.Timeout);
-        var blocks = new List<BusyInterval>();
-        var start = AgendaRules.Midnight(AgendaRules.LocalDate(now)).ToUniversalTime();
-        while (start < through)
+        var blocks = new List<AvailabilityRange>();
+        var cursor = start;
+        while (cursor < through)
         {
-            var end = start.AddDays(FreeBusyWindowDays);
+            var end = cursor.AddDays(FreeBusyWindowDays);
             if (end > through) end = through;
-            blocks.AddRange(await QueryBusyWindowAsync(client, token, start, end, familyId, deadline.Token));
-            start = end;
+            var window = await QueryBusyWindowAsync(client, token, cursor, end, familyId, deadline.Token);
+            blocks.AddRange(window.Select(block => new AvailabilityRange(block.Start, block.End)));
+            cursor = end;
         }
+        return blocks;
+    }
 
+    private static AvailabilityRange[] MergeBusy(IEnumerable<AvailabilityRange> blocks, DateTimeOffset after)
+    {
         var busy = new List<AvailabilityRange>();
-        foreach (var block in blocks.Where(block => block.End > now).OrderBy(block => block.Start))
+        foreach (var block in blocks.Where(block => block.EndsAt > after).OrderBy(block => block.StartsAt))
         {
-            if (busy.Count == 0 || block.Start > busy[^1].EndsAt)
-                busy.Add(new(block.Start.ToUniversalTime(), block.End.ToUniversalTime()));
-            else if (block.End > busy[^1].EndsAt) busy[^1] = busy[^1] with { EndsAt = block.End.ToUniversalTime() };
+            if (busy.Count == 0 || block.StartsAt > busy[^1].EndsAt)
+                busy.Add(new(block.StartsAt.ToUniversalTime(), block.EndsAt.ToUniversalTime()));
+            else if (block.EndsAt > busy[^1].EndsAt) busy[^1] = busy[^1] with { EndsAt = block.EndsAt.ToUniversalTime() };
         }
         return busy.ToArray();
     }
@@ -269,7 +298,8 @@ public sealed partial class GoogleCalendarAvailability
 
     private sealed record Token(
         [property: System.Text.Json.Serialization.JsonPropertyName("access_token")] string Value,
-        [property: System.Text.Json.Serialization.JsonPropertyName("expires_in")] int Lifetime);
+        [property: System.Text.Json.Serialization.JsonPropertyName("expires_in")] int Lifetime,
+        string? Scope);
     private sealed record FreeBusy(Dictionary<string, Calendar>? Calendars);
     private sealed record Calendar(BusyInterval[]? Busy, JsonElement[]? Errors);
     private sealed record BusyInterval(DateTimeOffset Start, DateTimeOffset End);

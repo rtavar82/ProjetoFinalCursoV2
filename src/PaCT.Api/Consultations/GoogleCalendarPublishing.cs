@@ -10,17 +10,30 @@ using Microsoft.AspNetCore.WebUtilities;
 namespace PaCT.Api.Consultations;
 
 internal sealed record GoogleCalendarBooking(string Id, DateTimeOffset StartsAt, DateTimeOffset EndsAt,
-    string ServiceTitle, string Modality, string? ClientName, string? Phone, string? Email);
+    string ServiceTitle, string Modality, string? ClientName, string? Phone, string? Email, string? EventLocation = null);
 
 public sealed partial class GoogleCalendarAvailability
 {
     private const string CalendarEndpoint = "https://www.googleapis.com/calendar/v3/";
+    private readonly SemaphoreSlim publicationRequested = new(0, 1);
     private sealed record CalendarListItem(string? Id, string? Summary, string? SummaryOverride, string? Description, bool Primary, string? AccessRole);
     private sealed record CalendarListPage(CalendarListItem[]? Items, string? NextPageToken);
     private sealed record PublishedTime(DateTimeOffset? DateTime);
     private sealed record PublishedEvent(string? Id, string? Summary, string? Description, string? Visibility, string? Transparency,
-        PublishedTime? Start, PublishedTime? End);
+        PublishedTime? Start, PublishedTime? End, string? Location);
     private sealed record PublishedEventPage(PublishedEvent[]? Items, string? NextPageToken);
+
+    internal void RequestPublication()
+    {
+        lock (publicationRequested)
+        {
+            if (publicationRequested.CurrentCount == 0) publicationRequested.Release();
+        }
+    }
+
+    internal Task<bool> WaitForPublicationAsync(TimeSpan interval, CancellationToken ct) =>
+        publicationRequested.WaitAsync(interval, ct);
+
     internal async Task PublishBookingsAsync(
         Func<DateTimeOffset, CancellationToken, Task<GoogleCalendarBooking[]>> readBookings, CancellationToken ct)
     {
@@ -39,12 +52,11 @@ public sealed partial class GoogleCalendarAvailability
             deadline.CancelAfter(TimeSpan.FromSeconds(10));
             var token = deadline.Token;
             using var client = clients.CreateClient(Client);
-            if (accessToken is null || accessExpiresAt <= now.AddMinutes(1))
-                (accessToken, accessExpiresAt) = await GetTokenAsync(client, linked.RefreshToken, token);
-            var calendarId = linked.PublicationCalendarId ?? await FindOrCreatePublicationCalendarAsync(client, accessToken, linked, token);
+            var access = await GetAccessAsync(client, linked, token);
+            var calendarId = linked.PublicationCalendarId ?? await FindOrCreatePublicationCalendarAsync(client, access.Value, linked, token);
             var eventsUrl = CalendarEndpoint + "calendars/" + Uri.EscapeDataString(calendarId) + "/events";
             var future = bookings.Where(booking => booking.StartsAt > time.GetUtcNow()).ToArray();
-            await ReconcilePublicationsAsync(client, accessToken, eventsUrl, future, now, token);
+            await ReconcilePublicationsAsync(client, access.Value, eventsUrl, future, now, token);
             Volatile.Write(ref snapshot, Current with { PublishedAt = time.GetUtcNow(), PublicationUnavailable = false });
         }
         catch (Exception error) when (!ct.IsCancellationRequested && IsUnavailable(error))
@@ -62,6 +74,8 @@ public sealed partial class GoogleCalendarAvailability
 
     private static string BookingTitle(GoogleCalendarBooking booking)
     {
+        if (booking.EventLocation is not null) return booking.ServiceTitle;
+
         var names = (booking.ClientName ?? "").Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
         var initials = names.Length switch
         {
@@ -103,7 +117,7 @@ public sealed partial class GoogleCalendarAvailability
         Add("Cliente", booking.ClientName);
         Add("Telefone", booking.Phone);
         Add("Email", booking.Email);
-        Add("Tipo de consulta", booking.ServiceTitle);
+        Add(booking.EventLocation is null ? "Tipo de consulta" : "Evento", booking.ServiceTitle);
         Add("Modalidade", booking.Modality switch { "InPerson" => "Presencial", "Remote" => "Online", _ => booking.Modality });
         return string.Join("<br>", lines);
     }
@@ -167,12 +181,12 @@ public sealed partial class GoogleCalendarAvailability
             var summary = BookingTitle(booking);
             var description = BookingDescription(booking);
             var exists = saved.Remove(id, out var published);
-            if (published is { Visibility: "private", Transparency: "opaque" }
-                && published.Summary == summary && published.Description == description
+            if (published is { Visibility: "private", Transparency: null or "opaque" }
+                && published.Summary == summary && published.Description == description && published.Location == booking.EventLocation
                 && published.Start?.DateTime == booking.StartsAt && published.End?.DateTime == booking.EndsAt) continue;
             var value = new
             {
-                id, summary, description, visibility = "private", transparency = "opaque",
+                id, summary, description, location = booking.EventLocation, visibility = "private", transparency = "opaque",
                 start = new { dateTime = booking.StartsAt.ToUniversalTime() },
                 end = new { dateTime = booking.EndsAt.ToUniversalTime() },
                 extendedProperties = new { @private = new { pact = "booking" } }

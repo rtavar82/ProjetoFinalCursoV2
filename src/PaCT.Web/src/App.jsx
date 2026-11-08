@@ -23,17 +23,17 @@ import PrivacyProvider from './PrivacyProvider'
 function readLink() {
   const parameters = new URLSearchParams(window.location.hash.slice(1))
   const link = { confirmationToken: parameters.get('confirm-email'), invitationToken: parameters.get('therapist-invitation'), accessEmailToken: parameters.get('confirm-access-email'), passwordChangeToken: parameters.get('change-password'), passwordRecoveryToken: parameters.get('recover-password'), googleResult: parameters.get('google-result') }
-  return link
+  return { ...link, clientConfirmation: !!link.confirmationToken && parameters.get('client') === '1' }
 }
 
-function linkStage(link) {
+function linkStage({ clientConfirmation, ...link }) {
   if (Object.values(link).filter(Boolean).length > 1) return 'InvalidLink'
-  return link.googleResult ? 'GoogleReturn' : link.passwordRecoveryToken ? 'PasswordRecoveryLink' : link.passwordChangeToken ? 'PasswordChangeLink' : link.accessEmailToken ? 'AccessEmailLink' : link.invitationToken ? 'Invitation' : link.confirmationToken ? 'EmailLink' : null
+  return link.googleResult ? 'GoogleReturn' : link.passwordRecoveryToken ? 'PasswordRecoveryLink' : link.passwordChangeToken ? 'PasswordChangeLink' : link.accessEmailToken ? 'AccessEmailLink' : link.invitationToken ? 'Invitation' : link.confirmationToken ? (clientConfirmation ? 'ClientEmailLink' : 'EmailLink') : null
 }
 
 export default function App() {
-  const [{ confirmationToken, invitationToken, accessEmailToken, passwordChangeToken, passwordRecoveryToken, googleResult }, setLink] = useState(readLink)
-  const [stage, setStage] = useState(!navigator.onLine ? 'Offline' : window.location.protocol !== 'https:' ? 'Insecure' : linkStage({ confirmationToken, invitationToken, accessEmailToken, passwordChangeToken, passwordRecoveryToken, googleResult }) || 'Loading')
+  const [{ confirmationToken, invitationToken, accessEmailToken, passwordChangeToken, passwordRecoveryToken, googleResult, clientConfirmation }, setLink] = useState(readLink)
+  const [stage, setStage] = useState(!navigator.onLine ? 'Offline' : window.location.protocol !== 'https:' ? 'Insecure' : linkStage({ confirmationToken, invitationToken, accessEmailToken, passwordChangeToken, passwordRecoveryToken, googleResult, clientConfirmation }) || 'Loading')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
@@ -157,7 +157,7 @@ export default function App() {
       const result = await request('client-registration', data)
       if (result.underReview && !result.saved) { setStage('ClientReview'); return }
       if (!result.saved) throw new Error(result.message)
-      setMessage(result.message); setStage('ClientEmailSent')
+      setStage('ClientEmailSent')
     })
   }
 
@@ -171,7 +171,7 @@ export default function App() {
     })
   }
 
-  const step = ['Register', 'Invitation'].includes(stage) ? 1 : ['EmailLink', 'ConfirmEmail', 'EmailConfirmed'].includes(stage) ? 2
+  const step = ['Register', 'Invitation'].includes(stage) ? 1 : ['EmailLink', 'ClientEmailLink', 'ConfirmEmail', 'EmailConfirmed'].includes(stage) ? 2
     : ['ConfigureAuthenticator', 'VerifyFactor', 'RecoveryCodes', 'VerifyPasskey'].includes(stage) ? 3 : stage === 'SignedIn' ? 4 : 0
 
   function notify(text, failure = false) { setError(failure ? text : ''); setMessage(''); if (!failure) showSuccess(text) }
@@ -295,9 +295,40 @@ export default function App() {
             <GoogleSignInButton busy={busy} perform={perform} /><button className="secondary" disabled={busy} onClick={() => { setError(''); setMessage(''); setStage('ClientRegister') }}>Criar uma conta</button></>}
           {stage === 'ClientRegister' && <><h2>Criar conta de cliente</h2><p>Preenche nome, apelido, email, telefone, nascimento, género e localidade. Depois de confirmares o email, vais definir a tua palavra-passe.</p><ClientProfileForm registration busy={busy} onSave={submitClientRegistration} /></>}
           {stage === 'ClientReview' && <><h2>Pedido em análise</h2><p>O registo não foi concluído. A gestão irá verificar o teu pedido.</p></>}
-          {stage === 'ClientEmailSent' && <><h2>Confirma o teu email</h2><p>Abre a mensagem recebida, incluindo a pasta de spam. O botão do link permite confirmar o endereço e definir a palavra-passe. Ainda não foi iniciada uma sessão.</p><button className="secondary" disabled={busy} onClick={() => { setError(''); setMessage(''); setStage('ClientRegister') }}>Pedir novo email para continuar o registo</button></>}
-          {stage === 'SetPassword' && <><h2>Criar a tua palavra-passe</h2><p>O email está confirmado. Define uma palavra-passe pessoal para entrar na tua conta.</p><form onSubmit={event => { event.preventDefault(); const form = event.currentTarget; const data = Object.fromEntries(new FormData(form)); perform(async () => { validatePasswordFields(data); const result = await request('first-password', data); form.reset(); setMessage(result.message); await showStage(result.stage) }) }}><PasswordField label="Palavra-passe" name="password" autoComplete="new-password" minLength="12" maxLength="128" required /><PasswordField label="Confirmar palavra-passe" name="confirmPassword" autoComplete="new-password" minLength="12" maxLength="128" required /><p className="field-help">12 a 128 caracteres, com maiúscula, minúscula, algarismo e símbolo.</p><button disabled={busy}>Criar palavra-passe e entrar</button></form></>}
-          {stage === 'EmailLink' && <><p className="eyebrow">CONFIRMAÇÃO DE EMAIL</p><h2>Confirma o teu endereço</h2><p>Carrega no botão para confirmar o email da tua conta. Abrir esta página, por si só, não confirma nada.</p><button disabled={busy} onClick={() => perform(async () => { const result = await request('confirm-email', { token: confirmationToken }); setMessage(result.message); setStage(result.stage || 'EmailConfirmed') })}>Confirmar o meu email</button></>}
+          {stage === 'ClientEmailSent' && <>
+            <h2>Confirma o teu email</h2>
+            <div className="notice success" role="status">
+              Pedido aceite. Abre o email recebido (poderá estar na pasta de spam).<br />
+              O botão do link permite confirmar o endereço e definir a palavra-passe.
+            </div>
+          </>}
+          {stage === 'SetPassword' && <><h2>Criar a tua palavra-passe</h2><p>O email está confirmado. Define uma palavra-passe pessoal para entrar na tua conta.</p><form onSubmit={event => { event.preventDefault(); const form = event.currentTarget; const data = Object.fromEntries(new FormData(form)); perform(async () => { validatePasswordFields(data); const result = await request('first-password', data); form.reset(); await showStage(result.stage); showSuccess(result.message) }) }}><PasswordField label="Palavra-passe" name="password" autoComplete="new-password" minLength="12" maxLength="128" required /><PasswordField label="Confirmar palavra-passe" name="confirmPassword" autoComplete="new-password" minLength="12" maxLength="128" required /><p className="field-help">12 a 128 caracteres, com maiúscula, minúscula, algarismo e símbolo.</p><button disabled={busy}>Criar palavra-passe e entrar</button></form></>}
+          {['EmailLink', 'ClientEmailLink'].includes(stage) && <>
+            <p className="eyebrow">CONFIRMAÇÃO DE EMAIL</p><h2>Confirma o teu endereço</h2>
+            <p>Carrega no botão para confirmar o email da tua conta.</p>
+            <form onSubmit={event => {
+              event.preventDefault()
+              const email = new FormData(event.currentTarget).get('email')
+              perform(async () => {
+                try {
+                  const result = await request('confirm-email', { token: confirmationToken, email })
+                  setMessage(result.message)
+                  setStage(result.stage || 'EmailConfirmed')
+                } catch (failure) {
+                  if (failure.status === 400) setStage('EmailLinkRejected')
+                  if (failure.status === 422) setStage('ClientEmailLink')
+                  throw failure
+                }
+              })
+            }}>
+              {stage === 'ClientEmailLink' && <label>Email usado no registo<input name="email" type="email" autoComplete="email" required maxLength={256} disabled={busy} /></label>}
+              <button disabled={busy}>Confirmar</button>
+            </form>
+          </>}
+          {stage === 'EmailLinkRejected' && <>
+            <h2>Link de confirmação indisponível</h2>
+            <button disabled={busy} onClick={() => { setError(''); setMessage(''); setStage('ClientRegister') }}>Pedir novo email para continuar o registo de cliente</button>
+          </>}
           {stage === 'EmailConfirmed' && <><h2>Email confirmado</h2><p>Continua no navegador onde criaste a conta. Se não tens essa janela aberta, entra com a tua palavra-passe.</p><button disabled={busy} onClick={() => perform(async () => { try { const result = await request('progress'); await showStage(result.stage) } catch { setStage('SignIn') } })}>Continuar a configuração</button></>}
           {stage === 'ConfirmEmail' && <><p className="eyebrow">PASSO 2 DE 4</p><h2>Verifica o teu email</h2><p>A conta está criada, mas o acesso à gestão ainda não está ativo. Abre o email de confirmação, incluindo a pasta de spam, e confirma o endereço.</p><p className="field-help">A submissão ao serviço de email não garante a entrega. Se não receberes a mensagem, podes pedir um novo envio.</p>
             <button disabled={busy} onClick={() => perform(async () => { const result = await request('progress'); if (result.stage === 'ConfirmEmail') { if (['Failed', 'Uncertain'].includes(result.emailState)) throw new Error('O envio do email falhou ou não ficou confirmado. Confirma a configuração e pede um novo envio.'); setMessage('O email ainda não está confirmado. Abre a mensagem e confirma o endereço.') } else await showStage(result.stage) })}>Já confirmei o email — continuar</button>
@@ -306,7 +337,7 @@ export default function App() {
           {stage === 'VerifyPasskey' && <><p className="eyebrow">CONFIRMAR ACESSO</p><h2>Entrar com Passkey</h2><p>Confirma com o desbloqueio do teu dispositivo ou com uma chave de segurança.</p><form onSubmit={event => { event.preventDefault(); const remember = new FormData(event.currentTarget).has('remember'); perform(async () => { const result = await verifyPasskey(remember); await showStage(result.stage) }) }}><label className="checkbox"><input type="checkbox" name="remember" />Reconhecer este navegador durante 30 dias</label><button disabled={busy}>{busy ? 'A confirmar…' : 'Confirmar com Passkey'}</button></form></>}
           {stage === 'VerifyFactor' && <><p className="eyebrow">CONFIRMAR ACESSO</p><h2>Código de segurança</h2><p>Introduz o código atual do Google Authenticator ou um código de recuperação ainda não utilizado.</p><FactorForm busy={busy} onSubmit={submitFactor} /></>}
           {stage === 'RecoveryCodes' && <><p className="eyebrow">GUARDA NUM LOCAL SEGURO</p><h2>Códigos de recuperação</h2><p>O autenticador está ativo. Guarda estes códigos num local seguro separado deste dispositivo. Cada código permite uma entrada se perderes o autenticador e só funciona uma vez.</p><div className="recovery-codes">{recoveryCodes.map(code => <code key={code}>{code}</code>)}</div><p className="field-help">Estes códigos não serão apresentados de novo depois de saíres. Nunca os envies para suporte ou para um chat.</p><button disabled={busy} onClick={() => perform(async () => { setRecoveryCodes([]); await showStage('SignedIn') })}>Guardei os códigos — entrar na gestão</button></>}
-          {!['Loading', 'SignedIn', 'SignIn', 'Register', 'EmailLink', 'Invitation', 'InvalidLink', 'NotPrepared', 'Unavailable', 'Insecure'].includes(stage) && <button className="text-button" disabled={busy} onClick={() => { setRecoveryCodes([]); setError(''); setMessage(''); setStage('SignIn') }}>Voltar à entrada</button>}
+          {!['Loading', 'SignedIn', 'SignIn', 'Register', 'EmailLink', 'ClientEmailLink', 'Invitation', 'InvalidLink', 'NotPrepared', 'Unavailable', 'Insecure'].includes(stage) && <button className="text-button" disabled={busy} onClick={() => { setRecoveryCodes([]); setError(''); setMessage(''); setStage('SignIn') }}>Voltar à entrada</button>}
     </AuthPage></AppLayout>
   )
   }

@@ -6,6 +6,8 @@
 .actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin-top: 24px; }
 .actions button { width: 100%; min-height: 52px; margin: 0; padding: 12px; }
 .actions p { font-size: var(--font-size-caption); line-height: 1.6; color: var(--muted); margin: 10px 0 0; }
+.views { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 14px; }
+.views button { margin: 0; min-width: 0; padding-inline: .5rem; }
 .visitorHeader { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
 .visitorHeader p { margin: 0; color: var(--muted); }
 .visitorHeader button { width: auto; margin: 0; }

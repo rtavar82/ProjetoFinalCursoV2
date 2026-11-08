@@ -72,10 +72,11 @@ public sealed class IdentityController(IIdentityStore store, IInstallationSecret
     }
 
     [HttpPost("confirm-email"), EnableRateLimiting("account")]
-    public async Task<IActionResult> ConfirmEmail(EmailConfirmation input, CancellationToken ct)
+    public async Task<IActionResult> ConfirmEmail(RegistrationEmailConfirmation input, CancellationToken ct)
     {
         if (User.Identity?.IsAuthenticated == true) return Conflict(new ProblemDetails { Status = 409, Title = "Termina a sessão atual ou abre o link numa janela privada antes de confirmar outra conta." });
-        var account = await service.ConfirmEmailAsync(input.Token, ct);
+        var result = await service.ConfirmEmailAsync(input.Token, input.Email, ct);
+        if (result.Account is not { } account) return Problem(statusCode: result.Status, title: result.Message);
         if (account.Role == Roles.Client)
         {
             cookies.SetPending(HttpContext, account);

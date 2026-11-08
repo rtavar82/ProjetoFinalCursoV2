@@ -19,7 +19,7 @@ const descriptions = {
 }
 const dateText = day => new Intl.DateTimeFormat('pt-PT', { dateStyle: 'short', timeZone: 'UTC' }).format(new Date(day + 'T12:00:00Z'))
 
-export default function ManagerAgenda({ enabled, disabled, onSetup, onBooking, onOpen, onVisitorView }) {
+export default function ManagerAgenda({ enabled, disabled, onSetup, onBooking, onOpen, onVisitorView, onGoogleView }) {
   const [section, setSection] = useState('Upcoming')
   const [mode, setMode] = useState('Week')
   const [anchor, setAnchor] = useState(() => dayKey(new Date()))
@@ -49,7 +49,10 @@ export default function ManagerAgenda({ enabled, disabled, onSetup, onBooking, o
         <div><button disabled={disabled} onClick={onSetup}>Construir e editar agenda</button><p>Define os horários e períodos disponíveis para marcações.</p></div>
         <div><button disabled={disabled} onClick={onBooking}>Agendamento manual</button><p>Cria diretamente uma marcação para um cliente.</p></div>
       </div>
-      <button type="button" className="secondary" disabled={disabled} onClick={onVisitorView}>Ver agenda como visitante</button>
+      <div className={styles.views}>
+        <button type="button" className="secondary" disabled={disabled} onClick={onVisitorView}>Ver agenda como visitante</button>
+        <button type="button" className="secondary" disabled={disabled} onClick={onGoogleView}>Ver agenda Google</button>
+      </div>
     </InformationCard>
     <InformationCard className={styles.card} cardId="manager-agenda-bookings" aria-labelledby="manager-bookings-title">
       <header className={styles.heading}><div><p className={styles.eyebrow}>Gestão dos pedidos e marcações</p><h2 id="manager-bookings-title">Gestão das marcações</h2></div><button className="text-button" disabled={disabled || list.loading || list.refreshing} onClick={list.refresh}>Atualizar lista</button></header>

@@ -9,6 +9,7 @@ public static class GoogleCalendarAuthorization
 {
     public const string Scheme = "PaCT.GoogleCalendar";
     public const string ReturnPath = "/#calendario-google";
+    internal const string EventReadScope = "https://www.googleapis.com/auth/calendar.events.readonly";
 
     public static void AddGoogleCalendar(this WebApplicationBuilder builder)
     {
@@ -31,6 +32,7 @@ public static class GoogleCalendarAuthorization
             options.BackchannelTimeout = TimeSpan.FromSeconds(8);
             options.RemoteAuthenticationTimeout = TimeSpan.FromMinutes(5);
             options.Scope.Add("https://www.googleapis.com/auth/calendar.events.freebusy");
+            options.Scope.Add(EventReadScope);
             options.Scope.Add("https://www.googleapis.com/auth/calendar.calendarlist.readonly");
             options.Scope.Add("https://www.googleapis.com/auth/calendar.app.created");
             options.CorrelationCookie.Name = "__Host-PaCT.GoogleCalendarCorrelation.";

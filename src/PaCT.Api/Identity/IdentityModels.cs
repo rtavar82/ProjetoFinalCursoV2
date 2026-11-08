@@ -20,6 +20,7 @@ public sealed record AccountClosure(string Password, bool Confirm);
 public sealed record PasswordSignInResult(IdentityAccount? Account, int Status = 200, string? Message = null);
 public sealed record FactorVerification(string Code, bool RememberDevice = false);
 public sealed record EmailConfirmation(string Token);
+public sealed record RegistrationEmailConfirmation(string Token, string? Email = null);
 public sealed record ActionToken(string AccountId, string Stamp, string? EmailId = null, string Method = "Password");
 public sealed record AppointmentEmailSummary(string Service, DateTimeOffset StartsAt, DateTimeOffset EndsAt,
     string PublicLocation, string PaymentMode, decimal? Price, string Instructions = "");

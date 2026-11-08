@@ -22,25 +22,8 @@ const connectionErrors = new Map([
 
 export default function GoogleCalendarPanel({ busy, guard }) {
   const calendar = useLiveResource('agenda', 'google-calendar-connection', readCalendar)
-  const [connecting, setConnecting] = useState(false)
-  const [error, setError] = useState(() => {
-    const failure = new URLSearchParams(window.location.hash.split('?')[1]).get('ligacao')
-    return failure ? connectionErrors.get(failure) ?? 'Não foi possível concluir a autorização do Google Calendar. Volta a tentar.' : ''
-  })
-
-  async function connect() {
-    if (connecting) return
-    setError(''); setConnecting(true)
-    try {
-      const result = await apiRequest('management/google-calendar/connect', {})
-      const url = new URL(result.url)
-      if (url.origin !== 'https://accounts.google.com') throw new Error('Não foi possível abrir a autorização do Google.')
-      window.location.assign(url.href)
-    } catch (failure) {
-      setError(failure.message); setConnecting(false)
-    }
-  }
-
+  const failure = new URLSearchParams(window.location.hash.split('?')[1]).get('ligacao')
+  const error = failure ? connectionErrors.get(failure) ?? 'Não foi possível concluir a autorização do Google Calendar. Volta a tentar.' : ''
   const data = calendar.data
   return <InformationCard cardId="google-calendar-connection" title="Google Calendar"
     loading={calendar.loading} error={calendar.error} onRetry={calendar.refresh}>
@@ -59,9 +42,31 @@ export default function GoogleCalendarPanel({ busy, guard }) {
           : data.publishedAt ? <p>Última atualização do calendário PaCT no Google: {agendaDate(data.publishedAt)}</p>
             : <p>A aguardar a primeira atualização do calendário PaCT no Google.</p>}
       </>}
-      {data.configured && (!data.connected || data.unavailable || !data.familyIncluded || data.publicationUnavailable || data.needsReconnect) && <ActionButton disabled={busy || connecting} onClick={() => guard(connect)}>
-        {connecting ? 'A abrir a autorização…' : data.connected ? 'Voltar a ligar ao Google Calendar' : 'Ligar ao Google Calendar'}
-      </ActionButton>}
+      {data.configured && (!data.connected || data.unavailable || !data.familyIncluded || data.publicationUnavailable || data.needsReconnect)
+        && <GoogleCalendarConnectButton busy={busy} guard={guard} connected={data.connected} />}
     </>}
   </InformationCard>
+}
+
+export function GoogleCalendarConnectButton({ busy, guard, connected, label }) {
+  const [connecting, setConnecting] = useState(false)
+  const [error, setError] = useState('')
+  async function connect() {
+    if (connecting) return
+    setError(''); setConnecting(true)
+    try {
+      const result = await apiRequest('management/google-calendar/connect', {})
+      const url = new URL(result.url)
+      if (url.origin !== 'https://accounts.google.com') throw new Error('Não foi possível abrir a autorização do Google.')
+      window.location.assign(url.href)
+    } catch (failure) {
+      setError(failure.message); setConnecting(false)
+    }
+  }
+  return <>
+    {error && <p className="notice error" role="alert">{error}</p>}
+    <ActionButton disabled={busy || connecting} onClick={() => guard(connect)}>
+      {connecting ? 'A abrir a autorização…' : label || (connected ? 'Voltar a ligar ao Google Calendar' : 'Ligar ao Google Calendar')}
+    </ActionButton>
+  </>
 }

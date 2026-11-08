@@ -2,11 +2,12 @@ import AdaptiveSelect from './AdaptiveSelect'
 import { useCallback, useMemo, useState } from 'react'
 import useAgendaCalendar from './useAgendaCalendar'
 import AppIcon from './AppIcon'
-import AgendaShareReference from './AgendaShareReference'
+import AgendaMonthGrid from './AgendaMonthGrid'
+import AgendaSlotCard from './AgendaSlotCard'
 import useLiveResource from './useLiveResource'
 import { apiRequest } from './identityApi'
 import AgendaFilters from './AgendaFilters'
-import { agendaClock, agendaDate, agendaDay, dayKey, monthDays, shiftMonth, addDays, instant } from './agendaTime'
+import { agendaDate, agendaDay, monthDays, addDays, instant } from './agendaTime'
 import { bookingVariants, bookableSlots, physicalLocations, publishedSlotDetails } from './clientBookingOptions'
 import { searchPublishedAgenda } from './publishedAgendaSearch'
 import styles from './ClientAgenda.module.css'
@@ -26,20 +27,14 @@ export default function ClientCalendar({ onChoose, onEvent, enabled = true, visi
   const searched = useMemo(() => searchPublishedAgenda(data, { type, place, modality }), [data, type, place, modality])
   const variants = useMemo(() => bookingVariants(data?.services), [data])
   const events = searched?.events || []
-  const days = monthDays(selection.month)
-  const firstDay = data ? dayKey(data.serverTime) : dayKey(new Date()), lastDay = data ? dayKey(new Date(Date.parse(data.horizonEndExclusive) - 1)) : null
   const slotsByDay = useMemo(() => Object.fromEntries(monthDays(selection.month).map(day => [day, bookableSlots(searched, day, variants)])), [searched, selection.month, variants])
   const slots = slotsByDay[selection.day] || []
   const eventsForDay = day => events.filter(e => Date.parse(e.startsAt) < Date.parse(instant(addDays(day, 1) + 'T00:00')) && Date.parse(e.endsAt) > Date.parse(instant(day + 'T00:00')))
   const visibleEvents = eventsForDay(selection.day)
   const rows = [...slots.map(slot => ({ key: slot.startsAt, startsAt: slot.startsAt, slot })), ...visibleEvents.map(event => ({ key: event.id, startsAt: event.startsAt, event }))]
     .sort((a, b) => Date.parse(a.startsAt) - Date.parse(b.startsAt) || a.key.localeCompare(b.key))
-  const title = new Intl.DateTimeFormat('pt-PT', { timeZone: 'UTC', month: 'long', year: 'numeric' }).format(new Date(selection.month + '-01T12:00:00Z'))
-  const offset = (new Date(selection.month + '-01T12:00:00Z').getUTCDay() + 6) % 7
-  function month(value) {
-    if (!/^\d{4}-\d{2}$/.test(value) || value < firstDay.slice(0, 7) || (lastDay && value > lastDay.slice(0, 7))) return
-    setSelection({ month: value, day: value === firstDay.slice(0, 7) ? firstDay : value + '-01' })
-  }
+  const hasAvailability = day => slotsByDay[day]?.length > 0
+    || eventsForDay(day).some(e => e.state === 'Waiting' && !e.scheduleBlocked && Date.parse(e.startsAt) > Date.parse(data.serverTime))
   const places = [...new Set([...physicalLocations(data), ...(data?.events || []).map(e => e.publicLocation)].filter(Boolean))]
   return <section className={visitor ? styles.visitorCalendar : undefined} aria-label="Calendário da agenda">
     <AgendaFilters active={hasFilters} summary={[type, place, modality === 'Remote' ? 'Remota' : modality === 'InPerson' ? 'Presencial' : ''].filter(Boolean).join(' · ')} onReset={resetFilters}>
@@ -49,14 +44,9 @@ export default function ClientCalendar({ onChoose, onEvent, enabled = true, visi
     </AgendaFilters>
     <div className={styles.calendarTools}><span>Hora local: Lisboa</span><button type="button" className="text-button" onClick={calendar.refresh}>Atualizar horários</button></div>
     {calendar.error && <p className="notice error" role="alert">{calendar.error}</p>}{calendar.loading && <p role="status">A consultar a agenda…</p>}
-    <div className={styles.calendarLayout}><div className={styles.calendar} aria-busy={calendar.loading || calendar.refreshing}>
-      <div className={styles.monthTools}><button type="button" className="text-button" aria-label="Mês anterior" disabled={selection.month <= firstDay.slice(0, 7)} onClick={() => month(shiftMonth(selection.month, -1))}>‹</button><label className={styles.monthTitle}>{title}<input className={styles.monthInput} aria-label="Mês da agenda" type="month" value={selection.month} min={firstDay.slice(0, 7)} max={lastDay?.slice(0, 7)} onChange={e => month(e.target.value)} /></label><button type="button" className="text-button" aria-label="Mês seguinte" disabled={!lastDay || selection.month >= lastDay.slice(0, 7)} onClick={() => month(shiftMonth(selection.month, 1))}>›</button></div>
-      <div className={styles.week} aria-hidden="true">{['seg.', 'ter.', 'qua.', 'qui.', 'sex.', 'sáb.', 'dom.'].map(day => <span key={day}>{day}</span>)}</div>
-      <div className={styles.days}>{Array.from({ length: offset }, (_, index) => <span key={'blank-' + index} />)}{days.map(day => {
-        const available = slotsByDay[day]?.length > 0 || eventsForDay(day).some(e => e.state === 'Waiting' && !e.scheduleBlocked && Date.parse(e.startsAt) > Date.parse(data.serverTime))
-        return <button type="button" key={day} aria-label={agendaDay(day) + (available ? ' · Com disponibilidade' : '')} aria-pressed={selection.day === day} data-available={available} className={styles.day} disabled={!data || day < firstDay || day > lastDay} onClick={() => setSelection({ ...selection, day })}><span>{Number(day.slice(-2))}</span><span className={styles.dot} aria-hidden="true">{available ? '•' : ''}</span></button>
-      })}</div><p className={styles.legend}>● Dias com disponibilidade</p>
-    </div>
+    <div className={styles.calendarLayout}>
+    <AgendaMonthGrid calendar={calendar} selection={selection} onSelect={setSelection} hasItems={hasAvailability}
+      dayStatus="Com disponibilidade" legend="Dias com disponibilidade" />
     <section className={styles.schedule} aria-label="Disponibilidade do dia"><p className={styles.eyebrow}>Disponibilidade do dia</p><div className={visitor ? publicStyles.dayHeading : undefined}><h2>{visitor ? new Intl.DateTimeFormat('pt-PT', { timeZone: 'Europe/Lisbon', weekday: 'long', day: 'numeric' }).format(new Date(instant(selection.day + 'T12:00'))) : agendaDay(selection.day)}</h2>{visitor && <span>{new Intl.DateTimeFormat('pt-PT', { timeZone: 'UTC', month: 'long' }).format(new Date(selection.day + 'T12:00:00Z'))}</span>}</div>
       {data && <><p className={styles.muted}>{slots.length} {slots.length === 1 ? 'horário individual' : 'horários individuais'}{visibleEvents.length ? ` · ${visibleEvents.length} ${visibleEvents.length === 1 ? 'atividade' : 'atividades'}` : ''}</p>
         {rows.map(row => {
@@ -83,13 +73,4 @@ export default function ClientCalendar({ onChoose, onEvent, enabled = true, visi
       </>}
     </section></div>
   </section>
-}
-
-function AgendaSlotCard({ startsAt, reference, copyLabel, onOpen, children }) {
-  return <div className={styles.slotCard}>
-    <button type="button" className={styles.slot} onClick={onOpen}>
-      <time dateTime={startsAt} className={styles.hour}>{agendaClock(startsAt)}</time><span>{children}</span><AppIcon name="arrow" />
-    </button>
-    {reference && <AgendaShareReference reference={reference} label={copyLabel} showReference={false} />}
-  </div>
 }

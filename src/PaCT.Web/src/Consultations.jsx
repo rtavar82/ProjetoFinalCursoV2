@@ -33,6 +33,7 @@ import { ClosureAttachmentList } from './ClosureAttachments'
 import ConsultationConversation from './ConsultationConversation'
 import ManagerAgenda from './ManagerAgenda'
 import ManagerVisitorAgenda from './ManagerVisitorAgenda'
+import ManagerGoogleAgenda from './ManagerGoogleAgenda'
 import ManagerSchedulingDialog from './ManagerSchedulingDialog'
 import ManualBookingForm from './ManualBookingForm'
 import WhatsAppMessage from './WhatsAppMessage'
@@ -46,7 +47,8 @@ export default function Consultations({ manager, area, initialEntry, onCreateCli
   const managementAgenda = manager && area === 'Agenda'
   const [section, setSection] = useState(area === 'Consultations' ? 'Closure' : manager ? 'Upcoming' : 'Payments')
   const [managerDialog, setManagerDialog] = useState(null)
-  const [visitorView, setVisitorView] = useState(false)
+  const [agendaView, setAgendaView] = useState(null)
+  const agendaReturn = useRef(null)
   const [dialogWorking, setDialogWorking] = useState(false)
   const [domainEntry, setDomainEntry] = useState(() => domainFromEntry(initialEntry))
   const [filterClient, setFilterClient] = useState(null)
@@ -146,6 +148,21 @@ export default function Consultations({ manager, area, initialEntry, onCreateCli
     if (!row.kind || row.kind === 'Consultation') return open(row.id)
     setDomainEntry({ kind: row.kind === 'Guest' ? 'Guest' : 'Event', id: row.sourceId, participationId: row.kind === 'Participation' ? row.id : null, revision: Date.now() })
   }
+  function openAgendaView(view, trigger) {
+    guard(() => {
+      agendaReturn.current = { trigger, scroll: window.scrollY }
+      setError(''); setMessage(''); setAgendaView(view)
+      window.scrollTo(0, 0)
+    })
+  }
+  function closeAgendaView() {
+    const origin = agendaReturn.current
+    setAgendaView(null)
+    requestAnimationFrame(() => {
+      origin?.trigger.focus({ preventScroll: true })
+      window.scrollTo(0, origin?.scroll || 0)
+    })
+  }
   async function closeDetail() {
     if (busy || uncertain) return
     if (document.querySelector('.consultation-dialog [data-pending-command="true"]')) { setError('Confirma o resultado da operação antes de fechar.'); return }
@@ -179,9 +196,12 @@ export default function Consultations({ manager, area, initialEntry, onCreateCli
       <div className={styles.filterWide}><ClientSearch purpose="filter" selected={filterClient} onSelect={setFilterClient} disabled={busy || uncertain} /></div>
       <button className={styles.filterWide} disabled={busy || uncertain}>Pesquisar</button>{searching && <p className={styles.filterWide}>Resultados de consultas individuais, pedidos, grupos, oficinas e retiros.</p>}
     </form></details>}
-    {managementAgenda && visitorView && <ManagerVisitorAgenda onBack={() => { setVisitorView(false); window.scrollTo(0, 0) }} />}
-    {managementAgenda && <div hidden={visitorView}><ManagerAgenda enabled={!visitorView} disabled={busy || uncertain}
-      onVisitorView={() => guard(() => { setError(''); setMessage(''); setVisitorView(true); window.scrollTo(0, 0) })}
+    {managementAgenda && agendaView === 'Visitor' && <ManagerVisitorAgenda onBack={closeAgendaView} />}
+    {managementAgenda && agendaView === 'Google' && <ManagerGoogleAgenda onBack={closeAgendaView} guard={guard}
+      busy={busy || uncertain} onOpen={row => guard(() => openManagementRow(row))} />}
+    {managementAgenda && <div hidden={!!agendaView}><ManagerAgenda enabled={!agendaView} disabled={busy || uncertain}
+      onVisitorView={event => openAgendaView('Visitor', event.currentTarget)}
+      onGoogleView={event => openAgendaView('Google', event.currentTarget)}
       onSetup={() => guard(() => { setError(''); setMessage(''); setManagerDialog('Availability') })} onBooking={() => guard(() => { setError(''); setMessage(''); setManagerDialog('Manual') })}
       onOpen={row => guard(() => openManagementRow(row))} /></div>}
     {domainEntry?.kind === 'Pack' && <SessionPacksPanel dialogOnly manager={manager} send={send} disabled={busy || uncertain} guard={guard} feedback={feedback} initialId={domainEntry.id} onClose={() => setDomainEntry(null)} />}
