@@ -45,6 +45,7 @@ public sealed class ConsultationsController(IConsultationStore store, IIdentityS
     public async Task<IActionResult> Calendar(string? month, CancellationToken ct)
     {
         var now = time.GetUtcNow(); var range = AgendaRules.MonthRange(month, now);
+        if (range.Error is not null) return Problem(statusCode: 400, title: range.Error);
         var account = User.Identity?.IsAuthenticated == true ? await accounts.FindAsync(User.FindFirstValue(ClaimTypes.NameIdentifier)!, ct) : null;
         var registered = account is not null;
         return Ok(await store.ReadAgendaAsync(data => new

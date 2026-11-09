@@ -118,7 +118,7 @@ function WorkspaceContent({ profile: initialProfile, busy, perform, notify, erro
     ...(operational ? [{ id: 'Management', label: 'Gestão da aplicação', icon: 'settings', active: page === 'Management' }] : []),
     { id: client ? 'Profile' : 'Account', label: 'Meu perfil', icon: 'user', active: ['Profile', 'Account'].includes(page) },
   ]
-  return <AppLayout authenticated onHome={client ? () => navigate('Home') : undefined} onResetCapture={event => dirty.current.delete(event.target)} onChangeCapture={event => { const form = event.target.closest('form[data-protect-draft]'); if (form) dirty.current.add(form) }}
+  return <AppLayout page={page === 'Home' ? homePage : page} authenticated onHome={client ? () => navigate('Home') : undefined} onResetCapture={event => dirty.current.delete(event.target)} onChangeCapture={event => { const form = event.target.closest('form[data-protect-draft]'); if (form) dirty.current.add(form) }}
     navigation={<AppNavigation items={navigationItems} onNavigate={navigate} />} session={<><span className="header-label">{client ? 'Cliente' : profile.role === 'TechnicalManager' ? 'Gestor técnico' : 'Gestora-terapeuta'}</span><button className="secondary" disabled={busy} onClick={signOut}>Terminar sessão</button></>} alerts={<>
       {!online && <p className="notice" role="status">Sem rede. O preenchimento continua neste formulário enquanto estiver aberto; os envios exigem ligação.</p>}
       {draftError && <p className="notice error" role="alert">{draftError}</p>}

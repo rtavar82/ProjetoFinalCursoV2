@@ -3,6 +3,7 @@ using System.Text.Json;
 using MySql.Data.MySqlClient;
 using PaCT.Api.Clients;
 using PaCT.Api.Configuration;
+using PaCT.Api.Infrastructure;
 using PaCT.Api.Identity;
 
 namespace PaCT.Api.Management;
@@ -58,8 +59,7 @@ public sealed class MySqlManagementStore(DatabaseConnectionSettings settings, Id
     {
         ManagementDirectory.Kind(kind);
         await using var connection = settings.CreateConnection(); await connection.OpenAsync(ct);
-        await using var gate = Query(connection, null, "SELECT GET_LOCK('pact0.2_db:client-writes',5)");
-        if (Convert.ToInt32(await gate.ExecuteScalarAsync(ct)) != 1) throw new IdentityProblem(409, "Existe outra alteração em curso. Volta a tentar.");
+        if (!await MySqlClientWriteLock.TryAcquireAsync(connection, ct)) throw new IdentityProblem(409, "Existe outra alteração em curso. Volta a tentar.");
         try
         {
             await using var transaction = await connection.BeginTransactionAsync(ct); await Ready(connection, transaction, ct);
@@ -68,7 +68,7 @@ public sealed class MySqlManagementStore(DatabaseConnectionSettings settings, Id
         }
         catch (MySqlException error) when (error.Number is 1062 or 1451)
         { throw new IdentityProblem(409, error.Number == 1451 ? "O registo está em utilização e não pode ser eliminado. Podes desativá-lo." : "Os dados já estão registados. Pesquisa antes de criar novamente."); }
-        finally { await using var release = Query(connection, null, "SELECT RELEASE_LOCK('pact0.2_db:client-writes')"); await release.ExecuteScalarAsync(CancellationToken.None); }
+        finally { await MySqlClientWriteLock.ReleaseAsync(connection); }
     }
     internal Task<DirectoryResult> ChangeInTransaction(MySqlConnection connection, MySqlTransaction transaction, string kind, string? id,
         DirectoryChange input, string author, string operationId, CancellationToken ct) =>

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import ActionButton from './ActionButton'
 import CardGrid from './CardGrid'
 import CancelledExpenseReview from './CancelledExpenseReview'
@@ -26,11 +26,6 @@ export default function ExpensesPanel({ guard, disabled }) {
   const readDetail = useCallback(signal => apiRequest(`finance/expenses/${detailId}?historyPage=${historyPage}`, undefined, { signal }), [detailId, historyPage])
   const detail = useLiveResource('expenses', detailId + ':' + historyPage + ':' + detailVisit, readDetail, !!detailId)
   const locked = disabled || busy
-  useEffect(() => {
-    if (!list.data || list.error || page <= Math.max(1, Math.ceil(list.data.total / 8))) return
-    const timer = setTimeout(() => setPage(Math.max(1, Math.ceil(list.data.total / 8))), 0)
-    return () => clearTimeout(timer)
-  }, [list.data, list.error, page])
   async function write(id, input) {
     if (pending.current) throw new Error('Aguarda a confirmação do envio em curso.')
     pending.current = true; setBusy(true); setError('')
@@ -57,7 +52,7 @@ export default function ExpensesPanel({ guard, disabled }) {
         <ActionButton variant="text" disabled={locked} onClick={() => { setHistoryPage(1); setDetailVisit(v => v + 1); setError(''); setDetailId(expense.id) }}>Ver despesa</ActionButton>
       </InformationCard>)}</CardGrid>
       {!list.data.total && <InformationCard cardId="expense-empty"><p>{section === 'CancelledEvents' ? 'Não há gastos de eventos cancelados por rever nesta lista.' : 'Não existem despesas nesta lista.'}</p></InformationCard>}
-      <Pagination total={list.data.total} page={page} onChange={setPage} disabled={locked} label="Páginas das despesas" />
+      <Pagination total={list.data.total} page={page} pageSize={list.data.pageSize} correctPage={!list.error} onChange={setPage} disabled={locked} label="Páginas das despesas" />
     </>}
     {detailId && <ConsultationDialog title="Detalhe da despesa" label="Detalhe da despesa" disabled={locked} onClose={() => guard(closeDetail)}>
       <InformationCard cardId="expense-detail-status" variant="plain" loading={detail.loading} error={detail.error} onRetry={detail.refresh}>

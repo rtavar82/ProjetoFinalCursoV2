@@ -1,5 +1,6 @@
 using MySql.Data.MySqlClient;
 using PaCT.Api.Configuration;
+using PaCT.Api.Infrastructure;
 
 namespace PaCT.Api.Identity;
 
@@ -10,8 +11,7 @@ public sealed class MySqlClientAccessStore(DatabaseConnectionSettings settings) 
     {
         await using var connection = settings.CreateConnection();
         await connection.OpenAsync(ct);
-        await using var gate = new MySqlCommand("SELECT GET_LOCK('pact0.2_db:client-writes',5)", connection);
-        if (Convert.ToInt32(await gate.ExecuteScalarAsync(ct)) != 1) throw new IdentityProblem(409, "Há outra alteração em curso. Volta a tentar dentro de instantes.");
+        if (!await MySqlClientWriteLock.TryAcquireAsync(connection, ct)) throw new IdentityProblem(409, "Há outra alteração em curso. Volta a tentar dentro de instantes.");
         try
         {
             await using var transaction = await connection.BeginTransactionAsync(ct);
@@ -23,8 +23,7 @@ public sealed class MySqlClientAccessStore(DatabaseConnectionSettings settings) 
         catch (MySqlException error) when (error.Number == 1146) { throw new IdentityProblem(503, "A gestão de acesso ainda não está preparada nesta instalação."); }
         finally
         {
-            await using var release = new MySqlCommand("SELECT RELEASE_LOCK('pact0.2_db:client-writes')", connection);
-            await release.ExecuteScalarAsync(CancellationToken.None);
+            await MySqlClientWriteLock.ReleaseAsync(connection);
         }
     }
 

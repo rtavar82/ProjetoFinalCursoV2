@@ -7,7 +7,7 @@
     <RootNamespace>PaCT.Api</RootNamespace>
     <UserSecretsId>pact-v02-96a80f0d-8ad7-46f6-b662-e294ff2f5606</UserSecretsId>
     <FrontendRoot>$([System.IO.Path]::GetFullPath('$(MSBuildProjectDirectory)/../PaCT.Web'))</FrontendRoot>
-    <DefaultItemExcludes>$(DefaultItemExcludes);wwwroot/**</DefaultItemExcludes>
+    <DefaultItemExcludes>$(DefaultItemExcludes);wwwroot/**;artifacts/**;bin/**</DefaultItemExcludes>
     <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
     <NuGetAudit>true</NuGetAudit>
     <NuGetAuditMode>all</NuGetAuditMode>

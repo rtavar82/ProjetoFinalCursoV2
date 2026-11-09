@@ -52,8 +52,10 @@ public partial class Program
         const string prepareProcessStagesOption = "--prepare-process-states";
         const string prepareRequestRecoveryOption = "--prepare-request-recovery";
         const string prepareEmailOperationsOption = "--prepare-email-operations";
+        const string prepareSecurityAuditOption = "--prepare-security-audit";
         var prepareRequestRecovery = args.Contains(prepareRequestRecoveryOption, StringComparer.Ordinal);
         var prepareEmailOperations = args.Contains(prepareEmailOperationsOption, StringComparer.Ordinal);
+        var prepareSecurityAudit = args.Contains(prepareSecurityAuditOption, StringComparer.Ordinal);
         var auditProcessStages = args.Contains(auditProcessStagesOption, StringComparer.Ordinal);
         var prepareProcessStages = args.Contains(prepareProcessStagesOption, StringComparer.Ordinal);
         var prepareTestimonials = args.Contains(prepareTestimonialsOption, StringComparer.Ordinal);
@@ -69,7 +71,7 @@ public partial class Program
         var prepareInvitations = args.Contains(prepareInvitationsOption, StringComparer.Ordinal);
         var prepareClients = args.Contains(prepareClientsOption, StringComparer.Ordinal);
         var builder = WebApplication.CreateBuilder(args.Where(argument => argument != prepareManagerTasksOption && argument != prepareSalesOption && argument != prepareManagementOption && argument != prepareExpensesOption && argument != preparePresentationOption && argument != preparePrivacyOption)
-            .Where(argument => argument != "--audit-event-rules" && argument != "--prepare-event-rules" && argument != auditFinanceOption && argument != prepareFinanceOption && argument != prepareOption && argument != showCodeOption && argument != prepareInvitationsOption && argument != prepareClientsOption && argument != prepareConsultationsOption && argument != preparePasskeysOption && argument != resetManagerFactorsOption && argument != prepareClientAccessOption && argument != prepareAccountLoginOption && argument != configureCatalogueOption && argument != prepareAudioOption && argument != prepareSharingOption && argument != prepareTestimonialsOption && argument != auditProcessStagesOption && argument != prepareProcessStagesOption && argument != prepareRequestRecoveryOption && argument != prepareEmailOperationsOption)
+            .Where(argument => argument != "--audit-event-rules" && argument != "--prepare-event-rules" && argument != auditFinanceOption && argument != prepareFinanceOption && argument != prepareOption && argument != showCodeOption && argument != prepareInvitationsOption && argument != prepareClientsOption && argument != prepareConsultationsOption && argument != preparePasskeysOption && argument != resetManagerFactorsOption && argument != prepareClientAccessOption && argument != prepareAccountLoginOption && argument != configureCatalogueOption && argument != prepareAudioOption && argument != prepareSharingOption && argument != prepareTestimonialsOption && argument != auditProcessStagesOption && argument != prepareProcessStagesOption && argument != prepareRequestRecoveryOption && argument != prepareEmailOperationsOption && argument != prepareSecurityAuditOption)
             .ToArray());
 
         builder.Services.AddSingleton(services =>
@@ -106,11 +108,11 @@ public partial class Program
         var app = builder.Build();
         var database = app.Services.GetRequiredService<DatabaseConnectionSettings>();
 
-        if (prepareManagerTasks || prepareExpenses || prepareManagement || preparePresentation || preparePrivacy || prepareSales || auditEvents || prepareEvents || auditFinance || prepareFinance || prepare || showCode || prepareInvitations || prepareClients || prepareConsultations || preparePasskeys || resetManagerFactors || prepareClientAccess || prepareAccountLogin || configureCatalogue || prepareAudio || prepareSharing || prepareTestimonials || auditProcessStages || prepareProcessStages || prepareRequestRecovery || prepareEmailOperations)
+        if (prepareManagerTasks || prepareExpenses || prepareManagement || preparePresentation || preparePrivacy || prepareSales || auditEvents || prepareEvents || auditFinance || prepareFinance || prepare || showCode || prepareInvitations || prepareClients || prepareConsultations || preparePasskeys || resetManagerFactors || prepareClientAccess || prepareAccountLogin || configureCatalogue || prepareAudio || prepareSharing || prepareTestimonials || auditProcessStages || prepareProcessStages || prepareRequestRecovery || prepareEmailOperations || prepareSecurityAudit)
         {
             try
             {
-                if (new[] { prepareManagerTasks, prepareExpenses, prepareManagement, preparePresentation, preparePrivacy, prepareSales, auditEvents, prepareEvents, auditFinance, prepareFinance, prepare, showCode, prepareInvitations, prepareClients, prepareConsultations, preparePasskeys, resetManagerFactors, prepareClientAccess, prepareAccountLogin, configureCatalogue, prepareAudio, prepareSharing, prepareTestimonials, auditProcessStages, prepareProcessStages, prepareRequestRecovery, prepareEmailOperations }.Count(value => value) != 1) throw new InvalidOperationException("Use one installation command at a time.");
+                if (new[] { prepareManagerTasks, prepareExpenses, prepareManagement, preparePresentation, preparePrivacy, prepareSales, auditEvents, prepareEvents, auditFinance, prepareFinance, prepare, showCode, prepareInvitations, prepareClients, prepareConsultations, preparePasskeys, resetManagerFactors, prepareClientAccess, prepareAccountLogin, configureCatalogue, prepareAudio, prepareSharing, prepareTestimonials, auditProcessStages, prepareProcessStages, prepareRequestRecovery, prepareEmailOperations, prepareSecurityAudit }.Count(value => value) != 1) throw new InvalidOperationException("Use one installation command at a time.");
                 var secrets = app.Services.GetRequiredService<InstallationSecrets>();
                 if (prepareManagerTasks)
                 {
@@ -142,6 +144,11 @@ public partial class Program
                 {
                     await SecurityEmailOperationsSchema.PrepareAsync(database, app.Services.GetRequiredService<InstallationPaths>(), app.Services.GetRequiredService<IDataProtectionProvider>(), CancellationToken.None);
                     Console.WriteLine(JsonSerializer.Serialize(new { status = "prepared", module = "security-email-operations", existingDataPreserved = true, sentEmails = 0 }));
+                }
+                else if (prepareSecurityAudit)
+                {
+                    var table = await SecurityAuditSchema.PrepareAsync(database, app.Services.GetRequiredService<InstallationPaths>(), app.Services.GetRequiredService<IDataProtectionProvider>(), CancellationToken.None);
+                    Console.WriteLine(JsonSerializer.Serialize(new { status = "prepared", module = "security-audit", table = table.Name, existingDataPreserved = true }));
                 }
                 else if (prepareRequestRecovery)
                 {
@@ -251,6 +258,11 @@ public partial class Program
                     Console.WriteLine("Installation code (private, never paste into a chat): " + secrets.GetSetupCode());
                 }
             }
+            catch (SecurityAuditSchema.PreparationException error)
+            {
+                Console.Error.WriteLine(error.Message);
+                Environment.ExitCode = 1;
+            }
             catch (Exception)
             {
                 Console.Error.WriteLine("Installation preparation was not confirmed. Check the private configuration and schema. DDL can be partial; no fallback deletion was attempted and no credentials were printed.");
@@ -274,6 +286,7 @@ public partial class Program
         app.UseDefaultFiles();
         app.UseStaticFiles();
         app.UseRouting();
+        app.UseMiddleware<SecurityAuditMiddleware>();
         app.UseAuthentication();
         app.UseRateLimiter();
         app.Use(async (context, next) =>

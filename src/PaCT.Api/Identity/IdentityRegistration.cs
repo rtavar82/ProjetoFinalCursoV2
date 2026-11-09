@@ -26,6 +26,8 @@ public static class IdentityRegistration
         builder.Services.AddSingleton<InstallationSecrets>();
         builder.Services.AddSingleton<IInstallationSecrets>(services => services.GetRequiredService<InstallationSecrets>());
         builder.Services.AddSingleton<IdentitySecurity>();
+        builder.Services.AddSingleton<ISecurityAuditStore, MySqlSecurityAuditStore>();
+        builder.Services.AddSingleton<SecurityAuditWriter>();
         builder.Services.AddSingleton<MySqlIdentityStore>();
         builder.Services.AddSingleton<IIdentityStore>(services => services.GetRequiredService<MySqlIdentityStore>());
         builder.Services.AddSingleton<ISecurityEmailOperationsStore>(services => services.GetRequiredService<MySqlIdentityStore>());

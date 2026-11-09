@@ -3,6 +3,7 @@ using System.Text.Json;
 using MySql.Data.MySqlClient;
 using PaCT.Api.Clients;
 using PaCT.Api.Configuration;
+using PaCT.Api.Infrastructure;
 using PaCT.Api.Consultations;
 using PaCT.Api.Identity;
 using PaCT.Api.Management;
@@ -83,15 +84,14 @@ public sealed class MySqlExpenseStore(DatabaseConnectionSettings settings, Ident
     public async Task<ExpenseResult> ChangeAsync(string? id, ExpenseChange input, string author, string operation, CancellationToken ct)
     {
         await using var connection = settings.CreateConnection(); await connection.OpenAsync(ct);
-        await using var gate = Query(connection, null, "SELECT GET_LOCK('pact0.2_db:client-writes',5)");
-        if (Convert.ToInt32(await gate.ExecuteScalarAsync(ct)) != 1) throw new IdentityProblem(409, "Existe uma gravação em curso. Volta a tentar.");
+        if (!await MySqlClientWriteLock.TryAcquireAsync(connection, ct)) throw new IdentityProblem(409, "Existe uma gravação em curso. Volta a tentar.");
         try
         {
             await using var tx = await connection.BeginTransactionAsync(ct); await Ready(connection, tx, ct);
             var result = await ChangeInTransaction(connection, tx, id, input, author, operation, ct);
             await tx.CommitAsync(ct); return result;
         }
-        finally { await using var release = Query(connection, null, "SELECT RELEASE_LOCK('pact0.2_db:client-writes')"); await release.ExecuteScalarAsync(CancellationToken.None); }
+        finally { await MySqlClientWriteLock.ReleaseAsync(connection); }
     }
     internal async Task<ExpenseResult> ChangeInTransaction(MySqlConnection connection, MySqlTransaction tx, string? id, ExpenseChange input, string author, string operation, CancellationToken ct)
         => await ClientCommands.Execute(MySqlClientStore.InTransaction(connection, tx, ct), security, operation, author, "Expense:" + id, input, time.GetUtcNow().UtcDateTime, async () =>

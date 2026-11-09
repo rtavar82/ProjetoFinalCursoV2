@@ -11,7 +11,7 @@ import styles from './ClientSearch.module.css'
 
 export default function ClientSearch({ selected, onSelect, disabled, readOnly = false, unavailableIds = [], purpose = 'booking', ariaLabel, canSelect, enabled = true }) {
   const filtering = purpose === 'filter', directory = purpose === 'directory'
-  const booking = purpose === 'booking'
+  const booking = purpose === 'booking', audit = purpose === 'audit'
   const inputId = useId(), searchInput = useRef(null), formValue = useRef(null)
   const [term, setTerm] = useState(''), [query, setQuery] = useState(() => directory ? { term: '' } : null), [page, setPage] = useState(1)
   const key = query ? new URLSearchParams({ ...query, page }).toString() : ''
@@ -48,14 +48,15 @@ export default function ClientSearch({ selected, onSelect, disabled, readOnly = 
       </div>
       <p className={styles.help}>Indica pelo menos três caracteres. Podes escrever parte do nome, email ou telefone.</p>
       {directory ? <ActionButton variant="secondary" disabled={disabled} onClick={() => { setTerm(''); applySearch('') }}>Ver todas as fichas</ActionButton>
-        : <p className={styles.help}>{filtering ? 'Sem cliente escolhido, a pesquisa inclui todos.' : 'Confirma a identidade antes de escolher a ficha; um contacto coincidente não é suficiente.'}</p>}
+        : <p className={styles.help}>{audit ? 'Escolhe uma ficha com uma conta de acesso ativa.' : filtering
+          ? 'Sem cliente escolhido, a pesquisa inclui todos.' : 'Confirma a identidade antes de escolher a ficha; um contacto coincidente não é suficiente.'}</p>}
       {people.loading && <p role="status">A pesquisar fichas…</p>}{people.error && <div role="alert" className="notice error"><p>{people.error}</p><ActionButton variant="secondary" disabled={disabled} onClick={people.refresh}>Voltar a tentar</ActionButton></div>}
       {query && people.data && <>
         {directory && <SummaryCard cardId="client-count" label={people.data.total === 1 ? 'Ficha encontrada' : 'Fichas encontradas'} value={people.data.total} unit="registos" icon="people" />}
         <div className={styles.people}>{people.data.items.map(person => <article key={person.id} className={styles.person} data-client-id={person.id}><div className={styles.personInfo}>
           <strong>{[person.data.firstName, person.data.lastName].filter(Boolean).join(' ')}</strong>
           <span>{[person.data.locality, person.data.phone ? `+${person.data.dialCode || ''} ${person.data.phone}` : '', person.data.email,
-            directory && (person.hasAccount ? 'Com conta · ' + clientAccountStateLabel(person.accountState) : 'Ficha sem conta'),
+            (directory || audit) && (person.hasAccount ? 'Com conta · ' + clientAccountStateLabel(person.accountState) : 'Ficha sem conta'),
             directory && person.identityReviewStatus === 'Pending' && 'Identidade por verificar'].filter(Boolean).join(' · ')}</span>
         </div><ActionButton variant="secondary" aria-label={actionLabel} title={actionLabel} disabled={disabled || unavailableIds.includes(person.id) || canSelect && !canSelect(person)} onClick={() => choose(person)}><span className={styles.chooseLabel}>{actionLabel}</span><span className={styles.chooseIcon} aria-hidden="true">›</span></ActionButton></article>)}</div>
         {people.data.total === 0 && <p>{booking ? 'Não foram encontradas fichas. Podes criar primeiro a ficha em Clientes.' : 'Não foram encontradas fichas.'}</p>}

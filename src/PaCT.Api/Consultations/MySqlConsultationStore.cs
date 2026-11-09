@@ -4,6 +4,8 @@ using PaCT.Api.Infrastructure;
 using PaCT.Api.Configuration;
 using PaCT.Api.Identity;
 using PaCT.Api.Finance;
+using System.Diagnostics;
+using System.Diagnostics.Metrics;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -34,6 +36,11 @@ public interface IConsultationStore
 public sealed class MySqlConsultationStore(DatabaseConnectionSettings settings, IdentitySecurity security, TimeProvider time,
     IDataProtectionProvider? protection = null, GoogleCalendarAvailability? googleCalendar = null) : IConsultationStore
 {
+    private static readonly Meter LockMeter = new("PaCT.Consultations");
+    private static readonly Histogram<double> LockWait = LockMeter.CreateHistogram<double>("pact.consultations.lock.wait", "ms");
+    private static readonly Histogram<double> LockHold = LockMeter.CreateHistogram<double>("pact.consultations.lock.hold", "ms");
+    private static readonly Counter<long> LockConflicts = LockMeter.CreateCounter<long>("pact.consultations.lock.conflicts");
+
     private string Encrypt(string id, string field, string value) => Convert.ToBase64String(security.Encrypt(id, "consultation-" + field, value));
     internal async Task<GoogleCalendarBooking[]> ReadGoogleCalendarBookingsAsync(DateTimeOffset now, CancellationToken ct)
     {
@@ -105,7 +112,7 @@ public sealed class MySqlConsultationStore(DatabaseConnectionSettings settings, 
             var expenses = Convert.ToInt32(await table.ExecuteScalarAsync(ct)) == 1
                 ? await MySqlExpenseStore.ReadExpenses(connection, transaction, security, ct) : null;
             return read(data, expenses);
-        }, ct, synchronizeClock: true);
+        }, ct, synchronizeClock: true, operation: "financial-read");
     public async Task<ConversationPage> ReadConversationAsync(string id, ConsultationActor actor, long? before, CancellationToken ct)
     {
         await using var connection = settings.CreateConnection(); await connection.OpenAsync(ct);
@@ -160,7 +167,7 @@ public sealed class MySqlConsultationStore(DatabaseConnectionSettings settings, 
         return new(c, page, reads.ToArray(), unread, latest, page.Length > 0 && oldest < page[0].Sequence);
     }
     public Task<T> ReadEventCatalogueAsync<T>(Func<ConsultationData, T> read, CancellationToken ct) =>
-        WithCalendar(() => Write((_, _, data) => Task.FromResult(read(data)), ct, eventCatalogue: true, synchronizeClock: true), ct);
+        WithCalendar(() => Write((_, _, data) => Task.FromResult(read(data)), ct, eventCatalogue: true, synchronizeClock: true, operation: "event-catalogue-read"), ct);
     internal static async Task<ConsultationData> LoadEventCatalogue(MySqlConnection connection, MySqlTransaction transaction, CancellationToken ct)
     {
         var data = new ConsultationData();
@@ -178,7 +185,8 @@ public sealed class MySqlConsultationStore(DatabaseConnectionSettings settings, 
             while (await reader.ReadAsync(ct)) data.Participations.Add(new(reader.GetGuid(0).ToString(), reader.GetGuid(1).ToString(), reader.IsDBNull(2) ? null : reader.GetGuid(2).ToString(), reader.GetString(3), DateTimeOffset.UnixEpoch));
     }
     private Task<T> ReadCore<T>(Func<ConsultationData, T> read, bool agendaOnly, CancellationToken ct) =>
-        Write((_, _, data) => Task.FromResult(read(data)), ct, agendaOnly: agendaOnly, synchronizeClock: true);
+        Write((_, _, data) => Task.FromResult(read(data)), ct, agendaOnly: agendaOnly, synchronizeClock: true,
+            operation: agendaOnly ? "agenda-read" : "consultation-read");
 
     // Persist only lifecycle changes before serving a read. Public snapshots remain stripped of private fields.
     internal static async Task PersistLifecycle(MySqlConnection connection, MySqlTransaction transaction, DateTimeOffset now, CancellationToken ct)
@@ -356,11 +364,20 @@ public sealed class MySqlConsultationStore(DatabaseConnectionSettings settings, 
         await Save(connection, transaction, data, before, ct); return true;
     }, ct);
     private async Task<T> Write<T>(Func<MySqlConnection, MySqlTransaction, ConsultationData, Task<T>> action, CancellationToken ct,
-        bool agendaOnly = false, bool eventCatalogue = false, bool synchronizeClock = false)
+        bool agendaOnly = false, bool eventCatalogue = false, bool synchronizeClock = false, string operation = "write")
     {
         await using var connection = settings.CreateConnection(); await connection.OpenAsync(ct);
-        await using var gate = new MySqlCommand("SELECT GET_LOCK('pact0.2_db:client-writes',5)", connection);
-        if (Convert.ToInt32(await gate.ExecuteScalarAsync(ct)) != 1) throw new IdentityProblem(409, "Existe outra operação em curso. Atualiza antes de tentar novamente.");
+        var operationTag = new KeyValuePair<string, object?>("operation", operation);
+        var waitingSince = Stopwatch.GetTimestamp();
+        var acquired = await MySqlClientWriteLock.TryAcquireAsync(connection, ct);
+        var acquiredAt = Stopwatch.GetTimestamp();
+        var wait = Stopwatch.GetElapsedTime(waitingSince, acquiredAt).TotalMilliseconds;
+        if (!acquired)
+        {
+            LockWait.Record(wait, operationTag);
+            LockConflicts.Add(1, operationTag);
+            throw new IdentityProblem(409, "Existe outra operação em curso. Atualiza antes de tentar novamente.");
+        }
         try
         {
             await using var transaction = await connection.BeginTransactionAsync(ct);
@@ -373,8 +390,10 @@ public sealed class MySqlConsultationStore(DatabaseConnectionSettings settings, 
         }
         finally
         {
-            await using var release = new MySqlCommand("SELECT RELEASE_LOCK('pact0.2_db:client-writes')", connection);
-            await release.ExecuteScalarAsync(CancellationToken.None);
+            await MySqlClientWriteLock.ReleaseAsync(connection);
+            var hold = Stopwatch.GetElapsedTime(acquiredAt).TotalMilliseconds;
+            LockWait.Record(wait, operationTag);
+            LockHold.Record(hold, operationTag);
         }
     }
     internal async Task QueueGroupSummaries(MySqlConnection connection, MySqlTransaction transaction, ConsultationData data, CancellationToken ct)

@@ -10,7 +10,7 @@ namespace PaCT.Api.Controllers;
 [ApiController, Route("api/identity/email-operations"), Authorize(Roles = Roles.Managers)]
 [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
 public sealed class SecurityEmailOperationsController(ISecurityEmailOperationsStore store, ISecurityEmailTransport transport,
-    SecurityEmailHealth health, TimeProvider time) : ControllerBase
+    SecurityEmailHealth health, TimeProvider time, SecurityAuditWriter? audit = null) : ControllerBase
 {
     [HttpGet]
     public async Task<IActionResult> Status(CancellationToken ct)
@@ -73,6 +73,9 @@ public sealed class SecurityEmailOperationsController(ISecurityEmailOperationsSt
         var operationId = ClientCommands.Key(Request) ?? throw new IdentityProblem(400, "A identificação desta revisão é obrigatória.");
         var manager = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
         var receipt = await store.RecordReviewAsync(id, operationId, manager, time.GetUtcNow().UtcDateTime, ct);
+        if (audit is not null)
+            await audit.TryRecordAsync(SecurityAuditEventFactory.Background(time.GetUtcNow().UtcDateTime, "EmailReviewRecorded", "Success", "Info", manager,
+                User.FindFirstValue(ClaimTypes.Role), receipt.AlreadyRecorded ? "duplicate" : "review", receipt.EmailId), ct);
         return Ok(new
         {
             emailId = receipt.EmailId,

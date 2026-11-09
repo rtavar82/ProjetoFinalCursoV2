@@ -17,7 +17,8 @@ public sealed class GoogleCalendarController(GoogleCalendarSettings settings, Go
     {
         if (await ActiveManagerAsync(ct) is null) return Forbid();
         var now = time.GetUtcNow();
-        var (start, end) = AgendaRules.MonthRange(month, now);
+        var (start, end, error) = AgendaRules.MonthRange(month, now);
+        if (error is not null) return Problem(statusCode: 400, title: error);
         var pact = await consultations.ReadAgendaAsync(data => ManagementAgendaOccupation.Pact(data, start, end, now), ct);
         var google = await availability.ReadOccupationAsync(start, end, ct);
         return Ok(new

@@ -4,7 +4,7 @@ using System.Security.Claims;
 
 namespace PaCT.Api.Identity;
 
-public sealed class IdentityCookies(IdentitySecurity security, TimeProvider time)
+public sealed class IdentityCookies(IdentitySecurity security, TimeProvider time, SecurityAuditWriter? audit = null)
 {
     public const string Pending = "__Host-PaCT.Pending";
     public const string Trusted = "__Host-PaCT.TrustedBrowser";
@@ -43,6 +43,8 @@ public sealed class IdentityCookies(IdentitySecurity security, TimeProvider time
         ], CookieAuthenticationDefaults.AuthenticationScheme);
         await context.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, new ClaimsPrincipal(claims),
             new AuthenticationProperties { IsPersistent = false, AllowRefresh = true });
+        if (audit is not null)
+            await audit.TryRecordAsync(SecurityAuditEventFactory.SessionEstablished(context, account, time.GetUtcNow().UtcDateTime, method), context.RequestAborted);
         context.Response.Cookies.Delete(Pending, Options(TimeSpan.Zero));
         if (rememberDevice && (account.TwoFactorEnabledAt is not null || account.PasskeyEnabledAt is not null)) context.Response.Cookies.Append(Trusted,
             security.ProtectAction(account.PasskeyEnabledAt is null ? "trusted-browser" : "trusted-passkey-browser", new(account.Id, account.SecurityStamp), TimeSpan.FromDays(30)), Options(TimeSpan.FromDays(30)));

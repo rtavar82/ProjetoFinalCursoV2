@@ -1,6 +1,7 @@
 using System.Text.Json;
 using MySql.Data.MySqlClient;
 using PaCT.Api.Configuration;
+using PaCT.Api.Infrastructure;
 using PaCT.Api.Identity;
 
 namespace PaCT.Api.Clients;
@@ -17,8 +18,7 @@ public sealed class MySqlClientStore(DatabaseConnectionSettings settings) : ICli
         await using var connection = settings.CreateConnection();
         await connection.OpenAsync(ct);
         if (!write) return await action(new Session(connection, null, ct));
-        await using var gate = new MySqlCommand("SELECT GET_LOCK('pact0.2_db:client-writes', 5)", connection);
-        if (Convert.ToInt32(await gate.ExecuteScalarAsync(ct)) != 1) throw new IdentityProblem(409, "Há outra alteração em curso. Volta a tentar dentro de instantes.");
+        if (!await MySqlClientWriteLock.TryAcquireAsync(connection, ct)) throw new IdentityProblem(409, "Há outra alteração em curso. Volta a tentar dentro de instantes.");
         try
         {
             await using var transaction = await connection.BeginTransactionAsync(ct);
@@ -29,8 +29,7 @@ public sealed class MySqlClientStore(DatabaseConnectionSettings settings) : ICli
         catch (MySqlException error) when (error.Number == 1062) { throw new IdentityProblem(409, "O estado mudou ou os dados coincidem com outro registo. Atualiza e verifica antes de repetir."); }
         finally
         {
-            await using var release = new MySqlCommand("SELECT RELEASE_LOCK('pact0.2_db:client-writes')", connection);
-            await release.ExecuteScalarAsync(CancellationToken.None);
+            await MySqlClientWriteLock.ReleaseAsync(connection);
         }
     }
 

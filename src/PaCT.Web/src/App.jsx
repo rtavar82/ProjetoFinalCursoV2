@@ -238,7 +238,7 @@ export default function App() {
   }
 
   return (
-    <AppLayout><AuthPage busy={busy} onBack={stage === 'SignIn' ? () => navigatePublic('PublicHome') : undefined} introduction={<>
+    <AppLayout page={stage}><AuthPage busy={busy} onBack={stage === 'SignIn' ? () => navigatePublic('PublicHome') : undefined} introduction={<>
           <p className="eyebrow">UM NOVO COMEÇO</p>
           <h1>O teu espaço.<br />O teu acompanhamento.</h1>
           <p>{['Register', 'Invitation'].includes(stage) ? 'Prepara a PaCT para a tua atividade, com os teus dados e acesso protegido.' : 'Acede à tua conta com uma ligação segura e os teus próprios dados.'}</p>

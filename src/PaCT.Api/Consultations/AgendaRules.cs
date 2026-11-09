@@ -237,19 +237,21 @@ public static class AgendaRules
             Guid.NewGuid().ToString(), start, end, available, ChangedBy: actor.AccountId, PublicationId: operationId, SourceWindowId: source, Rules: rules));
     }
 
-    public static (DateTimeOffset Start, DateTimeOffset End) MonthRange(string? month, DateTimeOffset now)
+    public static (DateTimeOffset Start, DateTimeOffset End, string? Error) MonthRange(string? month, DateTimeOffset now)
     {
         var date = LocalDate(now);
         var first = new DateOnly(date.Year, date.Month, 1);
-        if (month is not null)
-        {
-            Require(month.Length == 7 && DateOnly.TryParseExact(month + "-01", "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out _), "Indica o mês no formato AAAA-MM.");
-            first = DateOnly.ParseExact(month + "-01", "yyyy-MM-dd", CultureInfo.InvariantCulture);
-        }
-        Require(first.Year < 9999, "Mês fora do horizonte da agenda.");
-        var start = Midnight(first); var end = Midnight(first.AddMonths(1));
-        Require(end > now && start < HorizonEndExclusive(now), "Mês fora do horizonte da agenda.");
-        return (start < now ? now : start, end > HorizonEndExclusive(now) ? HorizonEndExclusive(now) : end);
+        if (month is not null && (month.Length != 7 ||
+            !DateOnly.TryParseExact(month + "-01", "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out first)))
+            return (default, default, "Indica o mês no formato AAAA-MM.");
+
+        const string outsideHorizon = "Mês fora do horizonte da agenda.";
+        if (first.Year == 9999) return (default, default, outsideHorizon);
+        var start = Midnight(first);
+        var end = Midnight(first.AddMonths(1));
+        var horizon = HorizonEndExclusive(now);
+        if (end <= now || start >= horizon) return (default, default, outsideHorizon);
+        return (start < now ? now : start, end > horizon ? horizon : end, null);
     }
 
     public static PublicAgendaSegment[] PublicSegments(ConsultationData data, DateTimeOffset start, DateTimeOffset end, DateTimeOffset now, bool registered = true)

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useState } from 'react'
 import ActionButton from './ActionButton'
 import AdaptiveSelect from './AdaptiveSelect'
 import CardGrid from './CardGrid'
@@ -27,11 +27,6 @@ export default function FinancialSalesPanel({ personId = null, own = false, send
   const readDetail = useCallback(signal => apiRequest('finance/sales/' + detailId, undefined, { signal }), [detailId])
   const detail = useLiveResource('sales', 'sale:' + detailId, readDetail, !!detailId)
   const names = useConsultationNames(list.data?.items || [], detail.data, !own)
-  useEffect(() => {
-    if (!list.data || list.error || page <= Math.max(1, Math.ceil(list.data.total / 8))) return
-    const timer = setTimeout(() => setPage(Math.max(1, Math.ceil(list.data.total / 8))), 0)
-    return () => clearTimeout(timer)
-  }, [list.data, list.error, page])
   return <section aria-label={own ? 'As minhas compras' : personId ? 'Vendas do cliente' : 'Vendas'}>
     <InformationCard title={own ? 'As minhas compras' : 'Vendas'} cardId="sales-header" actions={!personId && !own && <ActionButton disabled={disabled || !!list.error || !list.data} onClick={() => guard(() => setCreating(true))}>Registar venda</ActionButton>}>
       {!personId && !own && <p>Regista artigos, packs e serviços já pagos. Podes juntar várias linhas e métodos de recebimento.</p>}
@@ -57,7 +52,7 @@ export default function FinancialSalesPanel({ personId = null, own = false, send
         <ActionButton variant="text" disabled={disabled} onClick={() => setDetailId(sale.id)}>{own ? 'Ver compra e recebimentos' : 'Ver venda e recebimentos'}</ActionButton>
       </InformationCard>)}</CardGrid>
       {list.data.total === 0 && <InformationCard cardId="sales-empty"><p>{own ? 'Não existem compras nesta pesquisa.' : 'Não existem vendas nesta pesquisa.'}</p></InformationCard>}
-      <Pagination total={list.data.total} page={page} label="Páginas das vendas" disabled={disabled} onChange={setPage} />
+      <Pagination total={list.data.total} page={page} pageSize={list.data.pageSize} correctPage={!list.error} label="Páginas das vendas" disabled={disabled} onChange={setPage} />
     </>}
     {creating && <SaleEditor send={send} disabled={disabled} guard={guard} feedback={feedback} perform={perform} notify={notify} onClose={() => { setCreating(false); setPage(1) }} />}
     {detailId && <ConsultationDialog title={own ? 'Compra e recebimentos' : 'Venda e recebimentos'} label={own ? 'Detalhe da compra' : 'Detalhe da venda'} onClose={() => setDetailId(null)}><InformationCard variant="plain" cardId="sale-detail" loading={detail.loading} error={detail.error} onRetry={detail.refresh}>

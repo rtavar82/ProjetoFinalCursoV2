@@ -164,7 +164,7 @@ internal static class SecurityEmailContent
 
 public sealed class SecurityEmailWorker(IIdentityStore store, ITherapistInvitationStore invitations, IdentitySecurity security, IInstallationSecrets installation,
     ISecurityEmailTransport transport, TimeProvider time, ILogger<SecurityEmailWorker> logger, ClientAccessService? clientAccess = null, PasswordChangeService? passwords = null,
-    PaCT.Api.Consultations.IConsultationStore? consultations = null, SecurityEmailHealth? health = null) : BackgroundService
+    PaCT.Api.Consultations.IConsultationStore? consultations = null, SecurityEmailHealth? health = null, SecurityAuditWriter? audit = null) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -181,6 +181,9 @@ public sealed class SecurityEmailWorker(IIdentityStore store, ITherapistInvitati
             {
                 logger.LogWarning("Security email processing unavailable: type={ErrorType}", error.GetType().Name);
                 health?.RecordFailure(error is IdentityProblem ? "Configuration" : "Worker", time.GetUtcNow().UtcDateTime);
+                if (audit is not null)
+                    await audit.TryRecordAsync(SecurityAuditEventFactory.Background(time.GetUtcNow().UtcDateTime, "EmailWorkerError", "Error", "High", null, null,
+                        error is IdentityProblem ? "configuration" : "worker"), CancellationToken.None);
                 try { await Task.Delay(TimeSpan.FromSeconds(30), stoppingToken); }
                 catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { break; }
             }
@@ -243,6 +246,10 @@ public sealed class SecurityEmailWorker(IIdentityStore store, ITherapistInvitati
         var state = eligible ? await transport.SendAsync(payload, ct) : "Cancelled";
         health?.RecordOutcome(state, time.GetUtcNow().UtcDateTime);
         await store.CompleteEmailAsync(job.Id, state, time.GetUtcNow().UtcDateTime, ct);
+        if (audit is not null && state is "Failed" or "Uncertain")
+            await audit.TryRecordAsync(SecurityAuditEventFactory.Background(time.GetUtcNow().UtcDateTime,
+                state == "Failed" ? "EmailFailed" : "EmailUncertain", state == "Failed" ? "Failure" : "Uncertain",
+                state == "Failed" ? "Warning" : "High", job.AccountId, account?.Role, state.ToLowerInvariant(), job.Id), CancellationToken.None);
         return true;
     }
 }

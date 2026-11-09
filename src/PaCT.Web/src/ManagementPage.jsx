@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useState } from 'react'
+import { useCallback, useId, useState } from 'react'
 import ActionButton from './ActionButton'
 import AdaptiveSelect from './AdaptiveSelect'
 import CardGrid from './CardGrid'
@@ -12,6 +12,7 @@ import Pagination from './Pagination'
 import SearchInput from './SearchInput'
 import SitePresentationPanel from './SitePresentationPanel'
 import PrivacyManagementPanel from './PrivacyManagementPanel'
+import SecurityOperationsPanel from './SecurityOperationsPanel'
 import SummaryCard from './SummaryCard'
 import useLiveResource from './useLiveResource'
 import useRecoveryState from './useRecoveryState'
@@ -19,6 +20,8 @@ import { apiRequest } from './identityApi'
 import { showSuccess } from './actionNotices'
 import { agendaDate } from './agendaTime'
 import formStyles from './ManagerScheduling.module.css'
+import { isManager } from './identityRoles'
+import styles from './ManagementPage.module.css'
 
 const areas = {
   Supplier: { title: 'Fornecedores', singular: 'fornecedor', create: 'Novo fornecedor', search: 'Nome ou identificação fiscal' },
@@ -29,16 +32,26 @@ const decisions = { Activate: 'Reativar', Deactivate: 'Desativar', Delete: 'Elim
 
 export default function ManagementPage({ role, guard, busy }) {
   const [kind, setKind] = useState(() => window.location.hash.split('?')[0] === '#calendario-google' ? 'GoogleCalendar' : 'Supplier')
+  const areaLabel = useId()
   const presentation = { Home: 'Página inicial', Therapist: 'Apresentação da terapeuta', Places: 'Locais e moradas',
     Contacts: 'Contactos e redes sociais', Payment: 'Formas de pagamento', WhatsApp: 'Gestão de mensagens' }
   const technical = role === 'TechnicalManager'
+  const manager = isManager(role)
   const tabs = [...Object.entries(areas).map(([key, area]) => [key, area.title]), ...Object.entries(presentation), ['Catalogue', 'Catálogo de consultas'], ['GoogleCalendar', 'Google Calendar'],
-    ...(technical ? [['Privacy', 'Documentos RGPD']] : [])]
+    ...(technical ? [['Privacy', 'Documentos RGPD']] : []), ...(manager ? [['SecurityOperations', 'Auditoria de segurança']] : [])]
+  function openArea(key) { guard(() => setKind(key)) }
+
   return <section aria-labelledby="application-management-title"><Heading level={1} id="application-management-title">Gestão da aplicação</Heading>
-    <nav className="consultation-tabs" aria-label="Áreas de gestão">{tabs.map(([key, title]) => <ActionButton key={key} variant={kind === key ? 'primary' : 'secondary'} aria-pressed={kind === key} disabled={busy} onClick={() => guard(() => setKind(key))}>{title}</ActionButton>)}</nav>
+    <label className={styles.areaPicker}><span id={areaLabel}>Área de gestão</span>
+      <AdaptiveSelect aria-labelledby={areaLabel} value={kind} disabled={busy} onChange={event => openArea(event.target.value)}>
+        {tabs.map(([key, title]) => <option key={key} value={key}>{title}</option>)}
+      </AdaptiveSelect>
+    </label>
+    <nav className={styles.areas} aria-label="Áreas de gestão">{tabs.map(([key, title]) => <ActionButton key={key} variant={kind === key ? 'primary' : 'secondary'} aria-pressed={kind === key} disabled={busy} onClick={() => openArea(key)}>{title}</ActionButton>)}</nav>
     {kind === 'Catalogue' ? <ConsultationCataloguePanel guard={guard} busy={busy} />
       : kind === 'GoogleCalendar' ? <GoogleCalendarPanel guard={guard} busy={busy} />
       : kind === 'Privacy' && technical ? <PrivacyManagementPanel guard={guard} disabled={busy} />
+      : kind === 'SecurityOperations' && manager ? <SecurityOperationsPanel guard={guard} disabled={busy} />
       : presentation[kind] ? <SitePresentationPanel key={kind} section={kind} title={presentation[kind]} guard={guard} busy={busy} />
         : <DirectoryPanel key={kind} kind={kind} guard={guard} busy={busy} />}
   </section>
@@ -63,11 +76,6 @@ export function DirectoryPanel({ kind, guard, busy: profileBusy, onSelect, selec
   const readDetail = useCallback(signal => apiRequest(`management/${kind}/${detailId}?historyPage=${historyPage}`, undefined, { signal }), [kind, detailId, historyPage])
   const detail = useLiveResource('management', kind + ':' + detailId + ':' + historyPage, readDetail, !!detailId)
   const disabled = busy || profileBusy
-  useEffect(() => {
-    if (!list.data || list.error || page <= Math.max(1, Math.ceil(list.data.total / 8))) return
-    const timer = setTimeout(() => setPage(Math.max(1, Math.ceil(list.data.total / 8))), 0)
-    return () => clearTimeout(timer)
-  }, [list.data, list.error, page])
   async function write(id, input) {
     setError(''); setBusy(true)
     try {
@@ -104,7 +112,7 @@ export function DirectoryPanel({ kind, guard, busy: profileBusy, onSelect, selec
           : <ActionButton variant="text" disabled={disabled} onClick={() => openDetail(entry.id)}>Ver {area.singular}</ActionButton>}
       </InformationCard>)}</CardGrid>
       {list.data.total === 0 && <InformationCard cardId="management-empty"><p>Não existem registos nesta pesquisa.</p></InformationCard>}
-      <Pagination total={list.data.total} page={page} onChange={setPage} disabled={disabled} label={'Páginas de ' + area.title.toLowerCase()} />
+      <Pagination total={list.data.total} page={page} pageSize={list.data.pageSize} correctPage={!list.error} onChange={setPage} disabled={disabled} label={'Páginas de ' + area.title.toLowerCase()} />
     </>}
     {editor && <DirectoryEditor kind={kind} entry={editor.entry} disabled={disabled} guard={guard} write={write} error={error} clearError={() => setError('')} onClose={() => { setEditor(null); setError('') }} />}
     {detailId && <ConsultationDialog title={decision ? decisions[decision.action] + ' ' + area.singular : 'Detalhe de ' + area.singular} label={'Detalhe de ' + area.singular} disabled={disabled} onClose={closeDetail}>
