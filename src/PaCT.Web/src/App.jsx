@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useEffectEvent, useRef, useState, useSyncExternalStore } from 'react'
 import { request } from './identityApi'
 import RegistrationFields from './RegistrationFields'
 import ClientProfileForm from './ClientProfileForm'
@@ -19,10 +19,11 @@ import PublicPresentation from './PublicPresentation'
 import PublicOpening from './PublicOpening'
 import PublicTestimonials from './PublicTestimonials'
 import SharingFeed from './SharingFeed'
-import { clientHomeHashes, publicRoute } from './publicPresentationData'
+import { clientHomeHashes, isPublicOpeningAddress, publicRoute } from './publicPresentationData'
 import { cancelSubmittedWrites } from './submittedWrites'
 import { dismissSuccess, showSuccess } from './actionNotices'
 import PrivacyProvider from './PrivacyProvider'
+import { isManager } from './identityRoles'
 import { readVisualTheme, saveVisualTheme } from './visualTheme'
 
 const publicPages = { PublicOpening: '', PublicHome: 'inicio', PublicTherapist: 'terapeuta',
@@ -32,7 +33,17 @@ function stageForPublicRoute(stage, profile) {
     ? 'SignedIn' : stage
 }
 
+const workspaceHash = profile => profile?.role === 'Client' ? '#agenda' : '#inicio'
+
 const accessSteps = ['ClientRegister', 'ClientEmailSent', 'ClientReview', 'PasswordRecoveryRequest', 'PasswordRecoveryRequested', 'PasswordRecoveryLink', 'ClientEmailLink']
+const mobileThemeMedia = window.matchMedia('(width < 760px)')
+
+function subscribeToMobileTheme(onChange) {
+  mobileThemeMedia.addEventListener('change', onChange)
+  return () => mobileThemeMedia.removeEventListener('change', onChange)
+}
+
+const usesMobileTheme = () => mobileThemeMedia.matches
 
 function readLink() {
   const parameters = new URLSearchParams(window.location.hash.slice(1))
@@ -47,22 +58,40 @@ function linkStage({ clientConfirmation, ...link }) {
 
 export default function App() {
   const [{ confirmationToken, invitationToken, accessEmailToken, passwordChangeToken, passwordRecoveryToken, googleResult, clientConfirmation }, setLink] = useState(readLink)
+  const [entryStage, setEntryStage] = useState('SignIn')
   const [stage, setStage] = useState(!navigator.onLine ? 'Offline' : window.location.protocol !== 'https:' ? 'Insecure' : linkStage({ confirmationToken, invitationToken, accessEmailToken, passwordChangeToken, passwordRecoveryToken, googleResult, clientConfirmation }) || 'Loading')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
   const [profile, setProfile] = useState(null)
   const [visualTheme, setVisualTheme] = useState(readVisualTheme)
+  const mobileTheme = useSyncExternalStore(subscribeToMobileTheme, usesMobileTheme)
   useEffect(() => { cancelSubmittedWrites() }, [profile?.id])
   const [guestSelection, setGuestSelection] = useState(null)
   const [publicService, setPublicService] = useState(() => publicRoute().serviceId)
   const [recoveryCodes, setRecoveryCodes] = useState([])
   const errorRef = useRef(null)
   const busyRef = useRef(false)
-  function enterWorkspace() {
-    window.history.pushState(null, '', profile?.role === 'Client' ? '#agenda' : '#inicio')
+  function openWorkspace(address) {
+    window.history.pushState({ workspace: true }, '', address)
     setStage('SignedIn')
   }
+
+  function enterWorkspace() { openWorkspace(workspaceHash(profile)) }
+
+  const openNotificationFromOpening = useEffectEvent(event => {
+    if (stage !== 'PublicOpening' || !profile) return
+    const type = event.data?.type
+    if (type === 'PACT_OPEN_AGENDA') openWorkspace('#agenda')
+    if (type === 'PACT_OPEN_TASKS' && isManager(profile.role)) openWorkspace('#tarefas')
+    if (type === 'PACT_OPEN_PAYMENTS' && profile.role === 'Client') openWorkspace('/?view=payments#agenda')
+  })
+
+  useEffect(() => {
+    const open = event => openNotificationFromOpening(event)
+    navigator.serviceWorker?.addEventListener('message', open)
+    return () => navigator.serviceWorker?.removeEventListener('message', open)
+  }, [])
 
   function choosePublicBooking(selection) {
     if (profile) enterWorkspace()
@@ -80,7 +109,9 @@ export default function App() {
           if (route.stage === stage && route.serviceId === publicService) return
           if (document.querySelector('[data-pending-command="true"]')) { window.history.forward(); return }
           if ((guestSelection || document.querySelector('[data-guest-request="true"]')) && !window.confirm('Queres sair e descartar o preenchimento do pedido?')) { window.history.forward(); return }
-          setPublicService(route.serviceId); setGuestSelection(null); setStage(stageForPublicRoute(route.stage, profile)); setError(''); setMessage('')
+          const workspace = profile && window.history.state?.workspace && !isPublicOpeningAddress()
+          setPublicService(route.serviceId); setGuestSelection(null)
+          setStage(workspace ? 'SignedIn' : stageForPublicRoute(route.stage, profile)); setError(''); setMessage('')
         }
         return
       }
@@ -105,12 +136,16 @@ export default function App() {
           try {
             const me = await request('me')
             if (current) setProfile(me)
-            next = me.role !== 'Client' && window.location.hash === '#testemunhos' ? 'PublicTestimonials' : 'SignedIn'
+            next = isPublicOpeningAddress() ? 'PublicOpening'
+              : me.role !== 'Client' && window.location.hash === '#testemunhos' ? 'PublicTestimonials' : 'SignedIn'
           }
           catch (failure) {
             if (failure.status !== 401) throw failure
             next = (await request('progress')).stage
-            if (next === 'SignIn') next = publicRoute().stage
+            if (isPublicOpeningAddress()) {
+              if (current) setEntryStage(next)
+              next = 'PublicOpening'
+            } else if (next === 'SignIn') next = publicRoute().stage
           }
         }
         if (current) setStage(next)
@@ -156,7 +191,11 @@ export default function App() {
   }
 
   async function showStage(next) {
-    if (next === 'SignedIn') setProfile(await request('me'))
+    if (next === 'SignedIn') {
+      const me = await request('me')
+      setProfile(me)
+      if (window.location.hash === '#entrar') window.history.replaceState({ workspace: true }, '', workspaceHash(me))
+    }
     setStage(next)
   }
 
@@ -209,7 +248,11 @@ export default function App() {
   function navigatePublic(next, serviceId = '') {
     if (document.querySelector('[data-pending-command="true"]')) return
     if ((guestSelection || document.querySelector('[data-guest-request="true"]')) && !window.confirm('Queres sair e descartar o preenchimento do pedido?')) return
-    setGuestSelection(null); setPublicService(serviceId); setError(''); setMessage(''); setStage(stageForPublicRoute(next, profile))
+    setGuestSelection(null); setPublicService(serviceId); setError(''); setMessage('')
+    if (next === 'SignIn' && !profile) {
+      setStage(entryStage)
+      setEntryStage('SignIn')
+    } else setStage(stageForPublicRoute(next, profile))
     const returnTo = next === 'SignIn' && stage.startsWith('Public') && stage !== 'PublicOpening' ? { stage, serviceId: publicService } : null
     const hash = publicPages[next]
     window.history.pushState({ returnTo }, '', hash ? '#' + hash + (serviceId ? '?servico=' + encodeURIComponent(serviceId) : '') : window.location.pathname)
@@ -227,15 +270,17 @@ export default function App() {
   </PrivacyProvider>
 
   function renderStage() {
-  if (stage === 'SignedIn' && profile) return <Workspace {...themeProps} profile={profile} busy={busy} perform={perform} notify={notify} error={error} message={message} errorRef={errorRef}
+  if (stage === 'SignedIn' && profile) return <Workspace {...themeProps} mobileTheme={mobileTheme} profile={profile} busy={busy} perform={perform} notify={notify} error={error} message={message} errorRef={errorRef}
     onPublicTestimonials={() => navigatePublic('PublicTestimonials')}
+    onOpenEntry={() => { setError(''); setMessage(''); setStage('PublicOpening'); window.scrollTo(0, 0) }}
     onSignOut={() => perform(async () => { await request('sign-out', {}); setProfile(null); setRecoveryCodes([]); setStage('SignIn') })}
     onForgetBrowser={() => perform(async () => { const result = await request('forget-browser', {}); notify(result.message) })}
     onPasskeyUpdated={() => showStage('SignedIn')}
     onSecuritySignedOut={text => { setProfile(null); notify(text); setStage('SignIn') }}
     onAccountClosed={text => { setProfile(null); notify(text); setStage('SignIn') }} />
 
-  if (stage === 'PublicOpening') return <PublicOpening {...themeProps} onNavigate={navigatePublic} />
+  if (stage === 'PublicOpening') return <PublicOpening {...themeProps} onNavigate={navigatePublic}
+    onEnter={profile ? enterWorkspace : () => navigatePublic('SignIn')} />
   if (stage.startsWith('Public')) return <PublicPresentation key={stage} {...themeProps} page={stage} onNavigate={navigatePublic} profile={profile} onAccount={enterWorkspace}>
     {stage === 'PublicSharing' && <SharingFeed onSignIn={() => navigatePublic('SignIn')} />}
     {stage === 'PublicTestimonials' && <PublicTestimonials onBack={() => navigatePublic('PublicHome')} />}
@@ -276,7 +321,7 @@ export default function App() {
   }
 
   return (
-    <AppLayout page={stage} {...(stage === 'SignIn' || accessSteps.includes(stage) ? themeProps : {})}
+    <AppLayout page={stage} {...themeProps} mobileTheme={mobileTheme} themedLayout={stage === 'SignIn' || accessSteps.includes(stage)}
       presentation={stage === 'SignIn' ? 'access' : undefined} onHome={stage === 'SignIn' ? continueAsVisitor : undefined}>
       <AuthPage busy={busy} presentation={stage === 'SignIn' ? 'access' : accessSteps.includes(stage) ? 'step' : undefined}
         introduction={stage === 'SignIn' ? <><h1>Entrar no PaCT</h1><img src="/borboleta.png" alt="" width="378" height="330" /></> : <>

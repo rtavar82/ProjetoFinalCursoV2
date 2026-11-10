@@ -118,6 +118,10 @@ export function clientHomePage(hash = window.location.hash) {
   return Object.keys(clientHomeHashes).find(page => clientHomeHashes[page] === hash)
 }
 
+export function isPublicOpeningAddress() {
+  return !window.location.hash && new URLSearchParams(window.location.search).get('view') !== 'payments'
+}
+
 export function publicRoute() {
   const [path, query] = window.location.hash.slice(1).split('?')
   const service = new URLSearchParams(query).get('servico')

@@ -107,8 +107,11 @@ export default function PwaStatus() {
   if (!installPrompt && !waiting && !error && !reloadReady) return null
   return <aside className={styles.status} aria-label="Estado da aplicação">
     {installPrompt && <div className={styles.installActions}>
-      <ActionButton variant="secondary" onClick={async () => { await installPrompt.prompt(); await installPrompt.userChoice; setInstallPrompt(null) }}>Instalar PaCT</ActionButton>
-      <ActionButton variant="text" onClick={declineInstall}>Não instalar o PaCT</ActionButton>
+      <p>Instala a minha app no teu ambiente de trabalho para acederes directamente.</p>
+      <div className={styles.installChoices}>
+        <ActionButton onClick={async () => { await installPrompt.prompt(); await installPrompt.userChoice; setInstallPrompt(null) }}>Instalar a PaCT</ActionButton>
+        <ActionButton onClick={declineInstall}>Não instalar agora</ActionButton>
+      </div>
     </div>}
     {(waiting || reloadReady) && <div><button disabled={!online} onClick={refresh}>actualizar a pagina PaCT</button></div>}
     {error && <p role="alert" className="notice error">{error}</p>}

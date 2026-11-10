@@ -129,7 +129,7 @@ export default function PublicPresentation({ page, onNavigate, children, profile
           <div className={styles.support}>
             <HomeTestimonialCard onNavigate={onNavigate} />
             <section className={styles.places} aria-labelledby="public-locations">
-              <Heading id="public-locations">Onde acontecem</Heading>
+              <Heading id="public-locations">Onde acontece</Heading>
               <p>As sessões online são por videochamada, via WhatsApp ou Google Meet. O local das sessões presenciais é indicado na <ActionButton variant="text" className={styles.inlineLink} onClick={() => agenda()}>Agenda</ActionButton>.</p>
               <p><strong>Vila Nova de São Bento:</strong> Disponibilidade limitada a dias específicos. Consulta a agenda e filtra por este local.</p>
             </section>

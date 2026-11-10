@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { apiRequest } from './identityApi'
 import ClientProfileForm from './ClientProfileForm'
+import InformationCard from './InformationCard'
 import styles from './PersonalProfile.module.css'
 import { observeResource } from './liveUpdates'
 function dateOf(value) { return new Intl.DateTimeFormat('pt-PT', { timeZone: 'Europe/Lisbon', dateStyle: 'short', timeStyle: 'short' }).format(new Date(value.endsWith('Z') ? value : value + 'Z')) }
@@ -12,9 +13,10 @@ export default function PersonalProfile({ busy, perform, notify }) {
   const dirty = useRef(false)
   useEffect(() => { let current = true; async function load() { try { const [data, updates] = await Promise.all([apiRequest('profile'), apiRequest('profile/reviews')]); if (current) { if (!dirty.current) setClient(data); setReviews(updates); setError('') } } catch (failure) { if (current) setError(failure.message) } } const stop = observeResource('profile', load); return () => { current = false; stop() } }, [])
   function save(input) { perform(async () => { const result = await apiRequest('profile', input); notify(result.message, !result.saved); if (result.saved) { dirty.current = false; setClient(result.client) } setReviews(await apiRequest('profile/reviews')) }) }
-  return <section className={styles.page} onChangeCapture={event => { if (event.target.closest('form')) dirty.current = true }}><h1>Meus dados</h1>{error && <p role="alert" className="notice error">{error}</p>}{!client && !error && <p role="status">A carregar os teus dados…</p>}
+  return <InformationCard className={styles.card} aria-label="Meus dados" onChangeCapture={event => { if (event.target.closest('form')) dirty.current = true }}>
+    {error && <p role="alert" className="notice error">{error}</p>}{!client && !error && <p role="status">A carregar os teus dados…</p>}
     {client?.identityReviewStatus === 'Pending' && <div className="notice" role="status"><strong>Identidade por verificar</strong><p>A gestão está a verificar os teus dados. Podes continuar a usar a tua conta. Nenhuma ficha anterior foi associada automaticamente.</p></div>}
-    {client && <ClientProfileForm key={client.version} client={client} requireBirthDate busy={busy} onSave={save} />}
+    {client && <ClientProfileForm key={client.version} client={client} personal busy={busy} onSave={save} />}
     {reviews.length > 0 && <details><summary>Revisões dos meus dados</summary>{reviews.map(review => <p key={review.id}>{dateOf(review.createdAt)} — {review.message}</p>)}</details>}
-  </section>
+  </InformationCard>
 }

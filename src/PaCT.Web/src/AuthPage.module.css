@@ -46,6 +46,13 @@
 .access .guest { margin: 0; padding: 0; }
 .openingActions { display: grid; gap: var(--space-3); }
 .openingActions :global(.text-button) { margin: 0; padding: 0; }
+@media (width < 760px) {
+  .access:has(.openingActions) {
+    flex: 1;
+    grid-template-rows: auto minmax(min-content, 1fr);
+  }
+  .access:has(.openingActions) .panel { align-self: end; }
+}
 .step { width: min(100%, 38rem); margin-inline: auto; padding-block: var(--space-6); }
 .page:has(.step) { grid-template-columns: minmax(0, 1fr); margin-block: 0; }
 .page:has(.step) .introduction { display: none; }

@@ -19,6 +19,8 @@ button:hover:not(:disabled) { background: var(--accent-hover); }
 button:disabled { opacity: .55; cursor: wait; }
 .secondary { background: var(--surface); color: var(--green); border-color: var(--line); margin-top: var(--space-3); }
 .secondary:hover:not(:disabled) { background: var(--tint); }
+.tinted-button { background: var(--tint); color: var(--accent); border-color: var(--accent); }
+.tinted-button:hover:not(:disabled) { background: var(--surface); border-color: var(--accent-hover); }
 .text-button { background: transparent; border: 0; color: var(--green); font-weight: 500; padding: var(--space-4) 0 0; margin-top: var(--space-2); min-height: var(--control-height); text-decoration-line: underline; }
 .text-button:hover:not(:disabled) { background: transparent; text-decoration-line: underline; }
 .notice { font-size: var(--font-size-small); border: 1px solid var(--line); border-radius: 14px; padding: 14px; margin: 0 0 20px; overflow-wrap: anywhere; }

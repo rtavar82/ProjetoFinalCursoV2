@@ -42,19 +42,21 @@ export default function SharingFeed({ profile, onSignIn, guard = action => actio
 
   return <div className={sharedPresentation ? styles.themedFeed : undefined}>
     <section className={styles.feed} aria-label="Partilhas">
-    <div className={sharedPresentation ? styles.feedIntro : undefined}>
+    <div className={styles.feedIntro}>
       <Heading level={1}>Partilhas</Heading>
       {!profile && <p>Podes ler as partilhas. <span className={styles.reactionPrompt} data-typography="sign-in-prompt">Para reagir, <a href="#entrar" onClick={onSignIn ? event => { event.preventDefault(); onSignIn() } : undefined}>inicia sessão</a>.</span></p>}
     </div>
-    {profile && <nav className={styles.actions} aria-label="Áreas de Partilhas">
-      {(manager ? [['feed', 'Feed'], ['mine', 'As minhas publicações'], ['moderation', 'Moderação']]
-        : [['feed', 'Feed'], ['mine', 'As minhas publicações']]).map(([id, label]) =>
-        <ActionButton key={id} variant={(scope === id || scope === 'permissions' && id === 'moderation') ? 'primary' : 'secondary'} aria-current={(scope === id || scope === 'permissions' && id === 'moderation') ? 'page' : undefined} onClick={() => changeScope(id)}>{label}</ActionButton>)}
+    {profile && <nav className={styles.feedActions} aria-label="Áreas de Partilhas">
+      {[['feed', 'Feed público'], ['mine', 'As minhas publicações']].map(([id, label]) =>
+        <ActionButton key={id} variant={scope === id ? 'primary' : 'secondary'} aria-current={scope === id ? 'page' : undefined}
+          onClick={() => changeScope(id)}>{label}</ActionButton>)}
+      {canPublish && <ActionButton variant="tinted" onClick={() => setEditor({ id: crypto.randomUUID() })}>Criar nova publicação</ActionButton>}
     </nav>}
-    {canPublish && ['feed', 'mine'].includes(scope) && <ActionButton onClick={() => setEditor({ id: crypto.randomUUID() })}>Nova publicação</ActionButton>}
-    {manager && ['moderation', 'permissions'].includes(scope) && <nav className={styles.actions} aria-label="Moderação de Partilhas">
-      <ActionButton variant={scope === 'moderation' ? 'primary' : 'secondary'} onClick={() => changeScope('moderation')}>Publicações a rever</ActionButton>
-      <ActionButton variant={scope === 'permissions' ? 'primary' : 'secondary'} onClick={() => changeScope('permissions')}>Permissões de publicação</ActionButton>
+    {manager && <nav className={styles.feedActions} aria-label="Moderação de Partilhas">
+      <ActionButton variant={scope === 'moderation' ? 'primary' : 'secondary'} aria-current={scope === 'moderation' ? 'page' : undefined}
+        onClick={() => changeScope('moderation')}>Publicações a rever</ActionButton>
+      <ActionButton variant={scope === 'permissions' ? 'primary' : 'secondary'} aria-current={scope === 'permissions' ? 'page' : undefined}
+        onClick={() => changeScope('permissions')}>Dar/retirar permissões de publicação</ActionButton>
     </nav>}
     {scope === 'permissions' ? <SharingPermissions /> : <>
       {scope === 'moderation' && <Heading level={2}>Publicações a rever</Heading>}
@@ -67,7 +69,7 @@ export default function SharingFeed({ profile, onSignIn, guard = action => actio
       {feed.data && <Pagination total={feed.data.total} pageSize={feed.data.pageSize} page={feed.data.page}
         label="Páginas de Partilhas" onChange={page => setPaging({ page, before: page > 1 ? feed.data.before : '' })} />}
     </>}
-    {editor && <PostEditor key={editor.id} post={editor} manager={manager} onClose={() => guard(() => setEditor(null))}
+    {editor && <PostEditor key={editor.id} post={editor} manager={manager} refresh={feed.refresh} onClose={() => guard(() => setEditor(null))}
       onSaved={() => { setEditor(null); if (scope === 'feed' || scope === 'mine') setPaging({ page: 1, before: '' }) }} />}
     {reference && <SharingTarget key={reference} reference={reference} profile={profile} onSignIn={onSignIn} guard={guard} onClose={() => setReference('')} />}
   </section></div>
@@ -105,6 +107,7 @@ function SharingCard({ post, profile, canPublish, onEdit, onAgenda, refresh, onN
   const date = agendaDate(post.createdAt)
   const initials = post.author.trim().split(/\s+/).slice(0, 2).map(part => Array.from(part)[0]).join('').toUpperCase()
   const canReact = !!profile && publicPost
+  const moderationActions = manager ? moderation[post.status] || [] : []
   const canSeeComments = post.comments.length > 0 || canPublish && post.status === 'Approved'
   const commentLabel = post.comments.length === 1 ? '1 comentário' : post.comments.length > 1 ? post.comments.length + ' comentários' : 'Comentários'
   return <InformationCard as="article" className={styles.postCard} aria-labelledby={labelId}>
@@ -127,23 +130,33 @@ function SharingCard({ post, profile, canPublish, onEdit, onAgenda, refresh, onN
           <AppIcon name="comment" />{commentLabel}
         </ActionButton>} />
       {canSeeComments && <div id={commentsId} className={styles.comments} hidden={!commentsOpen}>
-        {post.comments.map(item => <div key={item.id}>
-          <p className={styles.text}>{item.text}</p>
-          <p className="muted">{item.author} · {agendaDate(item.createdAt)}</p>
-          {item.own && canPublish && publicPost && <ActionButton variant="text" disabled={busy} onClick={() => setComment(item)}>Editar comentário</ActionButton>}
-          {(item.own && publicPost || manager) && <ActionButton variant="text" disabled={busy}
-            onClick={() => void act('/comments/' + item.id, { version: item.version, delete: true }, 'Comentário eliminado.')}>Eliminar comentário</ActionButton>}
-        </div>)}
+        {post.comments.map(item => {
+          const canEditComment = item.own && canPublish && publicPost
+          const canDeleteComment = item.own && publicPost || manager
+          return <div key={item.id}>
+            <p className={styles.text}>{item.text}</p>
+            <p className="muted">{item.author} · {agendaDate(item.createdAt)}</p>
+            {(canEditComment || canDeleteComment) && <div className={`${styles.postActionGroup} ${styles.commentActions}`} role="group" aria-label="Ações do comentário">
+              {canEditComment && <ActionButton variant="text" disabled={busy} onClick={() => setComment(item)}>Editar comentário</ActionButton>}
+              {canDeleteComment && <ActionButton variant="text" disabled={busy}
+                onClick={() => void act('/comments/' + item.id, { version: item.version, delete: true }, 'Comentário eliminado.')}>Eliminar comentário</ActionButton>}
+            </div>}
+          </div>
+        })}
         {canPublish && post.status === 'Approved' && <ActionButton variant="secondary" onClick={() => setComment({ id: crypto.randomUUID(), version: 0 })}>Comentar</ActionButton>}
       </div>}
       {(manager || post.own || post.canEdit) && <details className={styles.postOptions}>
-        <summary>Opções da publicação</summary>
-        <div className={styles.actions}>
-          {post.canEdit && <ActionButton variant="text" onClick={onEdit} disabled={busy}>Editar</ActionButton>}
-          {(manager || post.own) && <ActionButton variant="text" disabled={busy} onClick={async () => setHistory(await act('/history'))}>Ver histórico</ActionButton>}
-          {post.own && <ActionButton variant="text" disabled={busy} onClick={() => decide('delete', 'Publicação eliminada.')}>Eliminar</ActionButton>}
-          {manager && (moderation[post.status] || []).map(([id, label]) => <ActionButton key={id} variant="secondary" disabled={busy}
-            onClick={() => decide(id, 'Moderação registada.')}>{label}</ActionButton>)}
+        <summary>Editar publicação</summary>
+        <div className={styles.postActions}>
+          <div className={styles.postActionGroup}>
+            {post.canEdit && <ActionButton variant="text" onClick={onEdit} disabled={busy}>Editar</ActionButton>}
+            {(manager || post.own) && <ActionButton variant="text" disabled={busy} onClick={async () => setHistory(await act('/history'))}>Ver histórico</ActionButton>}
+            {post.own && !post.canEdit && <ActionButton variant="text" disabled={busy} onClick={() => decide('delete', 'Publicação eliminada.')}>Eliminar</ActionButton>}
+          </div>
+          {moderationActions.length > 0 && <div className={`${styles.postActionGroup} ${styles.moderationActions}`} role="group" aria-label="Moderação da publicação">
+            {moderationActions.map(([id, label]) => <ActionButton key={id} variant="text" disabled={busy}
+              onClick={() => decide(id, 'Moderação registada.')}>{label}</ActionButton>)}
+          </div>}
         </div>
       </details>}
       {error && <p className="notice error" role="alert">{error}</p>}
@@ -170,28 +183,29 @@ const reactions = [
 ]
 
 function PostInteractionBar({ post, canReact, disabled, onChange, commentsAction }) {
-  const visibleReactions = canReact ? reactions : reactions.filter(([key]) => post.reactionCounts?.[key] > 0)
-  if (!visibleReactions.length && !commentsAction) return null
+  const chips = reactions.map(([key, icon, name]) => {
+    const count = post.reactionCounts?.[key] || 0
+    const description = count + (count === 1 ? ' reação' : ' reações')
+    const chip = <span className={styles.reactionChip} aria-hidden="true">
+      <span className={styles.reactionEmoji}>{icon}</span>
+      <span className={styles.reactionCount} data-zero={count === 0 || undefined}>{count}</span>
+    </span>
+
+    if (!canReact) return <li key={key} aria-label={name + ', ' + description}>{chip}</li>
+
+    const selected = post.myReaction === key
+    return <ActionButton key={key} variant="secondary" disabled={disabled}
+      aria-label={name} aria-pressed={selected} aria-description={description}
+      onClick={() => onChange(selected ? null : key)}>
+      {chip}
+    </ActionButton>
+  })
 
   return <div className={styles.reactions}>
     <div className={styles.socialActions}>
-      {canReact ? <div className={styles.reactionButtons} role="group" aria-label="Reagir à publicação">
-        {visibleReactions.map(([key, icon, name]) => {
-          const count = post.reactionCounts?.[key] || 0
-          const selected = post.myReaction === key
-          return <ActionButton key={key} variant="secondary" disabled={disabled}
-            aria-label={name} aria-pressed={selected}
-            aria-description={count + (count === 1 ? ' reação' : ' reações')}
-            onClick={() => onChange(selected ? null : key)}>
-            <span aria-hidden="true">{icon}</span>
-            <small aria-hidden="true" className={count === 0 ? styles.emptyReactionCount : undefined}>{count}</small>
-          </ActionButton>
-        })}
-      </div> : visibleReactions.length > 0 && <ul className={styles.reactionCounts} aria-label="Contagem de reações">
-        {visibleReactions.map(([key, icon, name]) => <li key={key} aria-label={name + ': ' + post.reactionCounts[key]}>
-          {icon} {post.reactionCounts[key]}
-        </li>)}
-      </ul>}
+      {canReact
+        ? <div className={styles.reactionButtons} role="group" aria-label="Reagir à publicação">{chips}</div>
+        : <ul className={styles.reactionCounts} aria-label="Contagem de reações">{chips}</ul>}
       {commentsAction}
     </div>
   </div>
@@ -210,7 +224,7 @@ function completeLink({ currentTarget: input, nativeEvent }) {
   if (completed !== value) input.value = completed
 }
 
-function PostEditor({ post, manager, onClose, onSaved }) {
+function PostEditor({ post, manager, refresh, onClose, onSaved }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [reference, setReference] = useState(post.agendaReference || '')
@@ -257,6 +271,21 @@ function PostEditor({ post, manager, onClose, onSaved }) {
     } catch (failure) { setError(failure.message) }
     finally { setBusy(false) }
   }
+  async function remove() {
+    if (!window.confirm('Eliminar esta publicação?')) return
+    setBusy(true); setError('')
+    try {
+      const result = await apiRequest('sharing/' + post.id + '/decision', { action: 'delete', version: post.version })
+      if (result.confirmed !== true) throw new Error('A operação ficou sem confirmação.')
+      showSuccess('Publicação eliminada.')
+      onSaved()
+    } catch (failure) {
+      setError(failure.message)
+      if (failure.status === 409 || failure.status === 404) refresh()
+    }
+    finally { setBusy(false) }
+  }
+
   return <ConsultationDialog title={post.version ? 'Editar publicação' : 'Nova publicação'} disabled={busy} onClose={onClose}>
     <p>O teu nome público e o conteúdo da publicação ficam visíveis no feed.</p>
     <form onSubmit={save} data-protect-draft data-pending-command={busy || undefined} className={styles.editor}>
@@ -280,6 +309,9 @@ function PostEditor({ post, manager, onClose, onSaved }) {
       </label>)}
       {error && <p role="alert" className="notice error">{error}</p>}
       <ActionButton type="submit" disabled={busy || checking}>{busy ? 'A guardar…' : post.version ? 'Guardar alterações' : manager ? 'Publicar' : 'Enviar publicação'}</ActionButton>
+      {post.own && <div className={styles.postActionGroup}>
+        <ActionButton variant="text" disabled={busy} onClick={remove}>Eliminar publicação</ActionButton>
+      </div>}
     </form>
   </ConsultationDialog>
 }
@@ -309,19 +341,32 @@ function SharingPermissions() {
   const path = 'sharing/permissions/' + (client?.id || '')
   const read = useCallback(signal => apiRequest(path, undefined, { signal }), [path])
   const status = useLiveResource('sharing', path, read, !!client)
-  return <InformationCard title="Permissões de publicação">
-    <ClientSearch purpose="filter" selected={client} onSelect={value => { setClient(value); setError('') }} canSelect={person => person.hasAccount} disabled={busy} />
+  async function changePermission(allowed) {
+    if (busy || status.refreshing || !status.data || status.data.allowed === allowed) return
+    setBusy(true)
+    setError('')
+    try {
+      const result = await apiRequest(path, { allowed })
+      showSuccess(result.allowed ? 'Autorização concedida.' : 'Autorização retirada.')
+    } catch (failure) {
+      setError(failure.message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return <ClientSearch purpose="permissions" ariaLabel="Permissões de publicação" selected={client}
+    onSelect={value => { setClient(value); setError('') }} canSelect={person => person.hasAccount} disabled={busy}>
     {status.loading && <p role="status">A consultar a autorização…</p>}
     {(error || status.error) && <p role="alert" className="notice error">{error || status.error}</p>}
-    {status.data && <>
-      <p>{status.data.allowed ? 'Publicação autorizada.' : 'Sem autorização individual de publicação.'}</p>
-      <ActionButton disabled={busy} onClick={async () => {
-        setBusy(true); setError('')
-        try {
-          const result = await apiRequest(path, { allowed: !status.data.allowed })
-          showSuccess(result.allowed ? 'Autorização concedida.' : 'Autorização retirada.')
-        } catch (failure) { setError(failure.message) } finally { setBusy(false) }
-      }}>{status.data.allowed ? 'Retirar autorização' : 'Autorizar publicação'}</ActionButton>
-    </>}
-  </InformationCard>
+    {status.data && <div className={styles.permissionControls}>
+      <p role="status">{status.data.allowed ? 'Publicação autorizada.' : 'Sem autorização individual de publicação.'}</p>
+      <div className={styles.feedActions} role="group" aria-label="Autorização individual de publicação">
+        <ActionButton variant={status.data.allowed ? 'secondary' : 'primary'} aria-pressed={!status.data.allowed}
+          disabled={busy || status.refreshing} onClick={() => changePermission(false)}>Não autorizado</ActionButton>
+        <ActionButton variant={status.data.allowed ? 'primary' : 'secondary'} aria-pressed={status.data.allowed}
+          disabled={busy || status.refreshing} onClick={() => changePermission(true)}>Autorizado</ActionButton>
+      </div>
+    </div>}
+  </ClientSearch>
 }

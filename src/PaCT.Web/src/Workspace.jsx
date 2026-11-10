@@ -3,6 +3,8 @@ import Clients from './Clients'
 import PersonalProfile from './PersonalProfile'
 import AppLayout from './AppLayout'
 import AppNavigation from './AppNavigation'
+import ActionButton from './ActionButton'
+import Heading from './Heading'
 import AccountPage from './AccountPage'
 import PushConsent from './PushConsent'
 import AgendaPage from './AgendaPage'
@@ -14,7 +16,7 @@ import ManagementPage from './ManagementPage'
 import ManagerTasksPage from './ManagerTasksPage'
 import PublicPresentation from './PublicPresentation'
 import PublicTestimonials from './PublicTestimonials'
-import { clientHomeHashes, clientHomePage } from './publicPresentationData'
+import { clientHomeHashes, clientHomePage, isPublicOpeningAddress } from './publicPresentationData'
 import SharingFeed from './SharingFeed'
 import { apiRequest } from './identityApi'
 import { isManager } from './identityRoles'
@@ -27,7 +29,7 @@ export default function Workspace(props) {
   return <LiveResourceProvider key={props.profile.id}><WorkspaceContent {...props} /></LiveResourceProvider>
 }
 
-function WorkspaceContent({ profile: initialProfile, busy, perform, notify, error, message, errorRef, onSignOut, onForgetBrowser, onPasskeyUpdated, onAccountClosed, onSecuritySignedOut, onPublicTestimonials, visualTheme, onThemeChange }) {
+function WorkspaceContent({ profile: initialProfile, busy, perform, notify, error, message, errorRef, onSignOut, onForgetBrowser, onPasskeyUpdated, onAccountClosed, onSecuritySignedOut, onPublicTestimonials, onOpenEntry, visualTheme, onThemeChange, mobileTheme }) {
   const readAccount = useCallback(() => apiRequest('identity/me'), [])
   const account = useLiveResource('accountSecurity', 'signed-in-account', readAccount)
   const profile = account.data || initialProfile
@@ -41,13 +43,14 @@ function WorkspaceContent({ profile: initialProfile, busy, perform, notify, erro
   })
   useEffect(() => {
     const hash = page === 'Sharing' ? '#partilhas' : page === 'Tasks' ? '#tarefas' : client && page === 'Home' ? clientHomeHashes[homePage] : ''
-    if (hash && window.location.hash !== hash) window.history.replaceState(null, '', hash)
+    if (hash && window.location.hash !== hash) window.history.replaceState({ workspace: true }, '', hash)
     else if (!hash && (client && clientHomePage() || ['#partilhas', '#tarefas'].includes(window.location.hash)
       || page !== 'Management' && window.location.hash.split('?')[0] === '#calendario-google')) {
-      window.history.replaceState(null, '', client ? '#agenda' : '#inicio')
+      window.history.replaceState({ workspace: true }, '', client ? '#agenda' : '#inicio')
     }
   }, [client, homePage, page])
-  const [consultationEntry, setConsultationEntry] = useState(null)
+  const [consultationEntry, setConsultationEntry] = useState(() =>
+    client && new URLSearchParams(window.location.search).get('view') === 'payments' ? { payments: true } : null)
   const [online, setOnline] = useState(navigator.onLine)
   const [reviewSummary, setReviewSummary] = useState({ count: null, error: '' })
   const [reviewRevision, setReviewRevision] = useState(0)
@@ -109,13 +112,15 @@ function WorkspaceContent({ profile: initialProfile, busy, perform, notify, erro
       window.scrollTo(0, 0)
     })
   }
-  const openClientHomeLink = useEffectEvent(event => {
-    const next = clientHomePage()
-    if (!next || page === 'Home' && homePage === next) return
+  const openWorkspaceLink = useEffectEvent(event => {
+    const opening = isPublicOpeningAddress()
+    const next = client && clientHomePage()
+    if (!opening && (!next || page === 'Home' && homePage === next)) return
     if (!confirmLeaving()) {
       window.history.replaceState(window.history.state, '', event.oldURL)
       return
     }
+    if (opening) { onOpenEntry(); return }
     setDraftError('')
     setConsultationEntry(null)
     setPackEntry(null)
@@ -124,11 +129,10 @@ function WorkspaceContent({ profile: initialProfile, busy, perform, notify, erro
     window.scrollTo(0, 0)
   })
   useEffect(() => {
-    if (!client) return
-    const open = event => openClientHomeLink(event)
+    const open = event => openWorkspaceLink(event)
     window.addEventListener('hashchange', open)
     return () => window.removeEventListener('hashchange', open)
-  }, [client])
+  }, [])
 
   function openReviews() { guard(() => { setClientEntry(previous => ({ version: previous.version + 1, view: 'Reviews' })); setPage('Clients') }) }
   const ActiveConsultationPage = page === 'Finance' ? FinancePage : page === 'Consultations' ? ConsultationHistoryPage : AgendaPage
@@ -143,11 +147,15 @@ function WorkspaceContent({ profile: initialProfile, busy, perform, notify, erro
     ...(operational ? [{ id: 'Management', label: 'Gestão da aplicação', icon: 'settings', active: page === 'Management' }] : []),
     { id: client ? 'Profile' : 'Account', label: 'Meu perfil', icon: 'user', active: ['Profile', 'Account'].includes(page) },
   ]
+  const roleLabel = client ? 'Cliente' : profile.role === 'TechnicalManager' ? 'Gestor técnico' : 'Gestora-terapeuta'
+  const sessionName = (client ? profile.clientName?.trim() : null) || profile.displayName?.trim() || roleLabel
   const clientHome = client && page === 'Home'
-  const sharedPresentation = client && ['Home', 'Agenda', 'Sharing'].includes(page)
+  const themedLayout = client && ['Home', 'Agenda', 'Sharing', 'Profile', 'Account'].includes(page)
   return <AppLayout page={clientHome ? homePage : page} authenticated
-    visualTheme={sharedPresentation ? visualTheme : undefined} onThemeChange={sharedPresentation ? onThemeChange : undefined} onHome={client ? () => navigate('Home') : undefined} onResetCapture={event => dirty.current.delete(event.target)} onChangeCapture={event => { const form = event.target.closest('form[data-protect-draft]'); if (form) dirty.current.add(form) }}
-    navigation={<AppNavigation items={navigationItems} onNavigate={navigate} />} session={<><span className="header-label">{client ? profile.clientName || 'Cliente' : profile.role === 'TechnicalManager' ? 'Gestor técnico' : 'Gestora-terapeuta'}</span><button className="secondary" disabled={busy} onClick={signOut}>Terminar sessão</button></>} alerts={<>
+    visualTheme={visualTheme} onThemeChange={onThemeChange} mobileTheme={mobileTheme} themedLayout={themedLayout} onHome={client ? () => navigate('Home') : undefined} onResetCapture={event => dirty.current.delete(event.target)} onChangeCapture={event => { const form = event.target.closest('form[data-protect-draft]'); if (form) dirty.current.add(form) }}
+    navigation={<AppNavigation items={navigationItems} onNavigate={navigate} />}
+    sessionName={sessionName} sessionRole={client ? undefined : roleLabel}
+    session={<ActionButton variant="secondary" disabled={busy} onClick={signOut}>Terminar sessão</ActionButton>} alerts={<>
       {!online && <p className="notice" role="status">Sem rede. O preenchimento continua neste formulário enquanto estiver aberto; os envios exigem ligação.</p>}
       {draftError && <p className="notice error" role="alert">{draftError}</p>}
       {(client || operational) && <ConsultationAlerts
@@ -162,10 +170,10 @@ function WorkspaceContent({ profile: initialProfile, busy, perform, notify, erro
       {!client && reviewSummary.count > 0 && <div className="notice error review-alert" role="status"><p>{reviewSummary.error ? 'Última informação disponível: ' : ''}{reviewSummary.count === 1 ? 'Existe 1 ocorrência de cliente por analisar.' : `Existem ${reviewSummary.count} ocorrências de clientes por analisar.`}</p><button className="text-button" disabled={busy} onClick={openReviews}>Rever ocorrências de clientes</button></div>}
       {!client && reviewSummary.error && <div className="notice error" role="alert">{reviewSummary.error}<button className="text-button" disabled={busy} onClick={() => setReviewRevision(value => value + 1)}>Voltar a verificar</button></div>}
       {error && <div className="notice error" role="alert" ref={errorRef} tabIndex="-1">{error}</div>}{message && <div className="notice success" role="status">{message}</div>}</>}>
-      {['Profile', 'Account'].includes(page) && <section className={styles.profile} aria-labelledby="my-profile-title"><h1 id="my-profile-title">Meu perfil</h1>
+      {['Profile', 'Account'].includes(page) && <section className={styles.profile} aria-labelledby="my-profile-title"><Heading level={1} id="my-profile-title">Meu perfil</Heading>
         {client ? <nav className={styles.sections} aria-label="Secções do meu perfil">
-          <button className={page === 'Profile' ? '' : 'secondary'} aria-current={page === 'Profile' ? 'page' : undefined} onClick={() => navigate('Profile')}>Meus dados</button>
-          <button className={page === 'Account' ? '' : 'secondary'} aria-current={page === 'Account' ? 'page' : undefined} onClick={() => navigate('Account')}>A minha conta</button>
+          <ActionButton variant={page === 'Profile' ? 'primary' : 'secondary'} aria-current={page === 'Profile' ? 'page' : undefined} onClick={() => navigate('Profile')}>Meus dados</ActionButton>
+          <ActionButton variant={page === 'Account' ? 'primary' : 'secondary'} aria-current={page === 'Account' ? 'page' : undefined} onClick={() => navigate('Account')}>A minha conta</ActionButton>
         </nav> : <div className={styles.notifications}><PushConsent label="Activar notificações neste equipamento" primary disabled={busy} /></div>}
       </section>}
       {clientHome && <PublicPresentation key={homePage} embedded page={homePage} profile={profile} onNavigate={navigateHome}>

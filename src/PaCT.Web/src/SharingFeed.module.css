@@ -1,18 +1,44 @@
 .feed {
-  max-width: 48rem;
+  max-width: var(--reading-width);
+  min-width: 0;
   margin-inline: auto;
 }
 .themedFeed { padding: var(--space-6) var(--page-gutter); }
-.themedFeed .feed { max-width: var(--reading-width); }
-.themedFeed .feedIntro h1 { margin: 0; }
-.themedFeed .feedIntro p { margin: var(--space-2) 0 0; }
-.themedFeed .feed > .actions > button { width: auto; margin: 0; }
+.feed .feedIntro h1 { margin: 0; }
+.feedIntro p { margin: var(--space-2) 0 0; }
 .reactionPrompt { display: inline-block; white-space: nowrap; }
 .reactionPrompt a { color: var(--ink); }
-.themedFeed .feed .postCard { width: 100%; padding: var(--card-padding); }
-.themedFeed .mediaTiles { grid-auto-rows: clamp(146px, 25vw, 192px); }
-.themedFeed .mediaTiles .photoTile img { object-fit: cover; object-position: center 25%; }
-.themedFeed .socialActions { justify-content: space-between; }
+
+.feedActions {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  gap: var(--space-2);
+}
+
+.feedActions > button {
+  min-width: 0;
+  min-height: var(--control-height);
+  margin: 0;
+  padding: var(--space-2) var(--space-1);
+  text-wrap: balance;
+  overflow-wrap: anywhere;
+}
+
+.permissionControls {
+  display: grid;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.permissionControls .feedActions > button { width: 100%; }
+
+@media (min-width: 640px) {
+  .permissionControls {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+    gap: var(--space-4);
+  }
+}
 
 .feed, .editor, .comments {
   display: grid;
@@ -20,16 +46,15 @@
 }
 
 .feed .postCard {
-  width: min(100%, 25rem);
-  margin-inline: auto;
-  padding: .9rem;
+  width: 100%;
+  padding: var(--card-padding);
 }
 
-.actions, .attachments {
+.attachments {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: .75rem;
+  gap: var(--space-3);
 }
 
 .attachments {
@@ -47,6 +72,7 @@
 .postBody {
   display: grid;
   gap: .7rem;
+  container: sharing-post / inline-size;
 }
 
 .postBody > p, .postAuthor h2 {
@@ -73,7 +99,7 @@
 .mediaTiles, .mediaPair {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  grid-auto-rows: clamp(9rem, 48vw, 17rem);
+  grid-auto-rows: clamp(146px, 25vw, 192px);
   gap: .45rem;
 }
 
@@ -101,9 +127,7 @@
   object-fit: cover;
 }
 
-.mediaTiles .photoTile img {
-  object-fit: contain;
-}
+.mediaTiles .photoTile img { object-position: center 25%; }
 
 .photoLabel, .videoLabel {
   padding: .2rem .5rem;
@@ -185,14 +209,14 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: .2rem;
-  container-type: inline-size;
+  gap: var(--space-1);
+  container: sharing-actions / inline-size;
 }
 
 .socialActions > button, .reactionButtons > button {
   width: auto;
-  min-height: 44px;
-  min-width: 44px;
+  min-height: var(--control-height);
+  min-width: var(--control-height);
   margin-top: 0;
   padding: .35rem;
 }
@@ -211,32 +235,81 @@
   background: var(--tint);
 }
 
-.reactionButtons {
-  flex: 0 0 100%;
-  display: grid;
-  grid-template-columns: repeat(6, minmax(44px, 1fr));
-  gap: .2rem;
+.reactionButtons, .reactionCounts {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+  max-width: 100%;
 }
 
-@container (width < 280px) {
-  .reactionButtons {
-    grid-template-columns: repeat(3, minmax(44px, 1fr));
+@container sharing-post (width < 272px) {
+  .socialActions { margin-inline: max(calc(-1 * var(--space-2)), calc((100cqi - 272px) / 2)); }
+}
+
+@container sharing-actions (width < 400px) {
+  .reactionButtons, .reactionCounts {
+    display: grid;
+    grid-template-columns: repeat(6, minmax(min-content, auto));
+    flex-basis: 100%;
+    justify-items: center;
+    gap: 0;
   }
+
+  .reactionButtons > button { justify-self: stretch; }
+
+  .reactionCounts > li { min-width: 0; max-width: 100%; }
 }
 
-.reactionButtons > button {
-  display: grid;
-  justify-items: center;
-  align-content: center;
+.reactionButtons > button,
+.reactionButtons > button:hover:not(:disabled) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 999px;
+  padding: 0;
+  background: transparent;
 }
 
-.reactionButtons > button[aria-pressed="true"] {
-  border-color: var(--accent);
+.reactionChip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(1px, calc(2cqi - var(--space-1)), var(--space-1));
+  max-width: 100%;
+  min-height: clamp(var(--space-8), 9cqi, calc(var(--space-8) + var(--space-1)));
+  padding-inline: clamp(1px, calc(4cqi - 10px), var(--space-2));
+  border: 1px solid transparent;
+  border-radius: 999px;
+  color: var(--ink);
+  background: color-mix(in srgb, var(--tint) 30%, var(--surface));
+}
+
+.reactionEmoji {
+  flex: none;
+  font-size: var(--font-size-reaction-emoji);
+  line-height: 1;
+}
+
+.reactionCount {
+  min-width: 0;
+  font-size: var(--font-size-reaction-count);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.reactionCount[data-zero] { color: var(--muted); font-weight: 400; }
+
+.reactionButtons > button:hover:not(:disabled) .reactionChip {
+  border-color: var(--line);
   background: var(--tint);
 }
 
-.emptyReactionCount {
-  visibility: hidden;
+.reactionButtons > button[aria-pressed="true"] .reactionChip {
+  border-color: var(--accent);
+  background: var(--tint);
 }
 
 .comments[hidden] {
@@ -244,15 +317,44 @@
 }
 
 .postOptions > summary {
-  padding-block: .35rem;
+  width: fit-content;
+  min-height: var(--control-height);
+  padding-block: var(--space-2);
+}
+
+.postActions, .postActionGroup {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  column-gap: var(--space-3);
+}
+
+.postActionGroup > button {
+  width: auto;
+  margin: 0;
+  padding: 0;
+}
+
+.commentActions { justify-content: center; flex-wrap: nowrap; }
+.commentActions > button { min-width: 0; overflow-wrap: anywhere; text-wrap: balance; }
+
+.moderationActions {
+  padding-inline-start: var(--space-3);
+  border-inline-start: 1px solid var(--line);
+}
+
+@container sharing-post (width < 324px) {
+  .moderationActions {
+    flex-basis: 100%;
+    padding-inline-start: 0;
+    border-inline-start: 0;
+    border-block-start: 1px solid var(--line);
+  }
 }
 
 .reactionCounts {
-  display: flex;
-  flex-wrap: wrap;
-  gap: .65rem;
   list-style: none;
-  padding: .25rem 0;
+  padding: var(--space-1) 0;
   margin: 0;
 }
 

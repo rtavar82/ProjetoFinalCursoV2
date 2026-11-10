@@ -1,2 +1,5 @@
-.page { min-width: 0; background: #fff; border: 1px solid var(--line); border-radius: 18px; padding: 18px; }
-@media (min-width: 48rem) { .page { padding: 24px; } }
+.card :global(.client-form) { margin: 0; gap: var(--space-4); }
+.card :global(.fields-grid) { gap: var(--space-4) var(--space-3); }
+.card :global(.fields-grid > label) { min-width: 0; align-content: start; }
+.card :global(.field-help) { margin: 0; }
+.card :global(.fields-grid .field-help) { margin-block-start: var(--space-1); }

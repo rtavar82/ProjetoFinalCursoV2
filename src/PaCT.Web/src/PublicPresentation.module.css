@@ -48,7 +48,7 @@
 .signature { width: min(100%, 13rem); height: auto; margin-top: var(--space-3); }
 .testimonialsEntry { margin-block: 1rem 2.5rem; padding: 1.5rem; background: var(--surface); border: 1px solid var(--line); border-radius: var(--card-radius); }
 .testimonialsLink { display: block; height: 100%; color: var(--ink); text-decoration: none; min-height: var(--control-height); }
-.testimonialsLink h2 { margin: 0; text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: .18em; }
+.testimonialsLink h2 { margin: 0; }
 .testimonialsViewport { overflow: hidden; margin-top: 1.2rem; }
 .testimonialsTrack { display: flex; align-items: stretch; gap: 1.2rem; }
 .testimonialsPreview { flex: 0 0 100%; min-width: 0; padding: 1.1rem; border-radius: 12px; background: var(--tint); display: flex; flex-direction: column; justify-content: center; gap: 1rem; }

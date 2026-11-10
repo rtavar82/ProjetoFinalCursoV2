@@ -17,9 +17,9 @@ const readPolicy = signal => apiRequest('privacy', undefined, { signal, publicOn
 const readChoices = signal => apiRequest('privacy/choices', undefined, { signal })
 
 export default function PrivacyProvider({ client, visitor, available, children }) {
-  const resource = useLiveResource('privacy', 'policy', readPolicy, available)
+  const resource = useLiveResource('privacy', 'policy', readPolicy)
   const policy = resource.data?.policy
-  const choices = useLiveResource('privacy', 'choices', readChoices, client && !!policy)
+  const choices = useLiveResource('privacy', 'choices', readChoices, client && available && !!policy)
   const [visitorRead, setVisitorRead] = useState(visitorVersion)
   const [dismissed, setDismissed] = useState({})
   const [open, setOpen] = useState(false)

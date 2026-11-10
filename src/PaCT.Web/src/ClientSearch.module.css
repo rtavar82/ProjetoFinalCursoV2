@@ -8,6 +8,15 @@
 .search.compact { padding: 14px; }
 .compact .content { gap: 14px; }
 .compact .searchFields { gap: 12px; }
+.search.permissions { padding: var(--card-padding); }
+.permissions > header { margin-block-end: var(--space-1); }
+.permissions .personInfo { display: grid; gap: var(--space-1); white-space: normal; overflow: visible; }
+.permissionSelection {
+  display: grid;
+  gap: var(--space-3);
+  padding-block-start: var(--space-3);
+  border-block-start: 1px solid var(--line);
+}
 @media (min-width: 600px) { .searchFields { grid-template-columns: minmax(0, 1fr) auto; align-items: end; } }
 .search button { width: fit-content; margin: 0; }
 .help { color: var(--muted); font-size: var(--font-size-label); line-height: 1.65; }

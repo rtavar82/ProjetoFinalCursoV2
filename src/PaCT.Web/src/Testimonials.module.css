@@ -3,7 +3,7 @@
 .page > :global(.text-button) { width: auto; margin: 0; padding: 0; text-align: left; }
 .hint { margin-block: var(--space-2) var(--space-4); color: var(--ink); }
 .carousel { min-width: 0; }
-.controls { display: flex; justify-content: flex-end; gap: var(--space-2); margin-block-end: var(--space-2); }
+.controls { display: none; justify-content: flex-end; gap: var(--space-2); margin-block-end: var(--space-2); }
 .controls button { display: grid; place-items: center; width: var(--control-height); min-height: var(--control-height); margin: 0; padding: 0; }
 .previous { transform: rotate(180deg); }
 .viewport { overflow: hidden; padding-block: var(--space-1) var(--space-4); }
@@ -36,6 +36,7 @@
 .row p { white-space: pre-line; }
 .row strong { color: var(--accent); }
 @media (min-width: 700px) {
+  .controls { display: flex; }
   .slide { flex-basis: 45%; }
   .track:has(> :nth-child(2):last-child) .slide { flex-basis: 60%; }
   .list { grid-template-columns: repeat(2,minmax(0,1fr)); }
