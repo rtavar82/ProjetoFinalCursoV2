@@ -45,10 +45,7 @@ export default function ClientCalendar({ onChoose, onEvent, enabled = true, visi
     {calendar.error && <p className="notice error" role="alert">{calendar.error}</p>}{calendar.loading && <p role="status">A consultar a agenda…</p>}
     <div className={styles.calendarLayout}>
     <div className={styles.calendarFrame}>
-      <div className={styles.calendarTools}>
-        <span>Hora local: Lisboa</span>
-        {!visitor && <button type="button" className="text-button" onClick={calendar.refresh}>Atualizar horários</button>}
-      </div>
+      <p className={styles.calendarTimezone}>Hora local: Lisboa</p>
       <AgendaMonthGrid calendar={calendar} selection={selection} onSelect={setSelection} hasItems={hasAvailability}
         dayStatus="Com disponibilidade" legend="Dias com disponibilidade" />
     </div>

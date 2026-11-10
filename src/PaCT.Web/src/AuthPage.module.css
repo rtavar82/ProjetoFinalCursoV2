@@ -50,6 +50,7 @@
   .access:has(.openingActions) {
     flex: 1;
     grid-template-rows: auto minmax(min-content, 1fr);
+    padding-block-end: clamp(var(--space-4), 3dvh, var(--space-8));
   }
   .access:has(.openingActions) .panel { align-self: end; }
 }

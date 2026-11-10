@@ -72,8 +72,8 @@ export default function App() {
   const [recoveryCodes, setRecoveryCodes] = useState([])
   const errorRef = useRef(null)
   const busyRef = useRef(false)
-  function openWorkspace(address) {
-    window.history.pushState({ workspace: true }, '', address)
+  function openWorkspace(address, entry) {
+    window.history.pushState({ workspace: true, entry }, '', address)
     setStage('SignedIn')
   }
 
@@ -84,7 +84,7 @@ export default function App() {
     const type = event.data?.type
     if (type === 'PACT_OPEN_AGENDA') openWorkspace('#agenda')
     if (type === 'PACT_OPEN_TASKS' && isManager(profile.role)) openWorkspace('#tarefas')
-    if (type === 'PACT_OPEN_PAYMENTS' && profile.role === 'Client') openWorkspace('/?view=payments#agenda')
+    if (type === 'PACT_OPEN_PAYMENTS' && profile.role === 'Client') openWorkspace('#agenda', { payments: true })
   })
 
   useEffect(() => {

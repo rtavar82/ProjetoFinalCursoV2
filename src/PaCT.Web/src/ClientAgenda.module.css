@@ -9,8 +9,7 @@
 .tabs { display: flex; flex-wrap: wrap; gap: .5rem; margin-block: 1.2rem; }
 .tabs button { width: auto; padding: .75rem 1rem; }
 .selected, .selected:hover:not(:disabled) { background: var(--tint); color: var(--ink); border-color: var(--accent); }
-.calendarTools { display: flex; align-items: center; justify-content: space-between; gap: .5rem; margin-block: .9rem 1.2rem; font-size: var(--font-size-caption); color: var(--muted); }
-.calendarTools button { margin: 0; width: auto; }
+.calendarTimezone { margin-block: var(--space-3) var(--space-5); font-size: var(--font-size-caption); color: var(--muted); }
 .calendar { border: 1px solid var(--line); border-radius: var(--card-radius); background: var(--surface); padding: 1rem .5rem; min-width: 0; }
 .calendarLayout { display: grid; grid-template-columns: minmax(0,1fr); min-width: 0; }
 .monthTools { display: grid; grid-template-columns: 44px minmax(0,1fr) 44px; align-items: center; gap: .3rem; margin-bottom: 1rem; }
@@ -82,7 +81,7 @@ button.slot:hover:not(:disabled) { background: var(--tint); }
 .bookingCalendar .slot { min-height: 76px; }
 .bookingCalendar .hour { background: transparent; padding: 0; min-width: 3rem; }
 .calendarFrame { min-width: 0; background: var(--surface); border: 1px solid var(--line); border-radius: var(--card-radius); }
-.calendarFrame .calendarTools { margin: 0; padding: var(--space-3) var(--space-4); border-bottom: 1px solid var(--line); }
+.calendarFrame .calendarTimezone { margin: 0; padding: var(--space-3) var(--space-4); border-bottom: 1px solid var(--line); }
 .calendarFrame .calendar { border: 0; }
 .dayHeading { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-4); }
 .dayHeading > span { font-size: var(--font-size-caption); color: var(--muted); }

@@ -50,7 +50,7 @@ function WorkspaceContent({ profile: initialProfile, busy, perform, notify, erro
     }
   }, [client, homePage, page])
   const [consultationEntry, setConsultationEntry] = useState(() =>
-    client && new URLSearchParams(window.location.search).get('view') === 'payments' ? { payments: true } : null)
+    client && (window.history.state?.entry?.payments || new URLSearchParams(window.location.search).get('view') === 'payments') ? { payments: true } : null)
   const [online, setOnline] = useState(navigator.onLine)
   const [reviewSummary, setReviewSummary] = useState({ count: null, error: '' })
   const [reviewRevision, setReviewRevision] = useState(0)

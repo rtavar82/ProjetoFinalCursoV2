@@ -53,9 +53,7 @@ export default function ManagerGoogleAgenda({ onBack, onOpen, guard, busy }) {
       {data.configured && (!data.connected || data.needsReconnect || data.needsTitlePermission) && <GoogleCalendarConnectButton
         busy={busy} guard={guard} connected={data.connected} label={data.needsTitlePermission ? 'Autorizar leitura dos títulos no Google' : undefined} />}
     </>}
-    <div className={styles.calendarTools}><span>Hora local: Lisboa</span>
-      <ActionButton variant="text" disabled={calendar.loading || calendar.refreshing} onClick={calendar.refresh}>Atualizar horários</ActionButton>
-    </div>
+    <p className={styles.calendarTimezone}>Hora local: Lisboa</p>
     {calendar.loading && <p role="status">A consultar a agenda…</p>}
     {calendar.error && <p className="notice error" role="alert">{calendar.error}</p>}
     <div className={styles.calendarLayout}>
