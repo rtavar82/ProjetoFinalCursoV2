@@ -1,4 +1,5 @@
 import InformationCard from './InformationCard'
+import MbWayLogo from './MbWayLogo'
 import RecordTable from './RecordTable'
 import { agendaDate, agendaMoney } from './agendaTime'
 import { saleKinds, saleMethods } from './financialSales'
@@ -16,6 +17,6 @@ export default function SaleDetails({ sale, clientName }) {
       {line.kind === 'Pack' && <><p>{line.sessions} sessões por pack · Avulso: {agendaMoney(line.regularTotal)}</p><p>Desconto: {Number(((1 - line.unitPrice / line.regularTotal) * 100).toFixed(2))}%</p></>}
       {line.startsAt && <><p>{agendaDate(line.startsAt)} — {agendaDate(line.endsAt)}</p><p>{line.modality === 'Remote' ? 'Online' : line.location + ' · Presencial'}</p></>}
     </InformationCard>)}
-    <RecordTable caption="Recebimentos da venda" columns={[{ key: 'method', label: 'Método', render: p => saleMethods[p.method] }, { key: 'amount', label: 'Valor recebido', render: p => agendaMoney(p.amount) }]} rows={sale.payments} rowKey={p => p.method} />
+    <RecordTable caption="Recebimentos da venda" columns={[{ key: 'method', label: 'Método', render: p => p.method === 'MbWay' ? <MbWayLogo compact /> : saleMethods[p.method] }, { key: 'amount', label: 'Valor recebido', render: p => agendaMoney(p.amount) }]} rows={sale.payments} rowKey={p => p.method} />
   </>
 }

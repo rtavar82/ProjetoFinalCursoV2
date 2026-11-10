@@ -153,10 +153,14 @@ public sealed class IdentityController(IIdentityStore store, IInstallationSecret
     }
 
     [Authorize, HttpGet("me")]
-    public async Task<IActionResult> Me(CancellationToken ct, [FromServices] IPasskeyStore passkeys)
+    public async Task<IActionResult> Me(CancellationToken ct, [FromServices] IPasskeyStore passkeys, [FromServices] ClientService clients)
     {
         var account = await store.FindAsync(User.FindFirstValue(ClaimTypes.NameIdentifier)!, ct);
-        return account is null ? Unauthorized() : Ok(new { id = account.Id, personId = account.PersonId,
+        if (account is null) return Unauthorized();
+        var clientName = account.Role == Roles.Client
+            ? (await clients.NamesAsync([account.PersonId], ct)).GetValueOrDefault(account.PersonId)
+            : null;
+        return Ok(new { id = account.Id, personId = account.PersonId, clientName,
             displayName = account.DisplayName, role = account.Role, twoFactorEnabled = account.TwoFactorEnabledAt is not null, passkeyEnabled = account.PasskeyEnabledAt is not null,
             passkeyVerified = account.PasskeyEnabledAt is not null && (await passkeys.ListAsync(account.Id, ct)).Any(k => k.LastUsedAt is not null) });
     }

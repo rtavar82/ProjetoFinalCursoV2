@@ -1,9 +1,9 @@
 import { useCallback, useState } from 'react'
 import ClientCalendar from './ClientCalendar'
 import GuestBookingForm from './GuestBookingForm'
+import AgendaPresentation from './AgendaPresentation'
 import ConsultationDialog from './ConsultationDialog'
 import { readPublicEvent } from './publicAgendaData'
-import styles from './VisitorAgenda.module.css'
 import useLiveResource from './useLiveResource'
 
 export function EventRequest({ target, onClose, onSignIn, previewOnly = false }) {
@@ -17,11 +17,10 @@ export function EventRequest({ target, onClose, onSignIn, previewOnly = false })
 
 export default function VisitorAgenda({ initialServiceId = '', selection, onChoose, onBack, onSignIn, authenticated = false, previewOnly = false }) {
   const [event, setEvent] = useState(null)
-  return <section className={styles.page} aria-label="Agenda do visitante">
-    <p className="eyebrow">A TUA AGENDA</p><h1>Um tempo para ti.</h1><p>Escolhe o dia. Encontra o teu horário.</p>
-    {authenticated && <p>Com sessão iniciada, faz o agendamento na tua área com a tua ficha.</p>}
+  return <AgendaPresentation aria-label="Agenda do visitante"
+    introNote={authenticated ? 'Com sessão iniciada, faz o agendamento na tua área com a tua ficha.' : undefined}>
     <ClientCalendar key={initialServiceId} visitor shareRole={previewOnly ? 'manager' : undefined} publicOnly={previewOnly} initialServiceId={initialServiceId} onChoose={onChoose} onEvent={(_, item) => authenticated ? onChoose(item) : setEvent(item)} />
     {selection && <GuestBookingForm key={selection.startsAt} selection={selection} onBack={onBack} onSignIn={onSignIn} previewOnly={previewOnly} />}
     {event && <EventRequest target={event} onClose={() => setEvent(null)} onSignIn={onSignIn} previewOnly={previewOnly} />}
-  </section>
+  </AgendaPresentation>
 }

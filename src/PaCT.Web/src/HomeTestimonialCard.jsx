@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
 import useEmblaCarousel from 'embla-carousel-react'
-import AppIcon from './AppIcon'
 import useLiveResource from './useLiveResource'
 import { readPublicTestimonials } from './testimonialData'
 import { createTestimonialMotion } from './testimonialMotion'
@@ -12,14 +11,12 @@ export default function HomeTestimonialCard({ onNavigate }) {
   const [plugins] = useState(() => [createTestimonialMotion()])
   const [viewport, carousel] = useEmblaCarousel({ loop: true, align: 'start', watchDrag: false, dragFree: true }, plugins)
   const [selected, setSelected] = useState(0)
-  const [motion, setMotion] = useState(null)
   const [reduced, setReduced] = useState(() => window.matchMedia('(prefers-reduced-motion: reduce)').matches)
   const [visible, setVisible] = useState(false)
   const [foreground, setForeground] = useState(() => document.visibilityState !== 'hidden')
   const [hovered, setHovered] = useState(false)
   const [focused, setFocused] = useState(false)
   const region = useRef(null)
-  const autoplay = motion ?? !reduced
 
   useEffect(() => {
     const media = window.matchMedia('(prefers-reduced-motion: reduce)')
@@ -47,19 +44,24 @@ export default function HomeTestimonialCard({ onNavigate }) {
     if (!carousel) return
     const auto = carousel.plugins().autoScroll
     function synchronize() {
-      if (items.length < 2 || !autoplay || !visible || !foreground || hovered || focused || !(carousel.canScrollNext() || carousel.canScrollPrev())) auto.stop()
+      if (items.length < 2 || reduced || !visible || !foreground || hovered || focused || !(carousel.canScrollNext() || carousel.canScrollPrev())) auto.stop()
       else auto.play()
     }
     synchronize()
     carousel.on('reInit', synchronize)
     return () => { carousel.off('reInit', synchronize); auto.stop() }
-  }, [carousel, items.length, autoplay, visible, foreground, hovered, focused])
+  }, [carousel, items.length, reduced, visible, foreground, hovered, focused])
 
   return <section className={styles.testimonialsEntry} aria-label="Testemunhos" ref={region}
     onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}
     onFocusCapture={() => setFocused(true)} onBlurCapture={event => { if (!event.currentTarget.contains(event.relatedTarget)) setFocused(false) }}>
-    <a className={styles.testimonialsLink} href="#testemunhos" aria-label="Ver testemunhos" onClick={event => { event.preventDefault(); onNavigate('PublicTestimonials') }}>
-      <div className={styles.testimonialsHeading}><div><p className="eyebrow">Testemunhos</p><h2>Ver testemunhos</h2></div><AppIcon name="arrow" /></div>
+    <a className={styles.testimonialsLink} href="#testemunhos" aria-labelledby="home-testimonials-title" onClick={event => {
+      if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+      event.preventDefault()
+      onNavigate('PublicTestimonials')
+    }}>
+      <h2 id="home-testimonials-title">Testemunhos</h2>
+      <p>Conhece as experiências partilhadas por quem já passou pelas mãos da terapeuta Denise.</p>
       {resource.loading && <p role="status">A consultar os testemunhos…</p>}
       {resource.error && <p role="alert">Não foi possível carregar a pré-visualização. Abre a página de testemunhos para tentar novamente.</p>}
       {resource.data?.length === 0 && <p className={styles.testimonialsEmpty}>Ainda não existem testemunhos publicados.</p>}
@@ -70,9 +72,5 @@ export default function HomeTestimonialCard({ onNavigate }) {
         </div>)}</div>
       </div>
     </a>
-    {items.length > 1 && <div className={styles.testimonialsTools}>
-      <span>{Math.min(selected + 1, items.length)} / {items.length}</span>
-      <button type="button" className="text-button" aria-label={autoplay ? 'Parar pré-visualização' : 'Retomar pré-visualização'} onClick={() => setMotion(!autoplay)}>{autoplay ? 'Parar' : 'Retomar'}</button>
-    </div>}
   </section>
 }

@@ -3,6 +3,7 @@ import ActionButton from './ActionButton'
 import ConsultationPhotoPreview from './ConsultationPhotoPreview'
 import InformationCard from './InformationCard'
 import ManagerSchedulingDialog from './ManagerSchedulingDialog'
+import MbWayLogo from './MbWayLogo'
 import { apiRequest } from './identityApi'
 import { showSuccess } from './actionNotices'
 import useLiveResource from './useLiveResource'
@@ -72,9 +73,14 @@ function SiteEditor({ title, session, path, guard, busy, onClose, messaging }) {
   const editPlace = (key, change) => setPlaces(current => current.map(place => place.key === key ? { ...place, ...change } : place))
   const imageTextKeys = new Set(imageFields.flatMap(image => [image.altKey, image.captionKey]))
 
+  function fieldLabel(field, showOptional = false) {
+    const label = showOptional && field.optional ? field.label + ' (opcional)' : field.label
+    return field.key === 'payment.mbWay' ? <span><MbWayLogo compact decorative /> {label}</span> : label
+  }
+
   function editField(field) {
     const Control = field.multiline ? 'textarea' : 'input'
-    return <label key={field.key}>{field.label}{field.optional && ' (opcional)'}<Control required={!field.optional} maxLength={field.maximum} value={draft[field.key]}
+    return <label key={field.key}>{fieldLabel(field, true)}<Control required={!field.optional} maxLength={field.maximum} value={draft[field.key]}
       onChange={event => setDraft(current => ({ ...current, [field.key]: event.target.value }))} /></label>
   }
 
@@ -142,7 +148,7 @@ function SiteEditor({ title, session, path, guard, busy, onClose, messaging }) {
     {error && <p className="notice error" role="alert">{error}</p>}
     {review && <>
       <InformationCard title={messaging ? 'Alterações aos modelos' : 'Alterações a publicar'} headingLevel={3}>
-        {fields.filter(field => review.values[field.key] !== field.value).map(field => <p key={field.key}><strong>{field.label}</strong> · {review.values[field.key] || 'Retirar da apresentação'}</p>)}
+        {fields.filter(field => review.values[field.key] !== field.value).map(field => <p key={field.key}><strong>{fieldLabel(field)}</strong> · {review.values[field.key] || 'Retirar da apresentação'}</p>)}
         {review.places?.filter(place => !publishedPlaces.some(old => old.name === place.name && old.description === place.description && old.address === place.address))
           .map(place => <div key={place.name}><p><strong>{place.name}</strong> · {place.description}</p><p>{place.address}</p></div>)}
         {publishedPlaces?.filter(place => !review.places.some(value => value.name === place.name)).map(place =>

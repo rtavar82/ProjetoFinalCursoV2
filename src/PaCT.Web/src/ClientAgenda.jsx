@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { apiRequest } from './identityApi'
 import { announceOperation, dismissSuccess } from './actionNotices'
 import useLiveResource from './useLiveResource'
+import AgendaPresentation from './AgendaPresentation'
 import ClientCalendar from './ClientCalendar'
 import ClientBookingDialog from './ClientBookingDialog'
 import ClientEventDetail from './ClientEventDetail'
@@ -125,8 +126,8 @@ export default function ClientAgenda({ initialEntry, guard }) {
     setSectionChoice({ section: result.total === 0 ? 'Upcoming' : 'Payments', automatic: false })
   }
   function changeSection(value) { guard(() => { setSectionChoice({ section: value, automatic: false }); setPage(1); setSeen(false); setHistorySearch('') }) }
-  return <section className={styles.page} data-pending-command={busy || uncertain ? 'true' : undefined} onChangeCapture={event => { if (event.target.closest('dialog form')) detailDirty.current = true }}>
-    <p className={styles.eyebrow}>A tua agenda</p><h1>Um tempo para ti.</h1><p>Escolhe o dia. Encontra o teu horário.</p>
+  return <AgendaPresentation aria-label="Agenda do cliente" data-pending-command={busy || uncertain ? 'true' : undefined}
+    onChangeCapture={event => { if (event.target.closest('dialog form')) detailDirty.current = true }}>
     {!detail && !request && !eventEntry && !eventId && feedback}
     <nav className={styles.primaryTabs} aria-label="Agenda"><button className={view === 'Calendar' ? styles.selected : 'secondary'} aria-pressed={view === 'Calendar'} onClick={() => guard(() => setView('Calendar'))}>Agendar</button><button className={view === 'List' ? styles.selected : 'secondary'} aria-pressed={view === 'List'} onClick={() => guard(() => setView('List'))}>As minhas marcações</button></nav>
     <div hidden={view !== 'Calendar'}><ClientCalendar shareRole="client" key={browseService} initialServiceId={browseService} enabled={view === 'Calendar'} onChoose={startRequest} onEvent={openEvent} /></div>
@@ -155,7 +156,7 @@ export default function ClientAgenda({ initialEntry, guard }) {
     {detail && (followup && detail.state === 'Performed'
       ? <ClientFollowupDetail key={`${detail.id}:${initialEntry?.id === detail.id ? initialEntry.revision : ''}`} detail={detail} latest={latest} feedback={feedback} disabled={busy || uncertain} act={act} initialConversation={initialEntry?.id === detail.id && !!initialEntry.conversation} onClose={() => guard(() => setDetail(null))} onReview={() => guard(() => setDetail(latest.data))} onPayment={() => guard(() => setFollowup(false))} />
       : <ClientDetail detail={detail} latest={latest} feedback={feedback} disabled={busy || uncertain} act={act} onClose={() => guard(() => setDetail(null))} onReview={() => guard(() => setDetail(latest.data))} onFollowup={() => guard(() => setFollowup(true))} />)}
-  </section>
+  </AgendaPresentation>
 }
 
 function ClientDetail({ detail: c, latest, feedback, disabled, act, onClose, onReview, onFollowup }) {

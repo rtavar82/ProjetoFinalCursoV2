@@ -39,11 +39,11 @@ public sealed class ClientService(IClientStore store, IdentitySecurity security,
 
     public Task<ClientView> GetAsync(string id, CancellationToken ct) => store.ExecuteAsync(async session => View(Find(await session.ClientsAsync(), id)), false, ct);
 
-    public Task<object> NamesAsync(string[] ids, CancellationToken ct)
+    public Task<Dictionary<string, string>> NamesAsync(string[] ids, CancellationToken ct)
     {
         if (ids.Length is < 1 or > 8 || ids.Any(id => !Guid.TryParse(id, out _))) throw new IdentityProblem(400, "Seleciona até oito fichas válidas.");
         var selected = ids.Select(id => Guid.Parse(id).ToString("D")).Distinct(StringComparer.Ordinal).ToArray();
-        return store.ExecuteAsync<object>(async session => (await session.ClientNamesAsync(selected)).ToDictionary(row => row.Id,
+        return store.ExecuteAsync(async session => (await session.ClientNamesAsync(selected)).ToDictionary(row => row.Id,
             row => string.Join(" ", new[] { row.FirstName is null ? null : security.Decrypt(row.Id, "first-name", row.FirstName),
                 row.LastName is null ? null : security.Decrypt(row.Id, "last-name", row.LastName) }.Where(value => !string.IsNullOrWhiteSpace(value)))), false, ct);
     }

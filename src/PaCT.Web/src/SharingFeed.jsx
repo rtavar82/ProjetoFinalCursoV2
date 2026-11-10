@@ -24,6 +24,7 @@ const moderation = { Pending: [['approve', 'Aprovar'], ['reject', 'Rejeitar'], [
 
 export default function SharingFeed({ profile, onSignIn, guard = action => action() }) {
   const manager = isManager(profile?.role)
+  const sharedPresentation = !profile || profile.role === 'Client'
   const [scope, setScope] = useState('feed')
   const [paging, setPaging] = useState({ page: 1, before: '' })
   const [editor, setEditor] = useState(null)
@@ -39,14 +40,17 @@ export default function SharingFeed({ profile, onSignIn, guard = action => actio
     setPaging({ page: 1, before: '' }); setScope(next)
   }
 
-  return <section className={styles.feed} aria-label="Partilhas">
-    <Heading level={1}>Partilhas</Heading>
+  return <div className={sharedPresentation ? styles.themedFeed : undefined}>
+    <section className={styles.feed} aria-label="Partilhas">
+    <div className={sharedPresentation ? styles.feedIntro : undefined}>
+      <Heading level={1}>Partilhas</Heading>
+      {!profile && <p>Podes ler as partilhas. <span className={styles.reactionPrompt} data-typography="sign-in-prompt">Para reagir, <a href="#entrar" onClick={onSignIn ? event => { event.preventDefault(); onSignIn() } : undefined}>inicia sessão</a>.</span></p>}
+    </div>
     {profile && <nav className={styles.actions} aria-label="Áreas de Partilhas">
       {(manager ? [['feed', 'Feed'], ['mine', 'As minhas publicações'], ['moderation', 'Moderação']]
         : [['feed', 'Feed'], ['mine', 'As minhas publicações']]).map(([id, label]) =>
         <ActionButton key={id} variant={(scope === id || scope === 'permissions' && id === 'moderation') ? 'primary' : 'secondary'} aria-current={(scope === id || scope === 'permissions' && id === 'moderation') ? 'page' : undefined} onClick={() => changeScope(id)}>{label}</ActionButton>)}
     </nav>}
-    {!profile && <p>Podes ler as partilhas. Para reagir, inicia sessão.</p>}
     {canPublish && ['feed', 'mine'].includes(scope) && <ActionButton onClick={() => setEditor({ id: crypto.randomUUID() })}>Nova publicação</ActionButton>}
     {manager && ['moderation', 'permissions'].includes(scope) && <nav className={styles.actions} aria-label="Moderação de Partilhas">
       <ActionButton variant={scope === 'moderation' ? 'primary' : 'secondary'} onClick={() => changeScope('moderation')}>Publicações a rever</ActionButton>
@@ -66,7 +70,7 @@ export default function SharingFeed({ profile, onSignIn, guard = action => actio
     {editor && <PostEditor key={editor.id} post={editor} manager={manager} onClose={() => guard(() => setEditor(null))}
       onSaved={() => { setEditor(null); if (scope === 'feed' || scope === 'mine') setPaging({ page: 1, before: '' }) }} />}
     {reference && <SharingTarget key={reference} reference={reference} profile={profile} onSignIn={onSignIn} guard={guard} onClose={() => setReference('')} />}
-  </section>
+  </section></div>
 }
 
 function SharingCard({ post, profile, canPublish, onEdit, onAgenda, refresh, onNewComment }) {

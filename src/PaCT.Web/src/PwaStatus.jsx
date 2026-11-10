@@ -1,8 +1,15 @@
 import styles from './PwaStatus.module.css'
 import { useEffect, useRef, useState } from 'react'
 import { readPublicBuild } from './publicStorage'
+import ActionButton from './ActionButton'
 
 const buildVersion = import.meta.env.PACT_BUILD_ID
+const installDeclinedKey = 'pact.installDeclined'
+
+function hasDeclinedInstall() {
+  try { return localStorage.getItem(installDeclinedKey) === 'true' }
+  catch { return false }
+}
 
 export default function PwaStatus() {
   const [online, setOnline] = useState(navigator.onLine)
@@ -11,6 +18,7 @@ export default function PwaStatus() {
   const [error, setError] = useState('')
   const [reloadReady, setReloadReady] = useState(false)
   const dirtyForms = useRef(new Set())
+  const declinedInPage = useRef(false)
 
   useEffect(() => {
     let current = true
@@ -22,8 +30,15 @@ export default function PwaStatus() {
       setOnline(navigator.onLine)
       try { await readPublicBuild() } catch { if (current) setError('O armazenamento público offline não está disponível. A utilização online continua possível.') }
     }
-    function install(event) { if (window.matchMedia('(min-width: 781px)').matches) { event.preventDefault(); setInstallPrompt(event) } }
+    function install(event) {
+      if (!window.matchMedia('(min-width: 781px)').matches) return
+      event.preventDefault()
+      if (!declinedInPage.current && !hasDeclinedInstall()) setInstallPrompt(event)
+    }
     function installed() { setInstallPrompt(null) }
+    function installPreferenceChanged(event) {
+      if (event.key === installDeclinedKey && event.newValue === 'true') setInstallPrompt(null)
+    }
     function message(event) {
       if (event.data?.type === 'PACT_PAGE_VERSION') event.ports[0]?.postMessage({ version: buildVersion })
       if (event.data?.type === 'PACT_CHECK_UPDATE') event.ports[0]?.postMessage({ allow: !hasDraft() })
@@ -61,6 +76,7 @@ export default function PwaStatus() {
     document.addEventListener('change', changed)
     window.addEventListener('online', status); window.addEventListener('offline', status)
     window.addEventListener('beforeinstallprompt', install); window.addEventListener('appinstalled', installed)
+    window.addEventListener('storage', installPreferenceChanged)
     navigator.serviceWorker?.addEventListener('message', message)
     navigator.serviceWorker?.addEventListener('controllerchange', activated)
     document.addEventListener('visibilitychange', update)
@@ -70,6 +86,7 @@ export default function PwaStatus() {
       document.removeEventListener('input', changed); document.removeEventListener('change', changed)
       window.removeEventListener('online', status); window.removeEventListener('offline', status)
       window.removeEventListener('beforeinstallprompt', install); window.removeEventListener('appinstalled', installed)
+      window.removeEventListener('storage', installPreferenceChanged)
       navigator.serviceWorker?.removeEventListener('message', message); navigator.serviceWorker?.removeEventListener('controllerchange', activated)
       document.removeEventListener('visibilitychange', update)
     }
@@ -80,9 +97,19 @@ export default function PwaStatus() {
     if (reloadReady) window.location.reload()
     else waiting?.postMessage({ type: 'PACT_ACTIVATE_UPDATE' })
   }
-  if (online && !installPrompt && !waiting && !error && !reloadReady) return null
+  function declineInstall() {
+    declinedInPage.current = true
+    try { localStorage.setItem(installDeclinedKey, 'true') }
+    catch { /* Keep the refusal for this page if browser storage is unavailable. */ }
+    setInstallPrompt(null)
+  }
+
+  if (!installPrompt && !waiting && !error && !reloadReady) return null
   return <aside className={styles.status} aria-label="Estado da aplicação">
-    {installPrompt && <button className="secondary" onClick={async () => { await installPrompt.prompt(); await installPrompt.userChoice; setInstallPrompt(null) }}>Instalar PaCT</button>}
+    {installPrompt && <div className={styles.installActions}>
+      <ActionButton variant="secondary" onClick={async () => { await installPrompt.prompt(); await installPrompt.userChoice; setInstallPrompt(null) }}>Instalar PaCT</ActionButton>
+      <ActionButton variant="text" onClick={declineInstall}>Não instalar o PaCT</ActionButton>
+    </div>}
     {(waiting || reloadReady) && <div><button disabled={!online} onClick={refresh}>actualizar a pagina PaCT</button></div>}
     {error && <p role="alert" className="notice error">{error}</p>}
   </aside>

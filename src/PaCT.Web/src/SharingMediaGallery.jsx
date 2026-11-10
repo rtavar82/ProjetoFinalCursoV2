@@ -4,8 +4,8 @@ import AppIcon from './AppIcon'
 import AudioPlayer from './AudioPlayer'
 import ConsultationDialog from './ConsultationDialog'
 import styles from './SharingFeed.module.css'
+import useImageZoom from './useImageZoom'
 
-const zoomLevels = [styles.imageFit, styles.imageZoomOne, styles.imageZoomTwo, styles.imageZoomThree]
 
 export default function SharingMediaGallery({ media }) {
   const [selected, setSelected] = useState(null)
@@ -55,52 +55,33 @@ export default function SharingMediaGallery({ media }) {
 }
 
 function ImageViewer({ images, index, onSelect, onClose }) {
-  const [zoom, setZoom] = useState(0)
-  const touch = useRef(null)
-  const viewport = useRef(null)
+  const viewport = useRef(null), photo = useRef(null)
   const image = images[index]
-  const first = index === 0
-  const last = index === images.length - 1
-
+  const first = index === 0, last = index === images.length - 1
   function move(step) {
     if (step < 0 ? first : last) return
-    setZoom(0)
-    viewport.current.scrollTo(0, 0)
     onSelect(index + step)
   }
-
-  return <ConsultationDialog title="Imagens da publicação" label="Imagens da publicação" onClose={onClose}>
-    <div ref={viewport} className={styles.imageViewport} tabIndex={0} aria-label="Visualização da imagem"
-      onKeyDown={event => {
-        if (zoom !== 0 || !['ArrowLeft', 'ArrowRight'].includes(event.key)) return
-        event.preventDefault()
-        move(event.key === 'ArrowLeft' ? -1 : 1)
-      }}
-      onTouchStart={event => {
-        const point = event.touches[0]
-        touch.current = zoom === 0 && event.touches.length === 1 ? { x: point.clientX, y: point.clientY } : null
-      }}
-      onTouchCancel={() => { touch.current = null }}
-      onTouchEnd={event => {
-        const start = touch.current
-        touch.current = null
-        if (!start || event.touches.length > 0) return
-        const point = event.changedTouches[0]
-        const horizontal = point.clientX - start.x
-        const vertical = point.clientY - start.y
-        if (Math.abs(horizontal) > 45 && Math.abs(horizontal) > Math.abs(vertical)) move(horizontal < 0 ? 1 : -1)
-      }}>
-      <img className={zoomLevels[zoom]} src={image.url} alt={'Imagem ' + (index + 1) + ' da publicação'} />
+  const { controls, canEnlarge, canReduce } = useImageZoom(viewport, photo, image.id, move)
+  return <ConsultationDialog title="Imagens da publicação" label="Imagens da publicação" onClose={onClose} className={styles.imageDialog}>
+    <div ref={viewport} className={styles.imageViewport} tabIndex={0} role="region" aria-label="Visualização da imagem" aria-describedby="pact-image-hint">
+      <img key={image.id} ref={photo} src={image.url} alt={'Imagem ' + (index + 1) + ' da publicação'} draggable={false} />
     </div>
-    <div className={styles.actions}>
-      {images.length > 1 && <>
-        <ActionButton variant="secondary" disabled={first} onClick={() => move(-1)}>Anterior</ActionButton>
-        <span role="status">{index + 1} de {images.length}</span>
-        <ActionButton variant="secondary" disabled={last} onClick={() => move(1)}>Seguinte</ActionButton>
-      </>}
-      <ActionButton variant="secondary" className={styles.imageZoomControl} disabled={zoom === 0} onClick={() => setZoom(zoom - 1)}>Reduzir</ActionButton>
-      <ActionButton variant="secondary" className={styles.imageZoomControl} disabled={zoom === zoomLevels.length - 1} onClick={() => setZoom(zoom + 1)}>Ampliar</ActionButton>
+    {images.length > 1 && <div className={styles.zoomControls} aria-label="Galeria">
+      <ActionButton variant="secondary" disabled={first} onClick={() => move(-1)}>Anterior</ActionButton>
+      <span role="status">{index + 1} de {images.length}</span>
+      <ActionButton variant="secondary" disabled={last} onClick={() => move(1)}>Seguinte</ActionButton>
+    </div>}
+    <div className={styles.zoomControls} role="group" aria-label="Zoom da imagem">
+      <ActionButton variant="secondary" disabled={!canReduce} aria-label="Reduzir" onClick={() => controls.current?.zoomBy(-1)}>−</ActionButton>
+      <ActionButton variant="secondary" disabled={!canEnlarge} aria-label="Ampliar" onClick={() => controls.current?.zoomBy(1)}>+</ActionButton>
+      <ActionButton variant="secondary" onClick={() => controls.current?.fit()}>Ajustar</ActionButton>
+      <ActionButton variant="secondary" aria-label="Ver ao tamanho original (100%)" onClick={() => controls.current?.original()}>100%</ActionButton>
       <a href={image.url} download={'partilha-' + image.id + (image.type === 'image/png' ? '.png' : '.jpg')}>Descarregar imagem</a>
     </div>
+    <p id="pact-image-hint" className={styles.imageHint}>
+      <span className={styles.mouseHint}>Usa os cliques ou a roda do rato para ampliar ou reduzir.</span>
+      <span className={styles.touchHint}>Afasta ou aproxima dois dedos para ampliar ou reduzir.</span> Arrasta para percorrer.
+    </p>
   </ConsultationDialog>
 }

@@ -1,0 +1,3 @@
+.logo, .compact { max-inline-size: 100%; block-size: auto; }
+.logo { display: block; inline-size: 5rem; }
+.compact { display: inline-block; inline-size: 3.5rem; vertical-align: middle; }

@@ -1,21 +1,14 @@
-.page { min-width: 0; }
 .sharedNote { padding: 20px; border: 1px solid var(--line); border-radius: 18px; background: var(--surface); white-space: pre-wrap; overflow-wrap: anywhere; }
 .sharedImages { display: grid; gap: 12px; }
 .sharedImages img { display: block; max-width: 100%; height: auto; border-radius: 14px; }
 @media (min-width: 800px) { .sharedImages { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .eyebrow { text-transform: uppercase; letter-spacing: .16em; color: var(--muted); font-size: var(--font-size-overline); margin: 1.4rem 0 .7rem; }
-.page h1 { margin-block: 0 .6rem; }
-.primaryTabs { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: .65rem; margin-block: 1.4rem; }
+.primaryTabs { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-block: var(--space-3) var(--space-4); }
+.primaryTabs button { width: auto; }
 .primaryTabs button, .tabs button { margin: 0; min-width: 0; }
 .tabs { display: flex; flex-wrap: wrap; gap: .5rem; margin-block: 1.2rem; }
 .tabs button { width: auto; padding: .75rem 1rem; }
 .selected, .selected:hover:not(:disabled) { background: var(--tint); color: var(--ink); border-color: var(--accent); }
-.filters { background: var(--tint); padding: 1.1rem; border: 1px solid var(--line); border-radius: var(--card-radius); margin-block: 1rem 1.4rem; }
-.filters h2 { margin: 0 0 .5rem; }
-.filters p { margin: 0 0 1rem; font-size: var(--font-size-label); }
-.filterFields { display: grid; gap: .85rem; grid-template-columns: minmax(0,1fr); }
-.filterFields label { min-width: 0; }
-.filterFields select { background: var(--surface); }
 .calendarTools { display: flex; align-items: center; justify-content: space-between; gap: .5rem; margin-block: .9rem 1.2rem; font-size: var(--font-size-caption); color: var(--muted); }
 .calendarTools button { margin: 0; width: auto; }
 .calendar { border: 1px solid var(--line); border-radius: var(--card-radius); background: var(--surface); padding: 1rem .5rem; min-width: 0; }
@@ -79,18 +72,23 @@ button.slot:hover:not(:disabled) { background: var(--tint); }
 .bookingActions button { margin: 0; }
 .srOnly { position: absolute; height: 1px; width: 1px; overflow: hidden; clip-path: inset(50%); }
 @media (max-width: 359px) { .calendar { margin-inline: -16px; padding-inline: 4px; } }
-@media (min-width: 600px) { .filterFields { grid-template-columns: repeat(3,minmax(0,1fr)); } .calendar { padding: 1.3rem; } .day { min-height: 48px; } }
+@media (min-width: 600px) { .calendar { padding: 1.3rem; } .day { min-height: 48px; } }
 @media (min-width: 1080px) { .list { grid-template-columns: repeat(2,minmax(0,1fr)); } .calendarLayout { grid-template-columns: minmax(340px,.9fr) minmax(0,1.1fr); gap: 1.5rem; align-items: start; } .calendar { padding-inline: 14px; } .schedule { margin-top: 0; } }
-.visitorCalendar { min-width: 0; }
-.visitorCalendar .filters { margin-top: 1.8rem; }
-.visitorCalendar .filters h2 { margin: 0 0 .5rem; }
-.visitorCalendar .filters p { font-size: var(--font-size-label); }
-.visitorCalendar .calendarLayout { grid-template-columns: minmax(0, 1fr); gap: 0; }
-.visitorCalendar .calendar { margin-inline: 0; padding: 1rem .5rem; }
-.visitorCalendar .schedule { margin-block: 1.8rem .5rem; }
-.visitorCalendar .slotCard { margin-block: .55rem; }
-.visitorCalendar .slot { min-height: 76px; }
-.visitorCalendar .hour { background: transparent; padding: 0; min-width: 3rem; }
-@media (min-width: 480px) { .visitorCalendar .filterFields { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
-@media (min-width: 640px) { .visitorCalendar .calendar { padding: 1.3rem; } }
-@media (max-width: 359px) { .visitorCalendar .calendar { padding-inline: .3rem; } }
+.bookingCalendar { min-width: 0; container: booking-agenda / inline-size; }
+.bookingCalendar .calendarLayout { grid-template-columns: minmax(0, 1fr); gap: 0; }
+.bookingCalendar .calendar { margin-inline: 0; padding: 1rem .5rem; }
+.bookingCalendar .schedule { margin-block: 1.8rem .5rem; }
+.bookingCalendar .slotCard { margin-block: .55rem; }
+.bookingCalendar .slot { min-height: 76px; }
+.bookingCalendar .hour { background: transparent; padding: 0; min-width: 3rem; }
+.calendarFrame { min-width: 0; background: var(--surface); border: 1px solid var(--line); border-radius: var(--card-radius); }
+.calendarFrame .calendarTools { margin: 0; padding: var(--space-3) var(--space-4); border-bottom: 1px solid var(--line); }
+.calendarFrame .calendar { border: 0; }
+.dayHeading { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-4); }
+.dayHeading > span { font-size: var(--font-size-caption); color: var(--muted); }
+@media (min-width: 640px) { .bookingCalendar .calendar { padding: 1.3rem; } }
+@media (max-width: 359px) { .bookingCalendar .calendar { padding-inline: .3rem; } }
+@container booking-agenda (width >= 840px) {
+  .bookingCalendar .calendarLayout { grid-template-columns: minmax(330px, .95fr) minmax(0, 1.05fr); gap: var(--space-5); }
+  .bookingCalendar .schedule { margin: 0; }
+}

@@ -7,11 +7,11 @@ import AgendaSlotCard from './AgendaSlotCard'
 import useLiveResource from './useLiveResource'
 import { apiRequest } from './identityApi'
 import AgendaFilters from './AgendaFilters'
-import { agendaDate, agendaDay, monthDays, addDays, instant } from './agendaTime'
+import Heading from './Heading'
+import { agendaDate, monthDays, addDays, instant } from './agendaTime'
 import { bookingVariants, bookableSlots, physicalLocations, publishedSlotDetails } from './clientBookingOptions'
 import { searchPublishedAgenda } from './publishedAgendaSearch'
 import styles from './ClientAgenda.module.css'
-import publicStyles from './VisitorAgenda.module.css'
 
 export default function ClientCalendar({ onChoose, onEvent, enabled = true, visitor = false, publicOnly = false, initialServiceId = '', shareRole }) {
   const { selection, setSelection, calendar } = useAgendaCalendar({ enabled, publicOnly })
@@ -36,18 +36,28 @@ export default function ClientCalendar({ onChoose, onEvent, enabled = true, visi
   const hasAvailability = day => slotsByDay[day]?.length > 0
     || eventsForDay(day).some(e => e.state === 'Waiting' && !e.scheduleBlocked && Date.parse(e.startsAt) > Date.parse(data.serverTime))
   const places = [...new Set([...physicalLocations(data), ...(data?.events || []).map(e => e.publicLocation)].filter(Boolean))]
-  return <section className={visitor ? styles.visitorCalendar : undefined} aria-label="Calendário da agenda">
+  return <section className={styles.bookingCalendar} aria-label="Calendário da agenda">
     <AgendaFilters active={hasFilters} summary={[type, place, modality === 'Remote' ? 'Remota' : modality === 'InPerson' ? 'Presencial' : ''].filter(Boolean).join(' · ')} onReset={resetFilters}>
           <label>Tipo de consulta<AdaptiveSelect aria-label="Tipo de consulta" value={type} onChange={e => setType(e.target.value)}><option value="">Todas as consultas e atividades</option>{[...new Set([...services.map(s => s.title), ...(data?.events || []).map(e => e.title)])].map(name => <option key={name}>{name}</option>)}</AdaptiveSelect></label>
       <label>Local<AdaptiveSelect aria-label="Local" value={place} onChange={e => setPlace(e.target.value)}><option value="">Todos os locais</option>{places.map(name => <option key={name}>{name}</option>)}</AdaptiveSelect></label>
       <label>Modalidade<AdaptiveSelect aria-label="Modalidade" value={modality} onChange={e => setModality(e.target.value)}><option value="">Todas as modalidades</option><option value="InPerson">Presencial</option><option value="Remote">Remota</option></AdaptiveSelect></label>
     </AgendaFilters>
-    <div className={styles.calendarTools}><span>Hora local: Lisboa</span><button type="button" className="text-button" onClick={calendar.refresh}>Atualizar horários</button></div>
     {calendar.error && <p className="notice error" role="alert">{calendar.error}</p>}{calendar.loading && <p role="status">A consultar a agenda…</p>}
     <div className={styles.calendarLayout}>
-    <AgendaMonthGrid calendar={calendar} selection={selection} onSelect={setSelection} hasItems={hasAvailability}
-      dayStatus="Com disponibilidade" legend="Dias com disponibilidade" />
-    <section className={styles.schedule} aria-label="Disponibilidade do dia"><p className={styles.eyebrow}>Disponibilidade do dia</p><div className={visitor ? publicStyles.dayHeading : undefined}><h2>{visitor ? new Intl.DateTimeFormat('pt-PT', { timeZone: 'Europe/Lisbon', weekday: 'long', day: 'numeric' }).format(new Date(instant(selection.day + 'T12:00'))) : agendaDay(selection.day)}</h2>{visitor && <span>{new Intl.DateTimeFormat('pt-PT', { timeZone: 'UTC', month: 'long' }).format(new Date(selection.day + 'T12:00:00Z'))}</span>}</div>
+    <div className={styles.calendarFrame}>
+      <div className={styles.calendarTools}>
+        <span>Hora local: Lisboa</span>
+        {!visitor && <button type="button" className="text-button" onClick={calendar.refresh}>Atualizar horários</button>}
+      </div>
+      <AgendaMonthGrid calendar={calendar} selection={selection} onSelect={setSelection} hasItems={hasAvailability}
+        dayStatus="Com disponibilidade" legend="Dias com disponibilidade" />
+    </div>
+    <section className={styles.schedule} aria-label="Disponibilidade do dia">
+      <p className={styles.eyebrow}>Disponibilidade do dia</p>
+      <div className={styles.dayHeading}>
+        <Heading level={2}>{new Intl.DateTimeFormat('pt-PT', { timeZone: 'UTC', weekday: 'long', day: 'numeric' }).format(new Date(selection.day + 'T12:00:00Z'))}</Heading>
+        <span>{new Intl.DateTimeFormat('pt-PT', { timeZone: 'UTC', month: 'long' }).format(new Date(selection.day + 'T12:00:00Z'))}</span>
+      </div>
       {data && <><p className={styles.muted}>{slots.length} {slots.length === 1 ? 'horário individual' : 'horários individuais'}{visibleEvents.length ? ` · ${visibleEvents.length} ${visibleEvents.length === 1 ? 'atividade' : 'atividades'}` : ''}</p>
         {rows.map(row => {
           if (row.event) {

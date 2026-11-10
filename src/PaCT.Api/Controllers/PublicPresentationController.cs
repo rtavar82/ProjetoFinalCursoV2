@@ -19,10 +19,9 @@ public sealed class PublicPresentationController(IConsultationStore store, MySql
     [AllowAnonymous, HttpGet]
     public async Task<IActionResult> Read(CancellationToken ct)
     {
-        var fallback = await presentation.PublishedAsync(ct);
-        return Ok(await store.ReadAgendaAsync(data =>
+        return Ok(await store.ReadPublicPresentationAsync(data =>
         {
-            var published = data.PublishedSite.Version >= fallback.Version ? data.PublishedSite : fallback;
+            var published = data.PublishedSite;
             var places = SiteLocations.PhysicalNames(data, published)
                 .Select(name => new PublicPresentationContent.PublicPlace(name, "InPerson", SitePresentation.LocationDescription(published, "InPerson", name)))
                 .Append(new(SiteLocations.Online, "Remote", SitePresentation.LocationDescription(published, "Remote", "")));

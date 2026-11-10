@@ -1,0 +1,6 @@
+.page { min-width: 0; }
+.intro { background: var(--theme-gradient, var(--tint)); padding: var(--space-6) var(--public-gutter, var(--page-gutter)); }
+.intro p, .intro h1 { margin: 0; }
+.intro > :global(.eyebrow) { margin-bottom: var(--space-2); color: var(--ink); }
+.intro h1 + p { margin-top: var(--space-2); }
+.content { max-width: var(--page-width); margin-inline: auto; padding: var(--space-3) var(--page-gutter) var(--space-6); }

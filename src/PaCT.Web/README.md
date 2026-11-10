@@ -34,6 +34,13 @@ Não são usados localStorage, sessionStorage ou cache offline para contas/token
 
 Consultar as instruções de instalação e os limites desta entrega no README da raiz.
 
+## Contrato visual obrigatório
+
+- Em cada página nova ou alterada, usar design-tokens.css para a paleta, espaçamentos, dimensões de controlos e superfícies. Usar os papéis de typography.css, com Georgia nos títulos e Segoe UI no restante texto. As páginas consomem os tokens partilhados.
+- Reutilizar AppLayout, Heading, ActionButton, InformationCard, ConsultationDialog, Pagination e AppIcon conforme a função. As ações equivalentes conservam o ícone, o estado de foco e o tamanho. Usar o fundo claro no cabeçalho público e o tom pastel do tema no separador ativo.
+- Os temas Sálvia e areia, Rosa chá e ameixa e Lavanda e eucalipto usam texto escuro sobre fundos claros. O contraste dos papéis base e a definição centralizada dos tokens são validados por check:design, chamado por lint e build.
+- Verificar cada percurso a 320 px, em telemóvel e PC, incluindo teclado e os temas aplicáveis. Preservar as permissões e os contratos da API. O guia completo da instalação está em docs/GUIA_VISUAL_FRONTEND.md.
+
 ## Mobile-first e PWA
 
 Layout base para 320 px, expandido por min-width. Manifesto e ícones públicos; o build gera um único service-worker.js versionado, com lista permitida de recursos. IndexedDB guarda exclusivamente versão e data do build público, usadas no aviso offline. Nenhum dado privado ou fila de operações é persistido no navegador.

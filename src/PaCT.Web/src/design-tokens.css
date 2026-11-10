@@ -7,6 +7,7 @@
   --font-size-caption: 12px;
   --font-size-small: 14px;
   --font-size-lead: 18px;
+  --font-size-sign-in-prompt: clamp(19px, 2.4vw, 21px);
   --font-size-badge: 15px;
   --font-size-icon: 28px;
   --font-size-brand: 27px;
@@ -32,6 +33,22 @@
   --line: #e1e7dd;
   --card-radius: 20px;
   --card-padding: 18px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --page-gutter: clamp(14px, 4vw, 40px);
+  --page-width: 1250px;
+  --reading-width: 43rem;
+  --control-height: 44px;
+  --field-height: 48px;
+  --control-radius: 12px;
+  --icon-size: 20px;
+  --brand-icon-size: 32px;
+  --surface-inverse-text: #fff;
   --notice-bg: #f5f0e5;
   --notice-line: #e7ddc7;
   --notice-ink: #755a33;
@@ -42,6 +59,33 @@
   --error-line: #e3b8b8;
   --error-ink: #9c2525;
   --dialog-backdrop: #253e3480;
+}
+
+[data-visual-theme] {
+  --canvas: var(--theme-paper);
+  --surface: #fffdf9;
+  --ink: var(--theme-ink);
+  --accent: var(--theme-action);
+  --tint: var(--theme-tint);
+  --muted: color-mix(in srgb, var(--ink) 79%, var(--surface));
+  --accent-hover: color-mix(in srgb, var(--accent) 84%, #000);
+  --line: color-mix(in srgb, var(--ink) 19%, var(--surface));
+  --field-line: color-mix(in srgb, var(--accent) 72%, var(--surface));
+  --dialog-backdrop: color-mix(in srgb, var(--ink) 50%, transparent);
+  --theme-gradient: linear-gradient(115deg, var(--theme-start), var(--theme-end));
+  --green: var(--accent);
+}
+[data-visual-theme='sage'] {
+  --theme-paper: #f7f6f0; --theme-ink: #243c33; --theme-action: #365b47; --theme-tint: #dde9dc;
+  --theme-start: #b7cfb6; --theme-end: #ebd4b5;
+}
+[data-visual-theme='rose'] {
+  --theme-paper: #faf5f4; --theme-ink: #3d3039; --theme-action: #674658; --theme-tint: #f0dde1;
+  --theme-start: #ebc2ca; --theme-end: #cdb7d8;
+}
+[data-visual-theme='lavender'] {
+  --theme-paper: #f5f4f8; --theme-ink: #303744; --theme-action: #475d69; --theme-tint: #e6e1ef;
+  --theme-start: #cec0e5; --theme-end: #aecfc0;
 }
 @media (min-width: 768px) { :root { --card-padding: 24px; --font-size-count: 43px; } }
 @media (min-width: 1080px) { :root { --font-size-brand: 29px; } }

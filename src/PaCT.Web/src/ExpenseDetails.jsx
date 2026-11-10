@@ -1,5 +1,6 @@
 import Heading from './Heading'
 import InformationCard from './InformationCard'
+import MbWayLogo from './MbWayLogo'
 import RecordTable from './RecordTable'
 import { agendaDate, agendaMoney } from './agendaTime'
 import { cents, saleMethods } from './financialSales'
@@ -33,7 +34,7 @@ export default function ExpenseDetails({ expense, authors = {}, review = false }
     </InformationCard>}
     {expense.document && <p>{review ? 'Documento: ' + expense.document.name : <a href={'/api/finance/expenses/' + expense.id + '/document?version=' + expense.version} download={expense.document.name}>Descarregar {expense.document.name}</a>}</p>}
     {!!expense.payments.length && <details open={review}><summary>Pagamentos efetuados ({expense.payments.length})</summary>{expense.payments.map((p, index) => <InformationCard key={p.id || index} cardId={'expense-payment-' + index}>
-      <p><strong>{agendaMoney(p.amount)}</strong> · {saleMethods[p.method]} · {agendaDate(p.effectiveAt)}</p>
+      <p><strong>{agendaMoney(p.amount)}</strong> · {p.method === 'MbWay' ? <MbWayLogo compact /> : saleMethods[p.method]} · {agendaDate(p.effectiveAt)}</p>
       {p.recordedAt && <small>{authors[p.authorId] || 'Gestão'} · Registado em {agendaDate(p.recordedAt)}</small>}
     </InformationCard>)}</details>}
     {!review && <Heading level={3}>{expense.remaining === 0 ? 'Paga' : expense.paid > 0 ? 'Parcialmente paga' : 'Por pagar'}</Heading>}

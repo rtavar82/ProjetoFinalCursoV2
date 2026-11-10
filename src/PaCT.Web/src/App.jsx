@@ -7,18 +7,32 @@ import Workspace from './Workspace'
 import InvitedTherapistRegistration from './InvitedTherapistRegistration'
 import './App.css'
 import AppLayout from './AppLayout'
+import AppIcon from './AppIcon'
+import ActionButton from './ActionButton'
 import AuthPage from './AuthPage'
+import authStyles from './AuthPage.module.css'
 import PasswordField from './PasswordField'
 import { GoogleSignInButton } from './AccountSecuritySettings'
 import { enrollPasskey, verifyPasskey } from './passkeys'
 import VisitorAgenda from './VisitorAgenda'
 import PublicPresentation from './PublicPresentation'
+import PublicOpening from './PublicOpening'
 import PublicTestimonials from './PublicTestimonials'
 import SharingFeed from './SharingFeed'
-import { publicRoute } from './publicPresentationData'
+import { clientHomeHashes, publicRoute } from './publicPresentationData'
 import { cancelSubmittedWrites } from './submittedWrites'
 import { dismissSuccess, showSuccess } from './actionNotices'
 import PrivacyProvider from './PrivacyProvider'
+import { readVisualTheme, saveVisualTheme } from './visualTheme'
+
+const publicPages = { PublicOpening: '', PublicHome: 'inicio', PublicTherapist: 'terapeuta',
+  PublicTestimonials: 'testemunhos', PublicSharing: 'partilhas', PublicAgenda: 'agenda', SignIn: 'entrar' }
+function stageForPublicRoute(stage, profile) {
+  return profile && (stage === 'PublicSharing' || profile.role === 'Client' && Object.hasOwn(clientHomeHashes, stage))
+    ? 'SignedIn' : stage
+}
+
+const accessSteps = ['ClientRegister', 'ClientEmailSent', 'ClientReview', 'PasswordRecoveryRequest', 'PasswordRecoveryRequested', 'PasswordRecoveryLink', 'ClientEmailLink']
 
 function readLink() {
   const parameters = new URLSearchParams(window.location.hash.slice(1))
@@ -38,14 +52,20 @@ export default function App() {
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
   const [profile, setProfile] = useState(null)
+  const [visualTheme, setVisualTheme] = useState(readVisualTheme)
   useEffect(() => { cancelSubmittedWrites() }, [profile?.id])
   const [guestSelection, setGuestSelection] = useState(null)
   const [publicService, setPublicService] = useState(() => publicRoute().serviceId)
   const [recoveryCodes, setRecoveryCodes] = useState([])
   const errorRef = useRef(null)
   const busyRef = useRef(false)
+  function enterWorkspace() {
+    window.history.pushState(null, '', profile?.role === 'Client' ? '#agenda' : '#inicio')
+    setStage('SignedIn')
+  }
+
   function choosePublicBooking(selection) {
-    if (profile) { window.history.pushState(null, '', '#inicio'); setStage('SignedIn') }
+    if (profile) enterWorkspace()
     else setGuestSelection(selection)
   }
 
@@ -53,12 +73,14 @@ export default function App() {
     function openLink() {
       const next = readLink()
       if (!Object.values(next).some(Boolean)) {
-        if (['PublicHome', 'PublicTherapist', 'PublicTestimonials', 'PublicSharing', 'PublicAgenda', 'SignIn'].includes(stage) || profile && ['#testemunhos', '#partilhas'].includes(window.location.hash)) {
+        const hash = window.location.hash
+        const opensPublicPreview = profile && (hash === '#partilhas' || profile.role !== 'Client' && hash === '#testemunhos')
+        if (Object.hasOwn(publicPages, stage) || accessSteps.includes(stage) || opensPublicPreview) {
           const route = publicRoute()
           if (route.stage === stage && route.serviceId === publicService) return
           if (document.querySelector('[data-pending-command="true"]')) { window.history.forward(); return }
           if ((guestSelection || document.querySelector('[data-guest-request="true"]')) && !window.confirm('Queres sair e descartar o preenchimento do pedido?')) { window.history.forward(); return }
-          setPublicService(route.serviceId); setGuestSelection(null); setStage(profile && route.stage === 'PublicSharing' ? 'SignedIn' : route.stage); setError(''); setMessage('')
+          setPublicService(route.serviceId); setGuestSelection(null); setStage(stageForPublicRoute(route.stage, profile)); setError(''); setMessage('')
         }
         return
       }
@@ -80,7 +102,11 @@ export default function App() {
         const state = await request('installation')
         let next = state.prepared ? (state.managerExists ? 'SignIn' : 'Register') : 'NotPrepared'
         if (state.managerExists) {
-          try { const me = await request('me'); if (current) setProfile(me); next = window.location.hash === '#testemunhos' ? 'PublicTestimonials' : 'SignedIn' }
+          try {
+            const me = await request('me')
+            if (current) setProfile(me)
+            next = me.role !== 'Client' && window.location.hash === '#testemunhos' ? 'PublicTestimonials' : 'SignedIn'
+          }
           catch (failure) {
             if (failure.status !== 401) throw failure
             next = (await request('progress')).stage
@@ -175,13 +201,24 @@ export default function App() {
     : ['ConfigureAuthenticator', 'VerifyFactor', 'RecoveryCodes', 'VerifyPasskey'].includes(stage) ? 3 : stage === 'SignedIn' ? 4 : 0
 
   function notify(text, failure = false) { setError(failure ? text : ''); setMessage(''); if (!failure) showSuccess(text) }
+  function changeTheme(theme) {
+    setVisualTheme(theme)
+    saveVisualTheme(theme)
+  }
+  const themeProps = { visualTheme, onThemeChange: changeTheme }
   function navigatePublic(next, serviceId = '') {
     if (document.querySelector('[data-pending-command="true"]')) return
     if ((guestSelection || document.querySelector('[data-guest-request="true"]')) && !window.confirm('Queres sair e descartar o preenchimento do pedido?')) return
-    setGuestSelection(null); setPublicService(serviceId); setError(''); setMessage(''); setStage(next === 'PublicSharing' && profile ? 'SignedIn' : next)
-    const hash = next === 'SignIn' ? 'entrar' : next === 'PublicTherapist' ? 'terapeuta' : next === 'PublicTestimonials' ? 'testemunhos' : next === 'PublicSharing' ? 'partilhas' : next === 'PublicAgenda' ? 'agenda' : 'inicio'
-    window.history.pushState(null, '', '#' + hash + (serviceId ? '?servico=' + encodeURIComponent(serviceId) : ''))
+    setGuestSelection(null); setPublicService(serviceId); setError(''); setMessage(''); setStage(stageForPublicRoute(next, profile))
+    const returnTo = next === 'SignIn' && stage.startsWith('Public') && stage !== 'PublicOpening' ? { stage, serviceId: publicService } : null
+    const hash = publicPages[next]
+    window.history.pushState({ returnTo }, '', hash ? '#' + hash + (serviceId ? '?servico=' + encodeURIComponent(serviceId) : '') : window.location.pathname)
     window.scrollTo(0, 0)
+  }
+  function continueAsVisitor() {
+    const origin = window.history.state?.returnTo
+    if (typeof origin?.stage === 'string' && origin.stage.startsWith('Public') && Object.hasOwn(publicPages, origin.stage)) navigatePublic(origin.stage, origin.serviceId)
+    else navigatePublic('PublicHome')
   }
   const client = profile?.role === 'Client'
   const privacyAvailable = stage.startsWith('Public') || ['SignedIn', 'SignIn', 'ClientRegister'].includes(stage)
@@ -190,7 +227,7 @@ export default function App() {
   </PrivacyProvider>
 
   function renderStage() {
-  if (stage === 'SignedIn' && profile) return <Workspace profile={profile} busy={busy} perform={perform} notify={notify} error={error} message={message} errorRef={errorRef}
+  if (stage === 'SignedIn' && profile) return <Workspace {...themeProps} profile={profile} busy={busy} perform={perform} notify={notify} error={error} message={message} errorRef={errorRef}
     onPublicTestimonials={() => navigatePublic('PublicTestimonials')}
     onSignOut={() => perform(async () => { await request('sign-out', {}); setProfile(null); setRecoveryCodes([]); setStage('SignIn') })}
     onForgetBrowser={() => perform(async () => { const result = await request('forget-browser', {}); notify(result.message) })}
@@ -198,7 +235,8 @@ export default function App() {
     onSecuritySignedOut={text => { setProfile(null); notify(text); setStage('SignIn') }}
     onAccountClosed={text => { setProfile(null); notify(text); setStage('SignIn') }} />
 
-  if (['PublicHome', 'PublicTherapist', 'PublicTestimonials', 'PublicSharing', 'PublicAgenda'].includes(stage)) return <PublicPresentation page={stage} onNavigate={navigatePublic} profile={profile} onAccount={() => { window.history.pushState(null, '', '#inicio'); setStage('SignedIn') }}>
+  if (stage === 'PublicOpening') return <PublicOpening {...themeProps} onNavigate={navigatePublic} />
+  if (stage.startsWith('Public')) return <PublicPresentation key={stage} {...themeProps} page={stage} onNavigate={navigatePublic} profile={profile} onAccount={enterWorkspace}>
     {stage === 'PublicSharing' && <SharingFeed onSignIn={() => navigatePublic('SignIn')} />}
     {stage === 'PublicTestimonials' && <PublicTestimonials onBack={() => navigatePublic('PublicHome')} />}
     {stage === 'PublicAgenda' && <VisitorAgenda key={publicService} initialServiceId={publicService} authenticated={!!profile} selection={guestSelection} onChoose={choosePublicBooking} onBack={() => setGuestSelection(null)} onSignIn={() => navigatePublic('SignIn')} />}
@@ -238,7 +276,10 @@ export default function App() {
   }
 
   return (
-    <AppLayout page={stage}><AuthPage busy={busy} onBack={stage === 'SignIn' ? () => navigatePublic('PublicHome') : undefined} introduction={<>
+    <AppLayout page={stage} {...(stage === 'SignIn' || accessSteps.includes(stage) ? themeProps : {})}
+      presentation={stage === 'SignIn' ? 'access' : undefined} onHome={stage === 'SignIn' ? continueAsVisitor : undefined}>
+      <AuthPage busy={busy} presentation={stage === 'SignIn' ? 'access' : accessSteps.includes(stage) ? 'step' : undefined}
+        introduction={stage === 'SignIn' ? <><h1>Entrar no PaCT</h1><img src="/borboleta.png" alt="" width="378" height="330" /></> : <>
           <p className="eyebrow">UM NOVO COMEÇO</p>
           <h1>O teu espaço.<br />O teu acompanhamento.</h1>
           <p>{['Register', 'Invitation'].includes(stage) ? 'Prepara a PaCT para a tua atividade, com os teus dados e acesso protegido.' : 'Acede à tua conta com uma ligação segura e os teus próprios dados.'}</p>
@@ -289,10 +330,18 @@ export default function App() {
               </fieldset>
               <button disabled={busy} type="submit">{busy ? 'A criar a conta…' : 'Criar conta e confirmar email'}</button>
             </form><button className="text-button" disabled={busy} onClick={() => { setError(''); setStage('SignIn') }}>Já comecei a configuração — entrar</button></>}
-          {stage === 'SignIn' && <><h2>Bem-vindo de volta</h2>
-            <form onSubmit={submitSignIn}><label>Email<input name="email" type="email" autoComplete="username" required maxLength="256" /></label><PasswordField label="Palavra-passe" name="password" autoComplete="current-password" required maxLength="128" /><button disabled={busy}>{busy ? 'A verificar…' : 'Entrar'}</button></form>
-            <button className="text-button" disabled={busy} onClick={openPasswordRecovery}>Esqueci-me da palavra-passe</button>
-            <GoogleSignInButton busy={busy} perform={perform} /><button className="secondary" disabled={busy} onClick={() => { setError(''); setMessage(''); setStage('ClientRegister') }}>Criar uma conta</button></>}
+          {stage === 'SignIn' && <>
+            <form onSubmit={submitSignIn}><label>Email<input name="email" type="email" autoComplete="username" required maxLength="256" /></label>
+              <PasswordField label="Palavra-passe" name="password" autoComplete="current-password" required maxLength="128" />
+              <ActionButton variant="text" className={authStyles.recovery} disabled={busy} onClick={openPasswordRecovery}>Esqueci-me da palavra-passe</ActionButton>
+              <ActionButton type="submit" disabled={busy}>{busy ? 'A verificar…' : 'Entrar'}</ActionButton>
+            </form>
+            <div className={authStyles.alternate}><GoogleSignInButton busy={busy} perform={perform} /></div>
+            <div className={authStyles.account}><p>Ainda não tens conta?</p>
+              <ActionButton variant="secondary" disabled={busy} onClick={() => { setError(''); setMessage(''); setStage('ClientRegister') }}>Criar conta</ActionButton>
+            </div>
+            <ActionButton variant="text" className={authStyles.guest} disabled={busy} onClick={continueAsVisitor}>Continuar como visitante <AppIcon name="arrow" /></ActionButton>
+          </>}
           {stage === 'ClientRegister' && <><h2>Criar conta de cliente</h2><p>Preenche nome, apelido, email, telefone, nascimento, género e localidade. Depois de confirmares o email, vais definir a tua palavra-passe.</p><ClientProfileForm registration busy={busy} onSave={submitClientRegistration} /></>}
           {stage === 'ClientReview' && <><h2>Pedido em análise</h2><p>O registo não foi concluído. A gestão irá verificar o teu pedido.</p></>}
           {stage === 'ClientEmailSent' && <>

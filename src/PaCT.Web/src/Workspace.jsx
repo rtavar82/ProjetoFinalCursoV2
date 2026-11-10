@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useEffectEvent, useRef, useState } from 'react'
 import Clients from './Clients'
 import PersonalProfile from './PersonalProfile'
 import AppLayout from './AppLayout'
@@ -14,6 +14,7 @@ import ManagementPage from './ManagementPage'
 import ManagerTasksPage from './ManagerTasksPage'
 import PublicPresentation from './PublicPresentation'
 import PublicTestimonials from './PublicTestimonials'
+import { clientHomeHashes, clientHomePage } from './publicPresentationData'
 import SharingFeed from './SharingFeed'
 import { apiRequest } from './identityApi'
 import { isManager } from './identityRoles'
@@ -26,23 +27,26 @@ export default function Workspace(props) {
   return <LiveResourceProvider key={props.profile.id}><WorkspaceContent {...props} /></LiveResourceProvider>
 }
 
-function WorkspaceContent({ profile: initialProfile, busy, perform, notify, error, message, errorRef, onSignOut, onForgetBrowser, onPasskeyUpdated, onAccountClosed, onSecuritySignedOut, onPublicTestimonials }) {
+function WorkspaceContent({ profile: initialProfile, busy, perform, notify, error, message, errorRef, onSignOut, onForgetBrowser, onPasskeyUpdated, onAccountClosed, onSecuritySignedOut, onPublicTestimonials, visualTheme, onThemeChange }) {
   const readAccount = useCallback(() => apiRequest('identity/me'), [])
   const account = useLiveResource('accountSecurity', 'signed-in-account', readAccount)
   const profile = account.data || initialProfile
   const client = profile.role === 'Client'
   const operational = isManager(profile.role)
+  const [homePage, setHomePage] = useState(() => clientHomePage() || 'PublicHome')
   const [page, setPage] = useState(() => {
+    if (client && clientHomePage()) return 'Home'
     const hash = window.location.hash.split('?')[0]
     return operational && hash === '#calendario-google' ? 'Management' : operational && hash === '#tarefas' ? 'Tasks' : hash === '#partilhas' ? 'Sharing' : 'Agenda'
   })
   useEffect(() => {
-    const hash = page === 'Sharing' ? '#partilhas' : page === 'Tasks' ? '#tarefas' : ''
+    const hash = page === 'Sharing' ? '#partilhas' : page === 'Tasks' ? '#tarefas' : client && page === 'Home' ? clientHomeHashes[homePage] : ''
     if (hash && window.location.hash !== hash) window.history.replaceState(null, '', hash)
-    else if (!hash && (['#partilhas', '#tarefas'].includes(window.location.hash)
-      || page !== 'Management' && window.location.hash.split('?')[0] === '#calendario-google')) window.history.replaceState(null, '', '#inicio')
-  }, [page])
-  const [homePage, setHomePage] = useState('PublicHome')
+    else if (!hash && (client && clientHomePage() || ['#partilhas', '#tarefas'].includes(window.location.hash)
+      || page !== 'Management' && window.location.hash.split('?')[0] === '#calendario-google')) {
+      window.history.replaceState(null, '', client ? '#agenda' : '#inicio')
+    }
+  }, [client, homePage, page])
   const [consultationEntry, setConsultationEntry] = useState(null)
   const [online, setOnline] = useState(navigator.onLine)
   const [reviewSummary, setReviewSummary] = useState({ count: null, error: '' })
@@ -105,10 +109,31 @@ function WorkspaceContent({ profile: initialProfile, busy, perform, notify, erro
       window.scrollTo(0, 0)
     })
   }
+  const openClientHomeLink = useEffectEvent(event => {
+    const next = clientHomePage()
+    if (!next || page === 'Home' && homePage === next) return
+    if (!confirmLeaving()) {
+      window.history.replaceState(window.history.state, '', event.oldURL)
+      return
+    }
+    setDraftError('')
+    setConsultationEntry(null)
+    setPackEntry(null)
+    setHomePage(next)
+    setPage('Home')
+    window.scrollTo(0, 0)
+  })
+  useEffect(() => {
+    if (!client) return
+    const open = event => openClientHomeLink(event)
+    window.addEventListener('hashchange', open)
+    return () => window.removeEventListener('hashchange', open)
+  }, [client])
+
   function openReviews() { guard(() => { setClientEntry(previous => ({ version: previous.version + 1, view: 'Reviews' })); setPage('Clients') }) }
   const ActiveConsultationPage = page === 'Finance' ? FinancePage : page === 'Consultations' ? ConsultationHistoryPage : AgendaPage
   const navigationItems = [
-    ...(client ? [{ id: 'Home', label: 'Início', icon: 'leaf', active: page === 'Home' }] : []),
+    ...(client ? [{ id: 'Home', label: 'Início', icon: 'home', active: page === 'Home' }] : []),
     ...((client || operational) ? [{ id: 'Agenda', label: 'Agenda', icon: 'calendar', active: page === 'Agenda' }] : []),
     ...(operational ? [{ id: 'Consultations', label: 'Consultas', icon: 'clock', active: page === 'Consultations' }, { id: 'Finance', label: 'Financeiro', icon: 'wallet', active: page === 'Finance' }] : []),
     ...((client || operational) ? [{ id: 'Sharing', label: 'Partilhas', icon: 'heart', active: page === 'Sharing' }] : []),
@@ -118,8 +143,11 @@ function WorkspaceContent({ profile: initialProfile, busy, perform, notify, erro
     ...(operational ? [{ id: 'Management', label: 'Gestão da aplicação', icon: 'settings', active: page === 'Management' }] : []),
     { id: client ? 'Profile' : 'Account', label: 'Meu perfil', icon: 'user', active: ['Profile', 'Account'].includes(page) },
   ]
-  return <AppLayout page={page === 'Home' ? homePage : page} authenticated onHome={client ? () => navigate('Home') : undefined} onResetCapture={event => dirty.current.delete(event.target)} onChangeCapture={event => { const form = event.target.closest('form[data-protect-draft]'); if (form) dirty.current.add(form) }}
-    navigation={<AppNavigation items={navigationItems} onNavigate={navigate} />} session={<><span className="header-label">{client ? 'Cliente' : profile.role === 'TechnicalManager' ? 'Gestor técnico' : 'Gestora-terapeuta'}</span><button className="secondary" disabled={busy} onClick={signOut}>Terminar sessão</button></>} alerts={<>
+  const clientHome = client && page === 'Home'
+  const sharedPresentation = client && ['Home', 'Agenda', 'Sharing'].includes(page)
+  return <AppLayout page={clientHome ? homePage : page} authenticated
+    visualTheme={sharedPresentation ? visualTheme : undefined} onThemeChange={sharedPresentation ? onThemeChange : undefined} onHome={client ? () => navigate('Home') : undefined} onResetCapture={event => dirty.current.delete(event.target)} onChangeCapture={event => { const form = event.target.closest('form[data-protect-draft]'); if (form) dirty.current.add(form) }}
+    navigation={<AppNavigation items={navigationItems} onNavigate={navigate} />} session={<><span className="header-label">{client ? profile.clientName || 'Cliente' : profile.role === 'TechnicalManager' ? 'Gestor técnico' : 'Gestora-terapeuta'}</span><button className="secondary" disabled={busy} onClick={signOut}>Terminar sessão</button></>} alerts={<>
       {!online && <p className="notice" role="status">Sem rede. O preenchimento continua neste formulário enquanto estiver aberto; os envios exigem ligação.</p>}
       {draftError && <p className="notice error" role="alert">{draftError}</p>}
       {(client || operational) && <ConsultationAlerts
@@ -140,7 +168,7 @@ function WorkspaceContent({ profile: initialProfile, busy, perform, notify, erro
           <button className={page === 'Account' ? '' : 'secondary'} aria-current={page === 'Account' ? 'page' : undefined} onClick={() => navigate('Account')}>A minha conta</button>
         </nav> : <div className={styles.notifications}><PushConsent label="Activar notificações neste equipamento" primary disabled={busy} /></div>}
       </section>}
-      {client && page === 'Home' && <PublicPresentation embedded page={homePage} profile={profile} onNavigate={navigateHome}>
+      {clientHome && <PublicPresentation key={homePage} embedded page={homePage} profile={profile} onNavigate={navigateHome}>
         {homePage === 'PublicTestimonials' && <PublicTestimonials onBack={() => navigateHome('PublicHome')} />}
       </PublicPresentation>}
       {!client && page === 'Clients' && <Clients key={clientEntry.version} initialView={clientEntry.view} pendingReviewCount={reviewSummary.count} busy={busy} perform={perform} notify={notify} guard={guard} />}

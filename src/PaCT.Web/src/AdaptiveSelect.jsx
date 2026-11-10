@@ -1,6 +1,7 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import DialogHeader from './DialogHeader'
+import MbWayLogo from './MbWayLogo'
 import styles from './AdaptiveSelect.module.css'
 
 const minimumFont = 12
@@ -104,7 +105,8 @@ function SelectPicker({ id, select, onClose, onChoose }) {
       {options.map(option => <div key={option.index} id={id + '-' + option.index} role="option" aria-selected={option.index === select.selectedIndex}
         aria-disabled={option.disabled || undefined} data-option-index={option.index} className={`${styles.option} ${active === option.index ? styles.active : ''}`}
         onClick={() => choose(option)}>
-        <span data-option-text className={styles.text}>{option.text}</span><span className={styles.indicator} aria-hidden="true" />
+        {option.value === 'MbWay' ? <MbWayLogo compact /> : <span data-option-text className={styles.text}>{option.text}</span>}
+        <span className={styles.indicator} aria-hidden="true" />
       </div>)}
     </div>
   </dialog>, document.body)

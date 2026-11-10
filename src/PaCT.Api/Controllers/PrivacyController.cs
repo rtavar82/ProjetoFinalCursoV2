@@ -13,7 +13,16 @@ public sealed class PrivacyController(PrivacyStore store) : ControllerBase
     private string Account => User.FindFirstValue(ClaimTypes.NameIdentifier)!;
 
     [AllowAnonymous, HttpGet]
-    public async Task<IActionResult> Published(CancellationToken ct) => Ok(new { policy = await store.PublishedAsync(ct) });
+    public async Task<IActionResult> Published(CancellationToken ct)
+    {
+        if (ct.IsCancellationRequested) return StatusCode(StatusCodes.Status499ClientClosedRequest);
+
+        // This public read is bounded by the database timeouts, even if navigation closes the request.
+        var policy = await store.PublishedAsync(CancellationToken.None);
+        if (ct.IsCancellationRequested) return StatusCode(StatusCodes.Status499ClientClosedRequest);
+
+        return Ok(new { policy });
+    }
 
     [Authorize(Roles = Roles.Client), HttpGet("choices")]
     public Task<PrivacyChoice[]> Choices(CancellationToken ct) => store.ChoicesAsync(Account, ct);

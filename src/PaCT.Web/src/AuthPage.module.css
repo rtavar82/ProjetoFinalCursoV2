@@ -28,3 +28,32 @@
 .page :global(.recovery-codes) + :global(.field-help) { margin-bottom: 20px; }
 @media (min-width: 421px) { .page :global(.recovery-codes) { padding: 18px; } .page :global(.recovery-codes) code { font-size: var(--font-size-label); } }
 @media (min-width: 781px) { .page :global(.steps) { display: grid; gap: 20px; margin: 36px 0; } .page :global(.steps) li { gap: 13px; font-size: var(--font-size-small); } .page :global(.steps) li::after { display: none; } }
+.access { gap: var(--space-4); margin: 0; padding-block: var(--space-3) var(--space-8); }
+.access .introduction { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: var(--space-3); min-height: 128px; }
+.access .introduction h1 { margin: 0; }
+.access .introduction img { align-self: end; width: clamp(88px, 28vw, 116px); height: auto; margin-bottom: var(--space-1); }
+.access .panel { width: min(100%, 430px); margin-inline: auto; display: grid; gap: var(--space-3); }
+.access .panel form { margin: 0; gap: var(--space-3); }
+.access .panel :is(input, select) { border-color: var(--field-line); }
+.access .recovery { justify-self: end; width: auto; padding: 0; margin: 0; }
+.access .alternate { display: grid; gap: var(--space-2); }
+.access .alternate:empty { display: none; }
+.access .alternate:not(:empty)::before { content: 'ou'; text-align: center; color: var(--muted); font-size: var(--font-size-caption); }
+.access .alternate button { margin: 0; background: var(--surface); }
+.access .account { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--space-2); border-top: 1px solid var(--line); padding-top: var(--space-3); }
+.access .account p { margin: 0; }
+.access .account button { width: auto; margin: 0; background: var(--tint); }
+.access .guest { margin: 0; padding: 0; }
+.openingActions { display: grid; gap: var(--space-3); }
+.openingActions :global(.text-button) { margin: 0; padding: 0; }
+.step { width: min(100%, 38rem); margin-inline: auto; padding-block: var(--space-6); }
+.page:has(.step) { grid-template-columns: minmax(0, 1fr); margin-block: 0; }
+.page:has(.step) .introduction { display: none; }
+@media (min-width: 760px) {
+  .access { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; gap: clamp(32px, 7vw, 86px); }
+  .access .introduction { position: static; grid-template-columns: minmax(0, 1fr); gap: var(--space-8); }
+  .access .introduction img { justify-self: center; width: clamp(170px, 23vw, 230px); }
+  .openingActions {
+    margin-block-start: min(14.75rem, 41dvh);
+  }
+}

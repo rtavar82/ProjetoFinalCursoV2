@@ -1,88 +1,154 @@
-import { useId, useRef, useState } from 'react'
+import { useRef, useState } from 'react'
+import ActionButton from './ActionButton'
 import AppLayout from './AppLayout'
 import AppIcon from './AppIcon'
+import ConsultationDialog from './ConsultationDialog'
+import Heading from './Heading'
 import PublicServiceCard from './PublicServiceCard'
 import PublicPaymentDialog from './PublicPaymentDialog'
 import PublicExperienceCard from './PublicExperienceCard'
 import PublicExperienceDialog from './PublicExperienceDialog'
 import HomeTestimonialCard from './HomeTestimonialCard'
 import useLiveResource from './useLiveResource'
-import { readPublicPresentation, publicMoney } from './publicPresentationData'
+import { publicCatalogueIntroductions, publicExperiencePreview, publicIndividualPreviews, readPublicPresentation } from './publicPresentationData'
 import styles from './PublicPresentation.module.css'
 
-function PublicAccordion({ label, title, titleId, className = '', bodyClassName = styles.accordionBody, children }) {
-  const detailsRef = useRef(null)
-  const bodyId = useId()
-  function close() {
-    const details = detailsRef.current
-    const summary = details.querySelector('summary')
-    details.open = false
-    summary.focus({ preventScroll: true })
-    summary.scrollIntoView({ block: 'center', behavior: 'instant' })
-  }
-  return <details ref={detailsRef} className={`${styles.accordion} ${className}`}>
-    <summary className={styles.companionHeading}><h2><span className="eyebrow">{label}</span><span id={titleId}>{title}</span></h2><AppIcon name="arrow" /></summary>
-    <div id={bodyId} className={bodyClassName}>{children}</div>
-    <div className={styles.accordionRail}><button type="button" className={styles.floatingClose} aria-label={`Fechar ${label}`} aria-expanded="true" aria-controls={bodyId} onClick={close}><AppIcon name="arrowDown" /></button></div>
-  </details>
-}
+const tabs = [
+  ['PublicHome', 'Início', 'home'], ['PublicAgenda', 'Agenda', 'calendar'], ['PublicSharing', 'Partilhas', 'heart'],
+]
+const childPages = ['PublicAgenda', 'PublicTestimonials', 'PublicSharing']
 
 function ContentOnly({ children }) { return children }
 
-export default function PublicPresentation({ page, onNavigate, children, profile, onAccount, embedded = false }) {
-  const resource = useLiveResource('publicPresentation', 'public-presentation', readPublicPresentation, !['PublicAgenda', 'PublicTestimonials'].includes(page))
-  const [payment, setPayment] = useState(null)
-  const [experienceConditions, setExperienceConditions] = useState(null)
+function TherapistProfile({ person, socialTitle }) {
+  return <div className={styles.profile}>
+    <div className={styles.biography}>
+      <img src={person.heroImage} alt={person.heroAlt} width="640" height="720" />
+      <div><p className="eyebrow">{person.role}</p><Heading>{person.heading}</Heading><p>{person.introduction}</p></div>
+    </div>
+    {(person.summary || person.approach) && <section className={styles.profileSection} aria-label="Abordagem">
+      {person.summary && <p>{person.summary}</p>}
+      {person.approach && <p>{person.approach}</p>}
+    </section>}
+    {person.sections.map((section, index) => <section className={styles.profileSection} key={index}>
+      <Heading level={3}>{section.heading}</Heading><p className={styles.text}>{section.text}</p>
+    </section>)}
+    {person.gallery.length > 0 && <section className={styles.profileSection}><Heading level={3}>{person.galleryTitle}</Heading>
+      <div className={styles.gallery}>{person.gallery.map(photo => <figure key={photo.image}>
+        <img src={photo.image} alt={photo.alt} loading="lazy" width="600" height="600" /><figcaption>{photo.caption}</figcaption>
+      </figure>)}</div>
+    </section>}
+    <div><p className={styles.text}>{person.closing}</p><img className={styles.signature} src={person.signatureImage} alt={`Assinatura de ${person.name}`} loading="lazy" width="240" height="100" /></div>
+    {person.instagram && <section className={styles.profileSection} aria-label="Redes sociais">
+      <p>{socialTitle || 'Acompanha-me também nas redes sociais.'}</p>
+      <a className={styles.actionLink} href={person.instagram} target="_blank" rel="noopener noreferrer"><AppIcon name="instagram" />Instagram</a>
+    </section>}
+  </div>
+}
+
+function Contact({ person, firstName }) {
+  return <section className={styles.contact} aria-labelledby="public-contact">
+    <Heading id="public-contact">Fala com a {firstName}</Heading>
+    <p>Se tens dúvidas sobre qual o serviço indicado para ti, fala com a {firstName}.</p>
+    <div className={styles.contactLinks}>
+      {person.telephone && <a className={styles.actionLink} href={person.telephone}><AppIcon name="phone" />Telefone</a>}
+      {person.whatsapp && <a className={styles.actionLink} href={person.whatsapp} target="_blank" rel="noopener noreferrer"><AppIcon name="whatsapp" />WhatsApp</a>}
+      {person.instagram && <a className={styles.actionLink} href={person.instagram} target="_blank" rel="noopener noreferrer"><AppIcon name="instagram" />Instagram</a>}
+    </div>
+  </section>
+}
+
+export default function PublicPresentation({ page, onNavigate, children, profile, onAccount, embedded = false, visualTheme, onThemeChange }) {
+  const resource = useLiveResource('publicPresentation', 'public-presentation', readPublicPresentation, !childPages.includes(page))
+  const [selected, setSelected] = useState(null)
+  const therapistTrigger = useRef(null)
   const data = resource.data, person = data?.therapist, home = data?.home
-  const individual = data?.services.filter(s => !s.serviceKind && s.options.length > 0) || [], activities = data?.services.filter(s => s.serviceKind) || []
+  const individual = data?.services.filter(s => !s.serviceKind && s.options.length > 0) || []
+  const activities = data?.services.filter(s => s.serviceKind) || []
   const firstName = person?.name.trim().split(/\s+/)[0]
-  const locations = data?.locations || []
-  const paymentService = individual.find(service => service.id === payment)
-  const experienceCards = (data?.experiencePresentations || []).map(experience => ({ experience, service: activities.find(service => [experience.title, ...(experience.serviceTitles || [])].some(title => service.title.trim().toLocaleLowerCase('pt-PT') === title.trim().toLocaleLowerCase('pt-PT'))) }))
-  const selectedExperience = experienceCards.find(card => card.experience.key === experienceConditions)?.experience
+  const experienceCards = (data?.experiencePresentations || []).map(experience => ({ experience,
+    service: activities.find(service => [experience.title, ...(experience.serviceTitles || [])].some(title => service.title.trim().toLocaleLowerCase('pt-PT') === title.trim().toLocaleLowerCase('pt-PT'))) }))
   const otherActivities = activities.filter(service => !experienceCards.some(card => card.service?.id === service.id))
+  const selectedService = data?.services.find(service => service.id === selected?.serviceId)
+  const selectedExperience = experienceCards.find(card => card.experience.key === selected?.experienceKey)
   const Layout = embedded ? ContentOnly : AppLayout
-  function showServices(event) {
-    event.preventDefault()
-    const section = document.getElementById('servicos')
-    const accordion = section?.querySelector('details')
-    if (accordion) accordion.open = true
-    section?.scrollIntoView({ block: 'start' })
-    section?.focus({ preventScroll: true })
+  const isHome = page === 'PublicHome'
+  const individualCards = publicIndividualPreviews(individual)
+  const introductions = publicCatalogueIntroductions(home)
+  function agenda(id) {
+    setSelected(null)
+    onNavigate('PublicAgenda', id)
   }
-  return <Layout page={page} publicNavigation onHome={() => onNavigate('PublicHome')} navigation={<nav className={styles.navigation} aria-label="Navegação principal"><button type="button" aria-current={['PublicHome', 'PublicTestimonials'].includes(page) ? 'page' : undefined} onClick={() => onNavigate('PublicHome')}><AppIcon name="leaf" />Início</button><button type="button" aria-current={page === 'PublicAgenda' ? 'page' : undefined} onClick={() => onNavigate('PublicAgenda')}><AppIcon name="calendar" />Agenda</button><button type="button" aria-current={page === 'PublicSharing' ? 'page' : undefined} onClick={() => onNavigate('PublicSharing')}><AppIcon name="heart" />Partilhas</button></nav>}
-    session={profile ? <button type="button" className="secondary" onClick={onAccount}>Voltar à minha área</button> : <><span>Visitante</span><button type="button" className="secondary" onClick={() => onNavigate('SignIn')}>Iniciar sessão</button></>}>
-    <div className={`${styles.page} ${page === 'PublicHome' ? styles.homePage : ''}`}>
-      {['PublicAgenda', 'PublicTestimonials', 'PublicSharing'].includes(page) ? children : <>
-        {resource.error && <div role="alert" className="notice error"><p>{resource.error}</p><button type="button" className="text-button" onClick={resource.refresh}>Voltar a tentar</button></div>}
-        {page === 'PublicHome' ? <>
-          <section className={styles.hero}><div><p className="eyebrow">{person ? `${person.name} · Transformação Feminina` : 'Transformação Feminina'}</p><h1 data-typography="hero-title">{home?.heroTitle ?? 'Bem-vinda ao teu espaço de'} <em>{home?.heroEmphasis ?? 'libertação e leveza.'}</em></h1><p className={styles.text}>{home?.heroIntroduction ?? 'Quando as mesmas dinâmicas se repetem e o peso do dia a dia se torna demasiado, não tens de olhar para tudo sozinha.'}</p><div className={styles.actions}><a className={styles.actionLink} href="#servicos" onClick={showServices}>Conhecer os serviços <AppIcon name="arrowDown" /></a><button type="button" className={styles.actionLink} onClick={() => onNavigate('PublicAgenda')}>Ver agenda <AppIcon name="calendar" /></button></div></div><div className={styles.art} aria-hidden="true"><AppIcon name="leaf" /><p className={styles.text}>{home?.heroNote ?? 'Um tempo para parar.\nUm espaço para ti.'}</p></div></section>
-          {person && <PublicAccordion label={home?.companionLabel ?? 'Quem te acompanha'} title={person.name} className={styles.companion} bodyClassName={styles.companionContent}>
-            <p>{person.role}</p><div><p>{person.summary}</p><p>{person.approach}</p><button className="secondary" onClick={() => onNavigate('PublicTherapist')}>Conhecer a Terapeuta {firstName} <AppIcon name="arrow" /></button></div>
-          </PublicAccordion>}
-          <section id="servicos" tabIndex="-1" className={styles.section} aria-labelledby="public-services"><PublicAccordion label={home?.servicesLabel ?? 'Como te posso ajudar hoje?'} title={home?.servicesTitle ?? 'Escolhe o teu ponto de partida.'} titleId="public-services"><p className={styles.text}>{home?.servicesIntroduction ?? 'Sessões individuais, presenciais ou online, para diferentes momentos do teu caminho.'}</p>
-            {resource.loading && <p role="status">A consultar os serviços…</p>}
-            {data && !individual.length && <p>Os serviços serão apresentados aqui quando estiverem disponíveis.</p>}
-            <div className={styles.services}>{individual.map(service => <PublicServiceCard key={service.id} service={service} onPayment={setPayment} onAgenda={id => onNavigate('PublicAgenda', id)} />)}</div>
-          </PublicAccordion></section>
-          {data && <section className={styles.experiences} aria-labelledby="public-experiences"><PublicAccordion label={home?.experiencesLabel ?? 'Experiências em grupo'} title={home?.experiencesTitle ?? 'Partilhar também faz parte do caminho.'} titleId="public-experiences"><p className={styles.text}>{home?.experiencesIntroduction ?? 'Grupos, oficinas e retiros decorrem em datas próprias, com vagas limitadas.'}</p>
-            {experienceCards.length > 0 && <div className={styles.services}>{experienceCards.map(({ experience, service }) => <PublicExperienceCard key={experience.key} experience={experience} service={service} onConditions={setExperienceConditions} onAgenda={id => onNavigate('PublicAgenda', id)} />)}</div>}
-            {otherActivities.length > 0 && <div className={styles.services}>{otherActivities.map(service => <article className={styles.card} key={service.id}><h3>{service.title}</h3>{service.presentation?.description && <p>{service.presentation.description}</p>}{service.options.map(o => <p key={o.id}>{o.publicLocation} · {publicMoney(o)}</p>)}<button className="secondary" onClick={() => onNavigate('PublicAgenda', service.id)}>Ver na agenda</button></article>)}</div>}
-            {!experienceCards.length && !activities.length && <><ul>{data.experiences.map(title => <li key={title}>{title}</li>)}</ul><button type="button" className={styles.actionLink} onClick={() => onNavigate('PublicAgenda')}><AppIcon name="calendar" />Consultar a agenda de grupos e retiros</button></>}
-          </PublicAccordion></section>}
-          <HomeTestimonialCard onNavigate={onNavigate} />
-          {data && <section className={styles.section} aria-labelledby="public-locations"><PublicAccordion label={home?.placesLabel ?? 'Ao teu encontro'} title={home?.placesTitle ?? 'Presencial ou à distância.'} titleId="public-locations"><ul className={styles.locations}>{locations.map(location => <li key={`${location.modality}:${location.name}`}><AppIcon name={location.modality === 'Remote' ? 'video' : 'pin'} /><div><h3>{location.name}</h3><p className={styles.text}>{location.description}</p></div></li>)}</ul></PublicAccordion></section>}
-        </> : person && <>
-          <button type="button" className="text-button" onClick={() => onNavigate('PublicHome')}>← Voltar ao início</button>
-          <section className={styles.biography}><div><p className="eyebrow">{person.role}</p><h1>{person.name}</h1><h2>{person.heading}</h2><p>{person.introduction}</p></div><img src={person.heroImage} alt={person.heroAlt} width="640" height="720" /></section>
-          {person.sections.map((section, index) => <section className={styles.split} key={index}><h2>{section.heading}</h2><p className={styles.text}>{section.text}</p></section>)}
-          <section className={styles.section}><h2>{person.galleryTitle}</h2><div className={styles.gallery}>{person.gallery.map(photo => <figure key={photo.image}><img src={photo.image} alt={photo.alt} loading="lazy" width="600" height="600" /><figcaption>{photo.caption}</figcaption></figure>)}</div></section><p className={styles.text}>{person.closing}</p><img className={styles.signature} src={person.signatureImage} alt={`Assinatura de ${person.name}`} loading="lazy" width="240" height="100" />
-        </>}
-        {person && <><section className={styles.contact} aria-labelledby="public-help"><h2 id="public-help">{home?.helpTitle ?? 'Não sabes por onde começar?'}</h2><p className={styles.text}>{home?.helpText ?? `Fala com a ${firstName} para perceber qual o serviço que faz sentido para o teu momento. Os pedidos de consulta aguardam confirmação.`}</p><div className={styles.contactLinks}>{person.telephone && <a className={styles.actionLink} href={person.telephone}><AppIcon name="phone" />Falar com a {firstName}</a>}{person.whatsapp && <a className={styles.actionLink} href={person.whatsapp} target="_blank" rel="noopener noreferrer"><AppIcon name="whatsapp" />Falar com a {firstName} no WhatsApp</a>}<button type="button" className={styles.actionLink} onClick={() => onNavigate('PublicAgenda')}><AppIcon name="calendar" />Consultar a agenda</button></div></section>
-          {person.instagram && <section className={styles.social} aria-labelledby="public-social"><h2 id="public-social">{home?.socialTitle ?? 'Acompanha-me também nas redes sociais.'}</h2><a href={person.instagram} target="_blank" rel="noopener noreferrer"><AppIcon name="instagram" />Instagram<AppIcon name="arrow" /></a></section>}</>}
+  const useDefaultTitle = !home?.heroTitle || home.heroTitle === 'Bem-vinda ao teu espaço de' && home.heroEmphasis === 'libertação e leveza.'
+  const useDefaultIntro = !home?.heroIntroduction || home.heroIntroduction === 'Quando as mesmas dinâmicas se repetem e o peso do dia a dia se torna demasiado, não tens de olhar para tudo sozinha.'
+  return <Layout page={page} publicNavigation visualTheme={visualTheme} onThemeChange={onThemeChange}
+    onHome={() => onNavigate('PublicHome')} navigation={<nav className={styles.navigation} aria-label="Navegação principal">
+      {tabs.map(([id, label, icon]) => <ActionButton key={id} aria-current={id === page || id === 'PublicHome' && ['PublicTherapist', 'PublicTestimonials'].includes(page) ? 'page' : undefined}
+        onClick={() => onNavigate(id)}><AppIcon name={icon} />{label}</ActionButton>)}
+    </nav>}
+    session={profile ? <ActionButton variant="secondary" onClick={onAccount}>Voltar à minha área</ActionButton> : <ActionButton variant="text" onClick={() => onNavigate('SignIn')}>Iniciar sessão</ActionButton>}>
+    <div className={`${styles.page} ${isHome ? styles.home : ''}`}>
+      {childPages.includes(page) ? children : <>
+        {resource.error && <div role="alert" className="notice error"><p>{resource.error}</p><ActionButton variant="text" onClick={resource.refresh}>Voltar a tentar</ActionButton></div>}
+        {isHome ? <>
+          <section className={styles.hero}>
+            <div className={styles.heroContent}>
+              <div className={styles.heroCopy}>
+                <p className="eyebrow">Transformação Feminina</p>
+                <Heading level={1} appearance="hero-title">{useDefaultTitle ? <>Acompanhamento <em>ao teu ritmo</em></> : <>{home.heroTitle} <em>{home.heroEmphasis}</em></>}</Heading>
+                <p className={styles.text}>{useDefaultIntro ? 'Sessões de Constelação Familiar, Reiki e Desenvolvimento Pessoal, com opções presenciais e online.' : home.heroIntroduction}</p>
+              </div>
+              {person && <div className={styles.introduction}>
+                <img src={person.heroImage} alt="" width="640" height="720" />
+                <ActionButton ref={therapistTrigger} variant="text" className={styles.actionLink} aria-haspopup="dialog" onClick={() => setSelected({ therapist: true })}>Conhecer a {person.name}</ActionButton>
+              </div>}
+              <details className={styles.catalogue}>
+                <summary><span>Ver serviços</span><AppIcon name="arrowDown" /></summary>
+                <div className={styles.catalogueContent}>
+                  {resource.loading && <p role="status">A consultar os serviços…</p>}
+                  {data && !individual.length && !experienceCards.length && !activities.length && !data.experiences.length && <p>Os serviços serão apresentados aqui quando estiverem disponíveis.</p>}
+                  {individual.length > 0 && <section aria-label="Sessões individuais">
+                    <Heading>Sessões individuais</Heading>
+                    {introductions.individual && <p>{introductions.individual}</p>}
+                    <div className={styles.services}>{individualCards.map(({ service, preview }) => <PublicServiceCard key={service.id} service={service} preview={preview} onDetails={() => setSelected({ serviceId: service.id })} />)}</div>
+                  </section>}
+                  {data && <section aria-label="Grupos, oficinas e retiros">
+                    <Heading>Grupos, oficinas e retiros</Heading>
+                    {introductions.experiences && <p>{introductions.experiences}</p>}
+                    <div className={styles.services}>
+                      {experienceCards.map(({ experience }) => <PublicExperienceCard key={experience.key} experience={experience} preview={publicExperiencePreview(experience)} onDetails={() => setSelected({ experienceKey: experience.key })} />)}
+                      {otherActivities.map(service => <PublicServiceCard key={service.id} service={service} onDetails={() => setSelected({ serviceId: service.id })} />)}
+                    </div>
+                    {!experienceCards.length && !activities.length && <><ul>{data.experiences.map(title => <li key={title}>{title}</li>)}</ul>
+                      <ActionButton variant="text" className={styles.actionLink} onClick={() => agenda()}>Consultar a agenda de grupos e retiros</ActionButton></>}
+                  </section>}
+                </div>
+              </details>
+            </div>
+          </section>
+          <div className={styles.support}>
+            <HomeTestimonialCard onNavigate={onNavigate} />
+            <section className={styles.places} aria-labelledby="public-locations">
+              <Heading id="public-locations">Onde acontecem</Heading>
+              <p>As sessões online são por videochamada, via WhatsApp ou Google Meet. O local das sessões presenciais é indicado na <ActionButton variant="text" className={styles.inlineLink} onClick={() => agenda()}>Agenda</ActionButton>.</p>
+              <p><strong>Vila Nova de São Bento:</strong> Disponibilidade limitada a dias específicos. Consulta a agenda e filtra por este local.</p>
+            </section>
+            {person && <Contact person={person} firstName={firstName} />}
+          </div>
+        </> : person && <div className={styles.standalone}>
+          <ActionButton variant="text" className={styles.actionLink} onClick={() => onNavigate('PublicHome')}>← Voltar ao início</ActionButton>
+          <Heading level={1}>{person.name}</Heading>
+          <TherapistProfile person={person} socialTitle={home?.socialTitle} />
+        </div>}
       </>}
-      {paymentService && <PublicPaymentDialog key={paymentService.id} service={paymentService} information={data.paymentInformation} person={person} onClose={() => setPayment(null)} />}
-      {selectedExperience && <PublicExperienceDialog key={selectedExperience.key} experience={selectedExperience} information={data.paymentInformation} person={person} onClose={() => setExperienceConditions(null)} />}
+      {selected?.therapist && person && <ConsultationDialog title={<span className={styles.profileTitle}><img src="/borboleta.png" alt="" width="378" height="330" />{person.name}</span>}
+        label={person.name} className={styles.profileDialog} onClose={() => { setSelected(null); requestAnimationFrame(() => therapistTrigger.current?.focus({ preventScroll: true })) }}>
+        <TherapistProfile person={person} socialTitle={home?.socialTitle} />
+      </ConsultationDialog>}
+      {selectedExperience && data && <PublicExperienceDialog experience={selectedExperience.experience} service={selectedExperience.service} information={data.paymentInformation}
+        person={person} onAgenda={() => agenda(selectedExperience.service?.id)} onClose={() => setSelected(null)} />}
+      {selectedService && data && <PublicPaymentDialog service={selectedService} information={data.paymentInformation}
+        person={person} onAgenda={() => agenda(selectedService.id)} onClose={() => setSelected(null)} />}
     </div>
   </Layout>
 }

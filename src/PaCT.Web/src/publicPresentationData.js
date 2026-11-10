@@ -16,7 +16,6 @@ export async function readPublicPresentation(signal) {
     || person.sections.some(s => typeof s.heading !== 'string' || typeof s.text !== 'string')
     || person.gallery.some(p => typeof p.alt !== 'string' || typeof p.caption !== 'string')
     || !/^(https:\/\/wa\.me\/\d+)?$/.test(person.whatsapp) || !/^(tel:\+\d+)?$/.test(person.telephone) || !/^(https:\/\/www\.instagram\.com\/[a-zA-Z0-9_.]+\/)?$/.test(person.instagram)
-    || !Array.isArray(data.locations) || data.locations.some(location => typeof location.name !== 'string' || typeof location.description !== 'string' || !['Remote', 'InPerson'].includes(location.modality))
     || !Array.isArray(data.experiences) || data.experiences.some(title => typeof title !== 'string')
     || data.experiencePresentations != null && (!Array.isArray(data.experiencePresentations) || data.experiencePresentations.some(item => !['key', 'title', 'introduction', 'description', 'durationText', 'priceText'].every(key => typeof item[key] === 'string')
       || item.isFree != null && typeof item.isFree !== 'boolean'
@@ -37,6 +36,73 @@ export async function readPublicPresentation(signal) {
   return data
 }
 
+const individualPreviews = [
+  {
+    title: 'Sessão Individual de Constelação Familiar',
+    previous: 'Olhar para o que se repete.',
+    introduction: 'Explora dinâmicas familiares, relações e padrões que se repetem, num espaço de escuta.',
+  },
+  {
+    title: 'Sessão de Reiki & Alinhamento Energético',
+    previous: 'Um momento de pausa e cuidado.',
+    introduction: 'Uma sessão dedicada ao relaxamento, à escuta e ao equilíbrio pessoal.',
+  },
+  {
+    title: 'Consultas «Sentir Além do Olhar»',
+    previous: 'Um caminho, lado a lado.',
+    introduction: 'Acompanhamento individual de desenvolvimento pessoal, adaptado ao teu momento.',
+    icon: 'sparkles',
+  },
+]
+const experiencePreviews = {
+  'constelacao-grupo': {
+    previous: 'Um olhar partilhado, em grupo.',
+    introduction: 'Explora dinâmicas familiares num encontro de escuta e partilha em grupo.',
+  },
+  'oficina-dons-cura': {
+    previous: 'Um encontro de partilha e experiências.',
+    introduction: 'Um encontro para partilhar dons, talentos e experiências. O tema é apresentado em cada edição.',
+    icon: 'sparkles',
+  },
+  retiro: {
+    previous: 'Mais tempo para parar e estar presente.',
+    introduction: 'Um ou vários dias de práticas e atividades. Uma única inscrição abrange o programa completo.',
+  },
+}
+
+export const publicGroupRegistration = 'Com conta registada, a inscrição fica confirmada se existir vaga. Sem conta, o pedido aguarda confirmação da terapeuta.'
+
+export function publicCatalogueIntroductions(home) {
+  const individual = home?.servicesIntroduction
+  const experiences = home?.experiencesIntroduction
+  return {
+    individual: !individual || individual === 'Sessões individuais, presenciais ou online, para diferentes momentos do teu caminho.'
+      ? 'Encontra o acompanhamento que faz sentido para ti.' : individual,
+    experiences: !experiences || experiences === 'Grupos, oficinas e retiros decorrem em datas próprias, com vagas limitadas.'
+      ? 'Experiências em grupo, com datas próprias e vagas limitadas.' : experiences,
+  }
+}
+
+export function publicIndividualPreviews(services) {
+  const titleKey = title => title.trim().replace(/[“”«»]/g, '"').toLocaleLowerCase('pt-PT')
+  return services.map(service => {
+    const key = titleKey(service.title)
+    const index = individualPreviews.findIndex(item => titleKey(item.title) === key)
+    if (index === -1) return { service, order: individualPreviews.length }
+    const { title, previous, introduction, icon } = individualPreviews[index]
+    return {
+      service, order: index,
+      preview: { title, icon, introduction: !service.presentation || service.presentation.introduction === previous ? introduction : undefined },
+    }
+  }).sort((a, b) => a.order - b.order)
+}
+
+export function publicExperiencePreview(experience) {
+  const copy = Object.hasOwn(experiencePreviews, experience.key) ? experiencePreviews[experience.key] : undefined
+  if (!copy) return undefined
+  return { icon: copy.icon, introduction: experience.introduction === copy.previous ? copy.introduction : undefined }
+}
+
 export const publicMode = option => option.modality === 'Remote' ? 'Online' : 'Presencial'
 export const publicMoney = option => option.paymentMode === 'Free' ? 'Gratuito' : option.paymentMode === 'Contribution' ? 'Contribuição livre e consciente' : option.referencePrice == null ? 'Valor por definir' : agendaMoney(option.referencePrice)
 export function publicLocations(options) {
@@ -46,9 +112,15 @@ export function publicLocations(options) {
   }])).values()]
 }
 
+export const clientHomeHashes = { PublicHome: '#inicio', PublicTestimonials: '#testemunhos' }
+
+export function clientHomePage(hash = window.location.hash) {
+  return Object.keys(clientHomeHashes).find(page => clientHomeHashes[page] === hash)
+}
+
 export function publicRoute() {
   const [path, query] = window.location.hash.slice(1).split('?')
   const service = new URLSearchParams(query).get('servico')
-  return { stage: path === 'entrar' ? 'SignIn' : path === 'terapeuta' ? 'PublicTherapist' : path === 'testemunhos' ? 'PublicTestimonials' : path === 'partilhas' ? 'PublicSharing' : path === 'agenda' ? 'PublicAgenda' : 'PublicHome',
+  return { stage: path === 'entrar' ? 'SignIn' : path === 'terapeuta' ? 'PublicTherapist' : path === 'testemunhos' ? 'PublicTestimonials' : path === 'partilhas' ? 'PublicSharing' : path === 'agenda' ? 'PublicAgenda' : path ? 'PublicHome' : 'PublicOpening',
     serviceId: service && /^[0-9a-f-]{36}$/i.test(service) ? service : '' }
 }

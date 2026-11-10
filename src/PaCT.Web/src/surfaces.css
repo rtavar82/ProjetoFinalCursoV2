@@ -1,10 +1,11 @@
 .ui-card, .record-panel { min-width: 0; border: 1px solid var(--line); border-radius: var(--card-radius); padding: var(--card-padding); background: var(--surface); overflow-wrap: anywhere; }
+[data-ui='icon'] { width: var(--icon-size); height: var(--icon-size); }
 .ui-card--record { padding: 12px 24px 14px; }
 .ui-card--plain { padding: 0; border: 0; background: transparent; }
 .ui-dialog { background: var(--surface); color: var(--ink); border: 1px solid var(--line); border-radius: var(--card-radius); }
 .ui-dialog::backdrop { background: var(--dialog-backdrop); }
-.ui-dialog-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.ui-dialog-header { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-4); }
 .ui-dialog-header > :first-child:not(button) { min-width: 0; }
-.ui-dialog-header .ui-dialog-close { flex: 0 0 44px; width: 44px; min-height: 44px; height: 44px; margin: 0 0 0 auto; padding: 0; border: 2px solid var(--accent); border-radius: 12px; color: var(--ink); background: var(--surface); font-size: var(--font-size-icon); line-height: 1.4; text-decoration: none; }
+.ui-dialog-header .ui-dialog-close { flex: 0 0 var(--control-height); width: var(--control-height); min-height: var(--control-height); height: var(--control-height); margin: 0 0 0 auto; padding: 0; border: 2px solid var(--accent); border-radius: var(--control-radius); color: var(--ink); background: var(--surface); font-size: var(--font-size-icon); line-height: 1.4; text-decoration: none; }
 .ui-dialog-header .ui-dialog-close:hover:not(:disabled) { background: var(--tint); color: var(--ink); }
 @media (max-width: 359px) { .ui-card--record { padding-inline: 16px; } }

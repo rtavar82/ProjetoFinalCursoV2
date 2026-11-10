@@ -7,6 +7,9 @@ export function inspectDesignCss(source, file, tokens = new Set()) {
   const issues = [], tree = postcss.parse(source, { from: file })
   const issue = (node, message) => issues.push(`${file}:${node.source.start.line}: ${message}`)
   tree.walkDecls(decl => {
+    if (/^--(?:theme-|space-|page-gutter$|page-width$|reading-width$|control-height$|field-height$|control-radius$|surface-inverse-text$)/.test(decl.prop) && file !== 'design-tokens.css') {
+      issue(decl, 'Definir a paleta e a escala de espaçamento e controlos apenas em design-tokens.css.')
+    }
     if (/^--(?:font-size-|body-font$|heading-font$|code-font$)/.test(decl.prop) && file !== 'design-tokens.css') issue(decl, 'Definir tokens tipográficos apenas em design-tokens.css.')
     if (decl.prop === 'font-family' && file !== 'typography.css') issue(decl, 'A família de letra pertence à base typography.css, não à página/componente.')
     if (decl.prop === 'font' && file !== 'typography.css') issue(decl, 'Não redefinir a tipografia através de font; reutilizar um papel tipográfico.')

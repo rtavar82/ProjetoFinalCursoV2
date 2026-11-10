@@ -19,6 +19,7 @@ public interface IConsultationStore
         => ReadAsync(data => read(data, null), ct);
     Task<ConversationPage> ReadConversationAsync(string id, ConsultationActor actor, long? before, CancellationToken ct) => ReadAsync(data => ConsultationConversation.Page(data, id, actor, before), ct);
     Task<T> ReadAgendaAsync<T>(Func<ConsultationData, T> read, CancellationToken ct) => ReadAsync(read, ct);
+    Task<T> ReadPublicPresentationAsync<T>(Func<ConsultationData, T> read, CancellationToken ct) => ReadAsync(read, ct);
     Task<T> ReadSchedulingAsync<T>(Func<ConsultationData, T> read, CancellationToken ct) => ReadAsync(read, ct);
     Task<T> ReadEventCatalogueAsync<T>(Func<ConsultationData, T> read, CancellationToken ct) => ReadAsync(read, ct);
     Task<ConsultationResult> ExecuteAsync(ConsultationCommand input, ConsultationActor actor, CancellationToken ct);
@@ -97,6 +98,22 @@ public sealed class MySqlConsultationStore(DatabaseConnectionSettings settings, 
     public Task<T> ReadAsync<T>(Func<ConsultationData, T> read, CancellationToken ct) => ReadCore(read, false, ct);
     public Task<T> ReadAgendaAsync<T>(Func<ConsultationData, T> read, CancellationToken ct) =>
         WithCalendar(() => ReadCore(read, true, ct), ct);
+
+    public async Task<T> ReadPublicPresentationAsync<T>(Func<ConsultationData, T> read, CancellationToken ct)
+    {
+        await using var connection = settings.CreateConnection();
+        await connection.OpenAsync(ct);
+        await using var transaction = await connection.BeginTransactionAsync(System.Data.IsolationLevel.RepeatableRead, ct);
+        var data = new ConsultationData
+        {
+            PublishedSite = await PaCT.Api.Management.MySqlSitePresentationStore.ReadPublished(connection, transaction, security, ct)
+        };
+        await FillRecords(connection, transaction, "consultation_services", data.Services, ct);
+        var result = read(data);
+        await transaction.CommitAsync(ct);
+        return result;
+    }
+
     public Task<T> ReadSchedulingAsync<T>(Func<ConsultationData, T> read, CancellationToken ct) =>
         WithCalendar(() => ReadAsync(read, ct), ct);
 
@@ -184,9 +201,15 @@ public sealed class MySqlConsultationStore(DatabaseConnectionSettings settings, 
         await using (var reader = await command.ExecuteReaderAsync(ct))
             while (await reader.ReadAsync(ct)) data.Participations.Add(new(reader.GetGuid(0).ToString(), reader.GetGuid(1).ToString(), reader.IsDBNull(2) ? null : reader.GetGuid(2).ToString(), reader.GetString(3), DateTimeOffset.UnixEpoch));
     }
-    private Task<T> ReadCore<T>(Func<ConsultationData, T> read, bool agendaOnly, CancellationToken ct) =>
-        Write((_, _, data) => Task.FromResult(read(data)), ct, agendaOnly: agendaOnly, synchronizeClock: true,
+    private Task<T> ReadCore<T>(Func<ConsultationData, T> read, bool agendaOnly, CancellationToken ct)
+    {
+        if (ct.IsCancellationRequested) return Task.FromCanceled<T>(ct);
+
+        // Once started, finish the lifecycle synchronization independently of the HTTP request.
+        // Connection, command and lock waits still use their configured MySQL timeouts.
+        return Write((_, _, data) => Task.FromResult(read(data)), CancellationToken.None, agendaOnly: agendaOnly, synchronizeClock: true,
             operation: agendaOnly ? "agenda-read" : "consultation-read");
+    }
 
     // Persist only lifecycle changes before serving a read. Public snapshots remain stripped of private fields.
     internal static async Task PersistLifecycle(MySqlConnection connection, MySqlTransaction transaction, DateTimeOffset now, CancellationToken ct)
@@ -386,7 +409,9 @@ public sealed class MySqlConsultationStore(DatabaseConnectionSettings settings, 
             data.PublishedSite = await PaCT.Api.Management.MySqlSitePresentationStore.ReadPublished(connection, transaction, security, ct);
             data.GoogleCalendar = googleCalendar?.Current ?? GoogleCalendarSnapshot.Empty;
             var result = await action(connection, transaction, data);
-            await transaction.CommitAsync(ct); return result;
+            // Once the transaction's work succeeds, finish the commit even if the caller disconnects.
+            await transaction.CommitAsync(CancellationToken.None);
+            return result;
         }
         finally
         {
@@ -488,12 +513,7 @@ public sealed class MySqlConsultationStore(DatabaseConnectionSettings settings, 
     internal static async Task<ConsultationData> Load(MySqlConnection connection, MySqlTransaction transaction, CancellationToken ct, bool agendaOnly = false)
     {
         var data = new ConsultationData();
-        async Task Fill<T>(string table, List<T> destination)
-        {
-            await using var command = Command(connection, transaction, "SELECT data FROM " + table + " ORDER BY id");
-            await using var reader = await command.ExecuteReaderAsync(ct);
-            while (await reader.ReadAsync(ct)) destination.Add(JsonSerializer.Deserialize<T>(reader.GetString(0))!);
-        }
+        Task Fill<T>(string table, List<T> destination) => FillRecords(connection, transaction, table, destination, ct);
         await Fill("consultation_services", data.Services); await Fill("availability_windows", data.Windows);
         await Fill("consultations", data.Consultations);
         await Fill("guest_consultation_requests", data.GuestRequests);
@@ -522,6 +542,15 @@ public sealed class MySqlConsultationStore(DatabaseConnectionSettings settings, 
         }
         return data;
     }
+
+    private static async Task FillRecords<T>(MySqlConnection connection, MySqlTransaction transaction, string table,
+        List<T> destination, CancellationToken ct)
+    {
+        await using var command = Command(connection, transaction, "SELECT data FROM " + table + " ORDER BY id");
+        await using var reader = await command.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct)) destination.Add(JsonSerializer.Deserialize<T>(reader.GetString(0))!);
+    }
+
     private static IEnumerable<(string Table, string Id, object Value)> Rows(ConsultationData data) =>
         data.Services.Select(x => ("consultation_services", x.Id, (object)x))
         .Concat(data.Events.Select(x => ("group_events", x.Id, (object)x)))
