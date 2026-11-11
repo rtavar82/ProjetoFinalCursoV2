@@ -17,8 +17,8 @@ export function GoogleSignInButton({ busy, perform }) {
   })}><span>Entrar com a conta</span><img className={styles.googleWordmark} src="/google-wordmark.svg" alt="Google" width="74" height="24" /></button>
 }
 
-export default function AccountSecuritySettings({ busy, perform, notify, guard, onSignedOut }) {
-  const { data: google, error } = useLiveResource('accountSecurity', 'google-status', readGoogle)
+export default function AccountSecuritySettings({ busy, perform, notify, guard, onSignedOut, view }) {
+  const { data: google, error } = useLiveResource('accountSecurity', 'google-status', readGoogle, view !== 'password')
   const operationId = useRef(crypto.randomUUID())
   function passwordChange(event) {
     event.preventDefault(); const form = event.currentTarget
@@ -36,29 +36,33 @@ export default function AccountSecuritySettings({ busy, perform, notify, guard, 
       if (google.linked) { onSignedOut(result.message); return }
       if (result.url !== '/api/identity/google/challenge') throw new Error('Não foi possível associar o Google.')
       window.location.assign(result.url)
-    }))
+    }), view ? form : undefined)
   }
-  return <>
-    <InformationCard cardId="password-settings"><section className={styles.section} aria-labelledby="password-settings-title">
-      <h3 id="password-settings-title">Palavra-passe</h3>
+  const password = <section className={styles.section} aria-labelledby={view ? undefined : 'password-settings-title'}>
+      {!view && <h3 id="password-settings-title">Palavra-passe</h3>}
       <details className={styles.action}><summary>Alterar palavra-passe</summary>
         <p>Recebe um email com o link para escolheres a nova palavra-passe.</p>
-        <form onSubmit={passwordChange}><PasswordField label="Palavra-passe atual" name="password" autoComplete="current-password" required maxLength="128" />
+        <form data-protect-draft={!!view || undefined} onSubmit={passwordChange}><PasswordField label="Palavra-passe atual" name="password" autoComplete="current-password" required maxLength="128" />
           <button disabled={busy}>Enviar email para alterar a palavra-passe</button>
         </form>
       </details>
-    </section></InformationCard>
-    <InformationCard cardId="google-settings"><section className={styles.section} aria-labelledby="google-settings-title">
-      <h3 id="google-settings-title">Google</h3>
+    </section>
+  const googleContent = <section className={styles.section} aria-labelledby={view ? undefined : 'google-settings-title'}>
+      {!view && <h3 id="google-settings-title">Google</h3>}
       {error && <p className="notice error" role="alert">{error}</p>}
       {google?.linked && <p>Conta Google associada: {google.email}</p>}
       {google?.enabled === false && !google.linked && <p>A entrada com Google ainda não está disponível.</p>}
       {(google?.enabled || google?.linked) && <details className={styles.action}><summary>{google.linked ? 'Desassociar Google' : 'Associar conta Google'}</summary>
         <p>{google.linked ? 'Poderás continuar a entrar com o teu email e a palavra-passe.' : 'Usa a tua conta Google para entrar. A tua palavra-passe e as Passkeys mantêm-se.'}</p>
-        <form onSubmit={googleChange}><PasswordField label="Confirma a tua palavra-passe" name="password" autoComplete="current-password" required maxLength="128" />
+        <form data-protect-draft={!!view || undefined} onSubmit={googleChange}><PasswordField label="Confirma a tua palavra-passe" name="password" autoComplete="current-password" required maxLength="128" />
           <button disabled={busy}>{google.linked ? 'Confirmar desassociação' : 'Continuar para o Google'}</button>
         </form>
       </details>}
-    </section></InformationCard>
+    </section>
+  if (view === 'password') return password
+  if (view === 'google') return googleContent
+  return <>
+    <InformationCard cardId="password-settings">{password}</InformationCard>
+    <InformationCard cardId="google-settings">{googleContent}</InformationCard>
   </>
 }

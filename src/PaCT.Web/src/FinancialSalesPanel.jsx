@@ -1,4 +1,5 @@
 import { useCallback, useState } from 'react'
+import AccountRecordDetail from './AccountRecordDetail'
 import ActionButton from './ActionButton'
 import AdaptiveSelect from './AdaptiveSelect'
 import CardGrid from './CardGrid'
@@ -16,19 +17,31 @@ import { apiRequest } from './identityApi'
 import { agendaDate, agendaMoney, setDateRangeParams } from './agendaTime'
 import { saleKinds } from './financialSales'
 
-export default function FinancialSalesPanel({ personId = null, own = false, send, disabled, guard = action => action(), feedback, perform, notify }) {
+export default function FinancialSalesPanel({ personId = null, own = false, send, disabled, guard = action => action(), feedback, perform, notify, inline = false, enabled = true }) {
   const [creating, setCreating] = useState(false), [detailId, setDetailId] = useState(null)
   const [page, setPage] = useState(1), [client, setClient] = useState(null), [filters, setFilters] = useState('')
   const [filterError, setFilterError] = useState('')
+  if (inline && !enabled && detailId) setDetailId(null)
   const person = personId || client?.id || ''
   const query = `page=${page}${person ? '&personId=' + person : ''}${filters}`
   const read = useCallback(signal => apiRequest('finance/sales?' + query, undefined, { signal }), [query])
-  const list = useLiveResource('sales', query, read)
+  const list = useLiveResource('sales', query, read, enabled)
   const readDetail = useCallback(signal => apiRequest('finance/sales/' + detailId, undefined, { signal }), [detailId])
-  const detail = useLiveResource('sales', 'sale:' + detailId, readDetail, !!detailId)
+  const detail = useLiveResource('sales', 'sale:' + detailId, readDetail, enabled && !!detailId)
   const names = useConsultationNames(list.data?.items || [], detail.data, !own)
+  const Detail = inline ? AccountRecordDetail : ConsultationDialog
+  const detailTitle = own ? 'Compra e recebimentos' : 'Venda e recebimentos'
+  function closeDetail() {
+    setDetailId(null)
+    if (inline) requestAnimationFrame(() => document.getElementById('account-sale-' + detailId)?.focus())
+  }
+  const detailProps = inline
+    ? { back: 'Voltar às compras', onBack: closeDetail, disabled, loading: detail.loading, error: detail.error, onRetry: detail.refresh }
+    : { label: own ? 'Detalhe da compra' : 'Detalhe da venda', onClose: closeDetail }
+  const details = detail.data && <SaleDetails sale={detail.data} clientName={own ? 'A tua compra' : names.data?.[detail.data.personId]} />
   return <section aria-label={own ? 'As minhas compras' : personId ? 'Vendas do cliente' : 'Vendas'}>
-    <InformationCard title={own ? 'As minhas compras' : 'Vendas'} cardId="sales-header" actions={!personId && !own && <ActionButton disabled={disabled || !!list.error || !list.data} onClick={() => guard(() => setCreating(true))}>Registar venda</ActionButton>}>
+    <div hidden={inline && !!detailId}>
+    <InformationCard title={inline ? undefined : own ? 'As minhas compras' : 'Vendas'} cardId="sales-header" actions={!personId && !own && <ActionButton disabled={disabled || !!list.error || !list.data} onClick={() => guard(() => setCreating(true))}>Registar venda</ActionButton>}>
       {!personId && !own && <p>Regista artigos, packs e serviços já pagos. Podes juntar várias linhas e métodos de recebimento.</p>}
       <details><summary>{own ? 'Pesquisar compras' : 'Pesquisar vendas'}</summary><form onSubmit={event => {
         event.preventDefault(); const values = new FormData(event.currentTarget); const query = new URLSearchParams()
@@ -49,14 +62,15 @@ export default function FinancialSalesPanel({ personId = null, own = false, send
     {list.data && <><SummaryCard cardId="sales-count" label={own ? 'Compras registadas' : 'Vendas registadas'} value={list.data.total} unit="registos" icon="wallet" />
       <CardGrid>{list.data.items.map(sale => <InformationCard key={sale.id} as="article" cardId={'sale-' + sale.id} title={sale.lines.map(line => line.name).join(' · ')}>
         {!own && <p>{sale.anonymous ? 'Venda anónima' : names.data?.[sale.personId] || 'Ficha de cliente'}</p>}<p>{agendaDate(sale.effectiveAt)} · {agendaMoney(sale.total)} · Paga</p>
-        <ActionButton variant="text" disabled={disabled} onClick={() => setDetailId(sale.id)}>{own ? 'Ver compra e recebimentos' : 'Ver venda e recebimentos'}</ActionButton>
+        <ActionButton variant="text" id={inline ? 'account-sale-' + sale.id : undefined} disabled={disabled} onClick={() => setDetailId(sale.id)}>{inline ? 'Ver detalhe' : own ? 'Ver compra e recebimentos' : 'Ver venda e recebimentos'}</ActionButton>
       </InformationCard>)}</CardGrid>
       {list.data.total === 0 && <InformationCard cardId="sales-empty"><p>{own ? 'Não existem compras nesta pesquisa.' : 'Não existem vendas nesta pesquisa.'}</p></InformationCard>}
       <Pagination total={list.data.total} page={page} pageSize={list.data.pageSize} correctPage={!list.error} label="Páginas das vendas" disabled={disabled} onChange={setPage} />
     </>}
+    </div>
     {creating && <SaleEditor send={send} disabled={disabled} guard={guard} feedback={feedback} perform={perform} notify={notify} onClose={() => { setCreating(false); setPage(1) }} />}
-    {detailId && <ConsultationDialog title={own ? 'Compra e recebimentos' : 'Venda e recebimentos'} label={own ? 'Detalhe da compra' : 'Detalhe da venda'} onClose={() => setDetailId(null)}><InformationCard variant="plain" cardId="sale-detail" loading={detail.loading} error={detail.error} onRetry={detail.refresh}>
-      {detail.data && <SaleDetails sale={detail.data} clientName={own ? 'A tua compra' : names.data?.[detail.data.personId]} />}
-    </InformationCard></ConsultationDialog>}
+    {enabled && detailId && <Detail key={detailId} title={detailTitle} {...detailProps}>
+      {inline ? details : <InformationCard variant="plain" cardId="sale-detail" loading={detail.loading} error={detail.error} onRetry={detail.refresh}>{details}</InformationCard>}
+    </Detail>}
   </section>
 }

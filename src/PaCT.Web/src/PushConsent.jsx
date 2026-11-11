@@ -40,5 +40,5 @@ export default function PushConsent({ label = 'Ativar notificações neste dispo
     } catch (failure) { setMessage(failure.message || 'Não foi possível ativar as notificações neste dispositivo.'); showWarning('Não foi possível ativar as notificações. Consulta a indicação junto do botão.') }
     finally { setBusy(false) }
   }
-  return <div className="account-actions">{(supported || primary) && <button className={primary ? '' : 'secondary'} type="button" disabled={disabled || busy || !navigator.onLine || !supported || needsConsent} onClick={enable}>{busy ? 'A ativar…' : label}</button>}{needsConsent && <p>Autoriza primeiro as notificações na secção de privacidade.</p>}{!supported && <p>Este navegador não permite notificações no dispositivo. Os avisos continuam na aplicação.</p>}{message && <p role="status">{message}</p>}</div>
+  return <div className="account-actions" data-pending-command={busy || undefined}>{(supported || primary) && <button className={primary ? '' : 'secondary'} type="button" disabled={disabled || busy || !navigator.onLine || !supported || needsConsent} onClick={enable}>{busy ? 'A ativar…' : label}</button>}{needsConsent && <p>Autoriza primeiro as notificações na conta.</p>}{!supported && <p>Este navegador não permite notificações no dispositivo. Os avisos continuam na aplicação.</p>}{message && <p role="status">{message}</p>}</div>
 }

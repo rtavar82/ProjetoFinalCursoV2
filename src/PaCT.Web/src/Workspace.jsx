@@ -58,7 +58,10 @@ function WorkspaceContent({ profile: initialProfile, busy, perform, notify, erro
   const [packEntry, setPackEntry] = useState(null)
   const [draftError, setDraftError] = useState('')
   const dirty = useRef(new Set())
-  function hasDraft() { for (const form of dirty.current) if (!form.isConnected) dirty.current.delete(form); return dirty.current.size > 0 }
+  function hasDraft(submittedForm) {
+    for (const form of dirty.current) if (!form.isConnected) dirty.current.delete(form)
+    return [...dirty.current].some(form => form !== submittedForm)
+  }
   useEffect(() => {
     function leaving(event) { if ([...dirty.current].some(form => form.isConnected) || document.querySelector('[data-pending-command="true"]')) { event.preventDefault(); event.returnValue = '' } }
     window.addEventListener('beforeunload', leaving)
@@ -94,11 +97,11 @@ function WorkspaceContent({ profile: initialProfile, busy, perform, notify, erro
     navigator.serviceWorker?.addEventListener('message', openPayments)
     return () => navigator.serviceWorker?.removeEventListener('message', openPayments)
   }, [client, operational])
-  function confirmLeaving() {
+  function confirmLeaving(submittedForm) {
     if (document.querySelector('[data-pending-command="true"]')) { setDraftError('Aguarda a confirmação da operação antes de sair desta área.'); return false }
-    return !hasDraft() || window.confirm('Tens alterações por guardar. Queres sair desta área e descartá-las?')
+    return !hasDraft(submittedForm) || window.confirm('Tens alterações por guardar. Queres sair desta área e descartá-las?')
   }
-  async function guard(action) { if (confirmLeaving()) { try { setDraftError(''); await action() } catch (failure) { setDraftError(failure.message) } } }
+  async function guard(action, submittedForm) { if (confirmLeaving(submittedForm)) { try { setDraftError(''); await action() } catch (failure) { setDraftError(failure.message) } } }
   function signOut() { guard(onSignOut) }
   function navigate(next) { if (next !== page || next === 'Home') guard(() => { setConsultationEntry(null); setPackEntry(null); if (next === 'Home') { setHomePage('PublicHome'); window.scrollTo(0, 0) } setPage(next) }) }
   function openPack(id) { guard(() => {

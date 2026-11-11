@@ -1,0 +1,55 @@
+.menu {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-3);
+  margin-block: var(--space-4);
+}
+
+.menu > button {
+  min-width: 0;
+  min-height: var(--control-height);
+  margin: 0;
+  padding-inline: var(--space-2);
+  white-space: normal;
+}
+
+.entries,
+.detail {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.detail[hidden] {
+  display: none;
+}
+
+.entry {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.entry h3,
+.entry p,
+.entry button,
+.detailHeader h2,
+.detailHeader button {
+  margin: 0;
+}
+
+.entry p,
+.detailHeader h2 {
+  margin-block-start: var(--space-2);
+}
+
+@media (max-width: 30rem) {
+  .menu,
+  .entry {
+    gap: var(--space-2);
+  }
+
+  .entry button {
+    padding-inline: var(--space-2);
+  }
+}

@@ -2,7 +2,7 @@ import { enrollPasskey } from './passkeys'
 import styles from './PasskeySettings.module.css'
 import PasswordField from './PasswordField'
 
-export default function PasskeySettings({ enabled, required, busy, perform, onUpdated, notify }) {
+export default function PasskeySettings({ enabled, required, busy, perform, onUpdated, notify, inline = false }) {
   function submit(event) {
     event.preventDefault(); const form = event.currentTarget; const data = new FormData(form)
     perform(async () => {
@@ -16,7 +16,7 @@ export default function PasskeySettings({ enabled, required, busy, perform, onUp
       <label className="checkbox"><input name="remember" type="checkbox" />Reconhecer este navegador durante 30 dias</label>
       <button disabled={busy}>{busy ? 'A confirmar…' : 'Registar Passkey neste dispositivo'}</button>
     </form>
-  return <section className={styles.panel}><h2>Passkeys</h2>
+  return <section className={styles.panel}>{!inline && <h2>Passkeys</h2>}
     <p>Com uma Passkey, proteges a tua conta com autenticação de dois fatores (2FA): depois da palavra-passe, confirmas a entrada no teu dispositivo.</p>
     <p>{enabled ? 'A tua conta está protegida com Passkey.' : required ? 'Regista uma Passkey para concluir o acesso à tua conta.' : 'Se quiseres ativar esta proteção, regista uma Passkey abaixo.'}</p>
     {!enabled && !required && <p>Se reconheceres este navegador, durante 30 dias só precisas da palavra-passe para entrar. Depois, voltas a confirmar com a Passkey e podes escolher mais 30 dias. Sem esta opção, precisas da Passkey em cada nova entrada. Escolhe-a apenas num dispositivo pessoal.</p>}
