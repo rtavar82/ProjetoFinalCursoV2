@@ -1,3 +1,4 @@
+import DisclosureSummary from './DisclosureSummary'
 import { useState } from 'react'
 import PublicPaymentMethods from './PublicPaymentMethods'
 import styles from './ConsultationConditionsForm.module.css'
@@ -16,7 +17,7 @@ export function ConditionsContent({ conditions, terms }) {
 export function ConditionsAcceptanceFields({ conditions, terms, disabled, accepted, onChange, required = false, children }) {
   const advance = conditions?.mode === 'Prepayment'
   return <details className={styles.conditions}>
-    <summary>{conditions?.paymentInformation || advance ? 'Ler condições de pagamento' : 'Ler condições da consulta'}</summary>
+    <DisclosureSummary>{conditions?.paymentInformation || advance ? 'Ler condições de pagamento' : 'Ler condições da consulta'}</DisclosureSummary>
     <ConditionsContent conditions={conditions} terms={terms} />
     <div className={styles.acceptance}>
       <label className="checkbox"><input type="checkbox" name="accept" checked={accepted} required={required} disabled={disabled} onChange={event => onChange(event.target.checked)} />{conditions?.paymentInformation || advance ? 'Li e aceito as condições e a forma de pagamento apresentada.' : 'Li e aceito as condições da consulta.'}</label>

@@ -1,3 +1,5 @@
+import Heading from './Heading'
+import useRecoveryState from './useRecoveryState'
 import { useEffect, useRef, useState } from 'react'
 import useLiveResource from './useLiveResource'
 import useEditorState from './useEditorState'
@@ -8,8 +10,8 @@ import styles from './Testimonials.module.css'
 
 export default function TestimonialManager({ guard, onPublic }) {
   const resource = useLiveResource('testimonials', 'testimonial-management', readManagedTestimonials)
-  const [editingId, edit] = useState(null)
-  const [newItem, setNew] = useState(null)
+  const [editingId, edit] = useRecoveryState('view:testimonial:editing', null)
+  const [newItem, setNew] = useRecoveryState('view:testimonial:new', null)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const pending = useRef(false)
@@ -30,7 +32,7 @@ export default function TestimonialManager({ guard, onPublic }) {
     })
   }
   return <section className={styles.manager} aria-labelledby="testimonial-management-title" data-pending-command={busy || undefined}>
-    <h1 id="testimonial-management-title">Testemunhos</h1>
+    <Heading level={1} id="testimonial-management-title">Testemunhos</Heading>
     <div className={styles.editorActions}><button type="button" disabled={busy} onClick={create}>Nova publicação</button><button type="button" className="secondary" disabled={busy} onClick={() => guard(onPublic)}>Ver página pública</button></div>
     {(resource.error || error) && <div className="notice error" role="alert"><p>{error || resource.error}</p>{resource.error && <button type="button" className="secondary" onClick={resource.refresh}>Voltar a tentar</button>}</div>}
     {resource.loading && <p role="status">A consultar as publicações…</p>}
@@ -47,7 +49,7 @@ export default function TestimonialManager({ guard, onPublic }) {
 }
 
 function TestimonialEditor({ item, onSaved, onCancel }) {
-  const editor = useEditorState({ text: item.text, removeImage: false, operationId: crypto.randomUUID() }, item.version)
+  const editor = useEditorState({ text: item.text, removeImage: false, operationId: crypto.randomUUID() }, item.version, 'testimonial:' + item.id)
   const [imageUrl, setImageUrl] = useState(null)
   const [preview, setPreview] = useState(false)
   const [error, setError] = useState('')
@@ -66,7 +68,7 @@ function TestimonialEditor({ item, onSaved, onCancel }) {
   const currentImage = file ? imageUrl : editor.fields?.removeImage ? null : item.imageUrl
   const savedAlready = confirmed || !!item.operationId && item.operationId === editor.fields?.operationId
   function change(name, value) { editor.change(name, value); editor.change('operationId', crypto.randomUUID()) }
-  function cleanUp() { form.current?.reset(); onSaved() }
+  async function cleanUp() { form.current?.reset(); editor.reset(); await editor.flush(); onSaved() }
   async function submit(event) {
     event.preventDefault()
     if (pending.current || savedAlready) return
@@ -74,7 +76,8 @@ function TestimonialEditor({ item, onSaved, onCancel }) {
     const publish = event.nativeEvent.submitter?.value === 'publish' || item.published
     try {
       await editor.ready()
-      await saveTestimonial(item, editor.fields, file, publish)
+      await editor.protectIntent(editor.fields.operationId)
+      await saveTestimonial(item, editor.fields, file, publish, editor.owner)
       showSuccess(publish ? 'Publicação guardada e publicada.' : 'Publicação guardada.', editor.fields.operationId)
       setConfirmed(true); await cleanUp()
     } catch (failure) { setError(failure.message) }

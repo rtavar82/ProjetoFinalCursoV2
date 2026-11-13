@@ -1,3 +1,6 @@
+import moneyText from './moneyText'
+import DisclosureSummary from './DisclosureSummary'
+import AppArrow from './AppArrow'
 import { useCallback, useRef, useState } from 'react'
 import ActionButton from './ActionButton'
 import AppointmentCard from './AppointmentCard'
@@ -15,7 +18,7 @@ import useLiveResource from './useLiveResource'
 const correctionColumns = [
   { key: 'label', label: 'Valor', render: row => row.label },
   { key: 'before', label: 'Antes', render: row => agendaMoney(row.before) },
-  { key: 'after', label: 'Depois', render: row => <strong>{agendaMoney(row.after)}</strong> },
+  { key: 'after', label: 'Depois', render: row => <strong>{moneyText(agendaMoney(row.after))}</strong> },
 ]
 
 export default function ConsultationPriceCorrectionDialog({ selectedClient, disabled, send, feedback, clearFeedback, guard, onClose }) {
@@ -107,7 +110,7 @@ function PriceCorrectionForm({ consultation, clientName, disabled, onReviewing, 
   return <>
     <InformationCard cardId="price-correction-selection">
       <AppointmentSummary consultation={consultation} clientName={clientName} />
-      <p>Valor final atual: <strong>{agendaMoney(consultation.finalAmount)}</strong></p>
+      <p>Valor final atual: <strong>{moneyText(agendaMoney(consultation.finalAmount))}</strong></p>
       {!eligible && <p role="status">Esta consulta já não está disponível para retificação.</p>}
     </InformationCard>
     <form ref={form} hidden={!!review || !eligible} data-protect-draft onSubmit={preview}>
@@ -124,7 +127,7 @@ function PriceCorrectionForm({ consultation, clientName, disabled, onReviewing, 
         { label: 'Por pagar', before: review.debtBefore, after: review.debtAfter },
         { label: 'Saldo do cliente', before: review.balanceBefore, after: review.balanceAfter },
       ]} />
-      {review.creditToRestore > 0 && <p>Crédito a repor: <strong>{agendaMoney(review.creditToRestore)}</strong></p>}
+      {review.creditToRestore > 0 && <p>Crédito a repor: <strong>{moneyText(agendaMoney(review.creditToRestore))}</strong></p>}
       <p>Motivo privado: {review.reason}</p>
       {stale && <p className="notice" role="status">Os dados mudaram. Volta à edição e revê os valores atuais.</p>}
       <div className="button-row">
@@ -133,9 +136,9 @@ function PriceCorrectionForm({ consultation, clientName, disabled, onReviewing, 
       </div>
     </InformationCard>}
     {!!consultation.priceHistory?.length && <InformationCard cardId="price-correction-history">
-      <details><summary>Histórico de retificações</summary>
+      <details><DisclosureSummary>Histórico de retificações</DisclosureSummary>
         <ol>{[...consultation.priceHistory].reverse().map(entry => <li key={entry.id}>
-          <p><time dateTime={entry.at}>{agendaDate(entry.at)}</time> · {agendaMoney(entry.previousAmount)} → <strong>{agendaMoney(entry.amount)}</strong></p>
+          <p><time dateTime={entry.at}>{agendaDate(entry.at)}</time> · {moneyText(agendaMoney(entry.previousAmount))} <AppArrow direction="right" /> <strong>{moneyText(agendaMoney(entry.amount))}</strong></p>
           <p>Motivo privado: {entry.reason}</p>
         </li>)}</ol>
       </details>

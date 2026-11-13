@@ -9,3 +9,14 @@
 .ui-dialog-header .ui-dialog-close { flex: 0 0 var(--control-height); width: var(--control-height); min-height: var(--control-height); height: var(--control-height); margin: 0 0 0 auto; padding: 0; border: 2px solid var(--accent); border-radius: var(--control-radius); color: var(--ink); background: var(--surface); font-size: var(--font-size-icon); line-height: 1.4; text-decoration: none; }
 .ui-dialog-header .ui-dialog-close:hover:not(:disabled) { background: var(--tint); color: var(--ink); }
 @media (max-width: 359px) { .ui-card--record { padding-inline: 16px; } }
+
+.ui-money { display: inline-block; white-space: nowrap; overflow-wrap: normal; word-break: normal; font-variant-numeric: tabular-nums; }
+
+/* Shared label/value rows reserve room for a full six-digit euro amount. */
+.ui-card dl:has(> div > dd .ui-money) { container-type: inline-size; }
+.ui-card dl > div:has(> dd .ui-money) { display: grid; grid-template-columns: minmax(0, 1fr) minmax(12ch, max-content); align-items: baseline; gap: var(--space-3); }
+.ui-card dl > div > dd:has(.ui-money) { margin-inline: 0; text-align: end; }
+@container (width < 280px) {
+  .ui-card dl > div:has(> dd .ui-money) { grid-template-columns: minmax(0, 1fr); gap: var(--space-1); }
+  .ui-card dl > div > dd:has(.ui-money) { justify-self: end; }
+}

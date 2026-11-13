@@ -1,0 +1,46 @@
+.arrow {
+  --arrow-rotation: 0deg;
+  --arrow-motion-x: 0px;
+  --arrow-motion-y: var(--space-2);
+  display: inline-block;
+  flex-shrink: 0;
+  vertical-align: middle;
+  pointer-events: none;
+  animation: app-arrow-cue 1.5s ease-in-out 2;
+}
+.arrow > path {
+  transform-box: view-box;
+  transform-origin: 50% 50%;
+  transform: rotate(var(--arrow-rotation));
+}
+.arrow[data-arrow-direction='up'] {
+  --arrow-rotation: 180deg;
+  --arrow-motion-y: calc(var(--space-2) * -1);
+}
+.arrow[data-arrow-direction='left'] {
+  --arrow-rotation: 90deg;
+  --arrow-motion-x: calc(var(--space-2) * -1);
+  --arrow-motion-y: 0px;
+}
+.arrow[data-arrow-direction='right'] {
+  --arrow-rotation: -90deg;
+  --arrow-motion-x: var(--space-2);
+  --arrow-motion-y: 0px;
+}
+:global(details[open] > summary[data-ui='disclosure']) > .arrow {
+  --arrow-rotation: 180deg;
+  --arrow-motion-x: 0px;
+  --arrow-motion-y: calc(var(--space-2) * -1);
+}
+:global(:is(button, a, summary):is(:focus-visible, :active)) .arrow,
+:global(button:disabled) .arrow,
+:global([data-arrow-paused='true']) .arrow {
+  animation: none;
+}
+@keyframes app-arrow-cue {
+  0%, 100% { translate: 0 0; scale: 1; opacity: 1; }
+  50% { translate: var(--arrow-motion-x) var(--arrow-motion-y); scale: 1.12; opacity: .85; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .arrow { animation: none; }
+}

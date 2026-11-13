@@ -1,0 +1,14 @@
+.field { display: inline-flex; align-items: center; position: relative; width: 100%; min-width: 0; vertical-align: middle; }
+.field[hidden] { display: none; }
+.field > select { appearance: none; -webkit-appearance: none; padding-inline-end: calc(var(--space-6) + var(--space-8)); }
+.indicator {
+  display: grid; place-items: center; position: absolute;
+  inset-inline-end: var(--space-4); top: 50%; transform: translateY(-50%);
+  width: var(--space-6); height: var(--space-6); color: inherit; pointer-events: none;
+}
+.indicator > svg { width: var(--space-6); height: var(--space-6); }
+.field:has(select:focus-visible) .indicator > svg,
+.field:has(select:disabled) .indicator > svg { animation: none; }
+.field:has(select:disabled) .indicator { opacity: .55; }
+
+.field[data-variant='tinted'] > select { background: var(--tint); border-color: var(--accent); color: var(--accent); }

@@ -15,9 +15,28 @@ h6 { font-size: var(--font-size-h6); line-height: 1.4; margin: 12px 0 8px; }
 [data-typography='brand'] { font-family: var(--body-font); font-size: var(--font-size-brand); font-weight: 700; letter-spacing: -1.1px; line-height: 1.1; }
 [data-typography='inherit'][data-typography] { font: inherit; letter-spacing: inherit; }
 [data-typography='sign-in-prompt'] { font-family: var(--body-font); font-size: var(--font-size-sign-in-prompt); font-weight: 600; line-height: 1.45; }
+[data-typography='process-status'][data-typography] { font-size: var(--font-size-body); }
+@media (max-width: 759px) {
+  [data-typography='process-status'][data-typography] { font-size: var(--font-size-caption); }
+}
+[data-typography='calendar-month'] { font-size: var(--font-size-body); }
+[data-typography='calendar-weekday'] { font-size: var(--font-size-small); }
+[data-typography='calendar-day'] { font-size: var(--font-size-lead); }
+[data-typography='calendar-navigation'] { font-size: var(--font-size-icon); line-height: 1; }
 button, input, select, textarea { font-family: var(--body-font); }
 button { font-size: var(--font-size-action); font-weight: 600; line-height: 1.45; }
 input, select, textarea { font-size: var(--font-size-field); line-height: 1.6; }
 label, legend { font-family: var(--body-font); font-size: var(--font-size-label); font-weight: 600; line-height: 1.5; }
+@media (max-width: 759px) {
+  [data-typography='compact-action'] { font-size: var(--font-size-label); }
+}
 code, pre, kbd { font-family: var(--code-font); }
 .eyebrow { font-family: var(--body-font); font-size: var(--font-size-overline); font-weight: 600; letter-spacing: 1.8px; line-height: 1.6; }
+
+[data-typography='contact-link'] { font-size: var(--font-size-body); }
+@container contacts (width < 360px) {
+  [data-typography='contact-link'] { font-size: var(--font-size-small); }
+}
+@container contacts (width < 260px) {
+  [data-typography='contact-link'] { font-size: var(--font-size-caption); }
+}

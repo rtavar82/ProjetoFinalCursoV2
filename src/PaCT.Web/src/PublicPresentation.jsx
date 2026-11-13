@@ -1,9 +1,15 @@
+import DisclosureSummary from './DisclosureSummary'
+import AppArrow from './AppArrow'
 import { useRef, useState } from 'react'
 import ActionButton from './ActionButton'
 import AppLayout from './AppLayout'
+import AppNavigation from './AppNavigation'
 import AppIcon from './AppIcon'
 import ConsultationDialog from './ConsultationDialog'
 import Heading from './Heading'
+import Signature from './Signature'
+import BrandButterfly from './BrandButterfly'
+import PhotoFrame from './PhotoFrame'
 import PublicServiceCard from './PublicServiceCard'
 import PublicPaymentDialog from './PublicPaymentDialog'
 import PublicExperienceCard from './PublicExperienceCard'
@@ -14,7 +20,7 @@ import { publicCatalogueIntroductions, publicExperiencePreview, publicIndividual
 import styles from './PublicPresentation.module.css'
 
 const tabs = [
-  ['PublicHome', 'Início', 'home'], ['PublicAgenda', 'Agenda', 'calendar'], ['PublicSharing', 'Partilhas', 'heart'],
+  ['PublicHome', 'Início', 'home'], ['PublicAgenda', 'Agenda', 'calendar'], ['PublicSharing', 'Partilhas', 'conversations'],
 ]
 const childPages = ['PublicAgenda', 'PublicTestimonials', 'PublicSharing']
 
@@ -23,7 +29,7 @@ function ContentOnly({ children }) { return children }
 function TherapistProfile({ person, socialTitle }) {
   return <div className={styles.profile}>
     <div className={styles.biography}>
-      <img src={person.heroImage} alt={person.heroAlt} width="640" height="720" />
+      <PhotoFrame frameKey="therapist:portrait" className={styles.biographyPhoto} src={person.heroImage} alt={person.heroAlt} width="640" height="720" />
       <div><p className="eyebrow">{person.role}</p><Heading>{person.heading}</Heading><p>{person.introduction}</p></div>
     </div>
     {(person.summary || person.approach) && <section className={styles.profileSection} aria-label="Abordagem">
@@ -34,11 +40,11 @@ function TherapistProfile({ person, socialTitle }) {
       <Heading level={3}>{section.heading}</Heading><p className={styles.text}>{section.text}</p>
     </section>)}
     {person.gallery.length > 0 && <section className={styles.profileSection}><Heading level={3}>{person.galleryTitle}</Heading>
-      <div className={styles.gallery}>{person.gallery.map(photo => <figure key={photo.image}>
-        <img src={photo.image} alt={photo.alt} loading="lazy" width="600" height="600" /><figcaption>{photo.caption}</figcaption>
+      <div className={styles.gallery}>{person.gallery.map((photo, index) => <figure key={photo.image}>
+        <PhotoFrame frameKey={`therapist:gallery:${index}`} src={photo.image} alt={photo.alt} loading="lazy" width="600" height="600" /><figcaption>{photo.caption}</figcaption>
       </figure>)}</div>
     </section>}
-    <div><p className={styles.text}>{person.closing}</p><img className={styles.signature} src={person.signatureImage} alt={`Assinatura de ${person.name}`} loading="lazy" width="240" height="100" /></div>
+    <div><p className={styles.text}>{person.closing}</p><Signature className={styles.signature} src={person.signatureImage} label={`Assinatura de ${person.name}`} /></div>
     {person.instagram && <section className={styles.profileSection} aria-label="Redes sociais">
       <p>{socialTitle || 'Acompanha-me também nas redes sociais.'}</p>
       <a className={styles.actionLink} href={person.instagram} target="_blank" rel="noopener noreferrer"><AppIcon name="instagram" />Instagram</a>
@@ -50,15 +56,15 @@ function Contact({ person, firstName }) {
   return <section className={styles.contact} aria-labelledby="public-contact">
     <Heading id="public-contact">Fala com a {firstName}</Heading>
     <p>Se tens dúvidas sobre qual o serviço indicado para ti, fala com a {firstName}.</p>
-    <div className={styles.contactLinks}>
-      {person.telephone && <a className={styles.actionLink} href={person.telephone}><AppIcon name="phone" />Telefone</a>}
-      {person.whatsapp && <a className={styles.actionLink} href={person.whatsapp} target="_blank" rel="noopener noreferrer"><AppIcon name="whatsapp" />WhatsApp</a>}
-      {person.instagram && <a className={styles.actionLink} href={person.instagram} target="_blank" rel="noopener noreferrer"><AppIcon name="instagram" />Instagram</a>}
+    <div className={styles.contactLinks} data-ui="contact-links">
+      {person.telephone && <a className={styles.actionLink} data-typography="contact-link" href={person.telephone}><AppIcon name="phone" />Telefone</a>}
+      {person.whatsapp && <a className={styles.actionLink} data-typography="contact-link" href={person.whatsapp} target="_blank" rel="noopener noreferrer"><AppIcon name="whatsapp" />WhatsApp</a>}
+      {person.instagram && <a className={styles.actionLink} data-typography="contact-link" href={person.instagram} target="_blank" rel="noopener noreferrer"><AppIcon name="instagram" />Instagram</a>}
     </div>
   </section>
 }
 
-export default function PublicPresentation({ page, onNavigate, children, profile, onAccount, embedded = false, visualTheme, onThemeChange }) {
+export default function PublicPresentation({ page, onNavigate, children, profile, onAccount, embedded = false }) {
   const resource = useLiveResource('publicPresentation', 'public-presentation', readPublicPresentation, !childPages.includes(page))
   const [selected, setSelected] = useState(null)
   const therapistTrigger = useRef(null)
@@ -81,11 +87,10 @@ export default function PublicPresentation({ page, onNavigate, children, profile
   }
   const useDefaultTitle = !home?.heroTitle || home.heroTitle === 'Bem-vinda ao teu espaço de' && home.heroEmphasis === 'libertação e leveza.'
   const useDefaultIntro = !home?.heroIntroduction || home.heroIntroduction === 'Quando as mesmas dinâmicas se repetem e o peso do dia a dia se torna demasiado, não tens de olhar para tudo sozinha.'
-  return <Layout page={page} publicNavigation visualTheme={visualTheme} onThemeChange={onThemeChange}
-    onHome={() => onNavigate('PublicHome')} navigation={<nav className={styles.navigation} aria-label="Navegação principal">
-      {tabs.map(([id, label, icon]) => <ActionButton key={id} aria-current={id === page || id === 'PublicHome' && ['PublicTherapist', 'PublicTestimonials'].includes(page) ? 'page' : undefined}
-        onClick={() => onNavigate(id)}><AppIcon name={icon} />{label}</ActionButton>)}
-    </nav>}
+  return <Layout page={page} publicNavigation
+    onHome={() => onNavigate('PublicHome')} navigation={<AppNavigation publicNavigation onNavigate={onNavigate} items={tabs.map(([id, label, icon]) => ({
+      id, label, icon, active: id === page || id === 'PublicHome' && ['PublicTherapist', 'PublicTestimonials'].includes(page),
+    }))} />}
     session={profile ? <ActionButton variant="secondary" onClick={onAccount}>Voltar à minha área</ActionButton> : <ActionButton variant="text" onClick={() => onNavigate('SignIn')}>Iniciar sessão</ActionButton>}>
     <div className={`${styles.page} ${isHome ? styles.home : ''}`}>
       {childPages.includes(page) ? children : <>
@@ -99,11 +104,11 @@ export default function PublicPresentation({ page, onNavigate, children, profile
                 <p className={styles.text}>{useDefaultIntro ? 'Sessões de Constelação Familiar, Reiki e Desenvolvimento Pessoal, com opções presenciais e online.' : home.heroIntroduction}</p>
               </div>
               {person && <div className={styles.introduction}>
-                <img src={person.heroImage} alt="" width="640" height="720" />
+                <PhotoFrame frameKey="therapist:portrait" className={styles.introductionPhoto} src={person.heroImage} alt="" width="640" height="720" />
                 <ActionButton ref={therapistTrigger} variant="text" className={styles.actionLink} aria-haspopup="dialog" onClick={() => setSelected({ therapist: true })}>Conhecer a {person.name}</ActionButton>
               </div>}
               <details className={styles.catalogue}>
-                <summary><span>Ver serviços</span><AppIcon name="arrowDown" /></summary>
+                <DisclosureSummary><span>Ver serviços</span></DisclosureSummary>
                 <div className={styles.catalogueContent}>
                   {resource.loading && <p role="status">A consultar os serviços…</p>}
                   {data && !individual.length && !experienceCards.length && !activities.length && !data.experiences.length && <p>Os serviços serão apresentados aqui quando estiverem disponíveis.</p>}
@@ -136,12 +141,12 @@ export default function PublicPresentation({ page, onNavigate, children, profile
             {person && <Contact person={person} firstName={firstName} />}
           </div>
         </> : person && <div className={styles.standalone}>
-          <ActionButton variant="text" className={styles.actionLink} onClick={() => onNavigate('PublicHome')}>← Voltar ao início</ActionButton>
+          <ActionButton variant="text" className={styles.actionLink} onClick={() => onNavigate('PublicHome')}><AppArrow direction="left" /> Voltar ao início</ActionButton>
           <Heading level={1}>{person.name}</Heading>
           <TherapistProfile person={person} socialTitle={home?.socialTitle} />
         </div>}
       </>}
-      {selected?.therapist && person && <ConsultationDialog title={<span className={styles.profileTitle}><img src="/borboleta.png" alt="" width="378" height="330" />{person.name}</span>}
+      {selected?.therapist && person && <ConsultationDialog title={<span className={styles.profileTitle}><BrandButterfly className={styles.profileMark} />{person.name}</span>}
         label={person.name} className={styles.profileDialog} onClose={() => { setSelected(null); requestAnimationFrame(() => therapistTrigger.current?.focus({ preventScroll: true })) }}>
         <TherapistProfile person={person} socialTitle={home?.socialTitle} />
       </ConsultationDialog>}

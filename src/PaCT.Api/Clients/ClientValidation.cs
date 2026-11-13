@@ -43,6 +43,7 @@ public static class ClientValidation
         if (!HasContact(input)) throw new IdentityProblem(400, ContactRequiredMessage);
         if (requireBirthDate && input.BirthDate is null) throw new IdentityProblem(400, BirthDateRequiredMessage);
         if (input.BirthDate > today) throw new IdentityProblem(400, "A data de nascimento não pode ser futura.");
+        if (input.BirthDate > today.AddYears(-18)) throw new IdentityProblem(400, "A idade mínima é de 18 anos.");
         if (input.Gender is not (null or "" or "Male" or "Female")) throw new IdentityProblem(400, "Seleciona um género válido.");
         if (input.ChildrenCount is < 0 or > 65535) throw new IdentityProblem(400, "O número de filhos deve ser um inteiro não negativo.");
         if (input.RelationshipStatus is not (null or "" or "Married" or "Separated" or "Partnered" or "Unpartnered" or "Widowed"))

@@ -1,5 +1,8 @@
 import AdaptiveSelect from './AdaptiveSelect'
-import { useState } from 'react'
+import { nationalPortuguesePhone, portuguesePhonePattern } from './phoneValidation'
+import { useContext } from 'react'
+import useRecoveryState from './useRecoveryState'
+import { ManagerRecoveryFormContext } from './managerRecoveryContext'
 
 // Calling codes checked against ITU National Numbering Plans: https://www.itu.int/oth/t0202
 const countries = [
@@ -25,21 +28,45 @@ const countries = [
   { id: 'IE', name: 'Irlanda', dialCode: '353' },
 ]
 
-export default function PhoneFields({ data = {}, required = false, codeFirst = false }) {
+export default function PhoneFields({ data = {}, required = false }) {
+  const scope = useContext(ManagerRecoveryFormContext)
   const initialCountry = countries.find(country => country.dialCode === data.dialCode)
-  const [countryId, setCountryId] = useState(initialCountry?.id || (data.dialCode ? 'Other' : 'PT'))
-  const [customDialCode, setCustomDialCode] = useState(data.dialCode && !initialCountry ? `+${data.dialCode}` : '')
-  const [hasPhone, setHasPhone] = useState(Boolean(data.phone?.trim()))
+  const [countryId, setCountryId] = useRecoveryState(scope ? 'phone:' + scope + ':countryId' : null, initialCountry?.id || (data.dialCode ? 'Other' : 'PT'))
+  const [customDialCode, setCustomDialCode] = useRecoveryState(scope ? 'phone:' + scope + ':customDialCode' : null, data.dialCode && !initialCountry ? `+${data.dialCode}` : '')
+  const [hasPhone, setHasPhone] = useRecoveryState(scope ? 'phone:' + scope + ':hasPhone' : null, Boolean(data.phone?.trim()))
   const selectedCountry = countries.find(country => country.id === countryId)
+  const portuguese = (selectedCountry?.dialCode || customDialCode.trim().replace(/^\+/, '')) === '351'
+
+  function pastePhone(event) {
+    if (!portuguese) return
+    const text = event.clipboardData.getData('text')
+    const normalized = nationalPortuguesePhone(text)
+    if (normalized === text) return
+    event.preventDefault()
+    const input = event.currentTarget
+    const value = input.value.slice(0, input.selectionStart) + normalized + input.value.slice(input.selectionEnd)
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, value)
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    input.dispatchEvent(new Event('change', { bubbles: true }))
+  }
 
   return <>
     <label>País / indicativo<AdaptiveSelect aria-label="País / indicativo" value={countryId} onChange={event => setCountryId(event.target.value)}>
-      {countries.map(country => <option key={country.id} value={country.id}>{codeFirst ? `+${country.dialCode} · ${country.name}` : `${country.name} (+${country.dialCode})`}</option>)}
+      {countries.map(country => <option key={country.id} value={country.id}>{`${country.name} (+${country.dialCode})`}</option>)}
       <option value="Other">Outro</option>
     </AdaptiveSelect></label>
     {selectedCountry
-      ? <input name="dialCode" type="hidden" value={selectedCountry.dialCode} />
-      : <label>Indicativo — outro país<input name="dialCode" type="tel" value={customDialCode} onChange={event => setCustomDialCode(event.target.value)} onBlur={() => { if (/^[0-9]{1,3}$/.test(customDialCode)) setCustomDialCode(`+${customDialCode}`) }} maxLength="4" pattern="\+?[0-9]{1,3}" title="Indicativo com 1 a 3 algarismos, por exemplo +61." placeholder="+…" required={required || hasPhone} inputMode="tel" autoComplete="tel-country-code" /></label>}
-    <label>Telefone<input name="phone" type="tel" defaultValue={data.phone || ''} maxLength="40" pattern={required || hasPhone ? '.*[0-9].*' : undefined} title="Preenche o telefone com o teu número." required={required} onChange={event => setHasPhone(Boolean(event.target.value.trim()))} inputMode="tel" autoComplete="tel-national" /></label>
+      ? <input name="dialCode" data-recovery-controlled type="hidden" value={selectedCountry.dialCode} />
+      : <label>Indicativo — outro país<input name="dialCode" data-recovery-controlled type="tel" value={customDialCode} onChange={event => setCustomDialCode(event.target.value)} onBlur={() => { if (/^[0-9]{1,3}$/.test(customDialCode)) setCustomDialCode(`+${customDialCode}`) }} maxLength="4" pattern="\+?[0-9]{1,3}" title="Indicativo com 1 a 3 algarismos, por exemplo +61." placeholder="+…" required={required || hasPhone} inputMode="tel" autoComplete="tel-country-code" /></label>}
+    <label>Telefone<input name="phone" type="tel" defaultValue={portuguese ? nationalPortuguesePhone(data.phone || '') : data.phone || ''} maxLength="40" pattern={portuguese ? portuguesePhonePattern : required || hasPhone ? '.*[0-9].*' : undefined} title={portuguese ? 'Para Portugal, indica 9 algarismos, sem contar o indicativo +351.' : 'Preenche o telefone com o teu número.'} required={required} onPaste={pastePhone} onBlur={event => {
+      if (!portuguese) return
+      const input = event.currentTarget
+      const normalized = nationalPortuguesePhone(input.value)
+      if (normalized !== input.value) {
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, normalized)
+        input.dispatchEvent(new Event('input', { bubbles: true }))
+        input.dispatchEvent(new Event('change', { bubbles: true }))
+      }
+    }} onChange={event => setHasPhone(Boolean(event.target.value.trim()))} inputMode="tel" autoComplete="tel-national" /></label>
   </>
 }

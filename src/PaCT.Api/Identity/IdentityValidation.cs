@@ -23,6 +23,7 @@ public static class IdentityValidation
             digits = digits[dial.Length..];
         }
         if (digits.Length is < 3 or > 14 || digits.Length + dial.Length > 15) throw new IdentityProblem(400, "Indica um telefone válido para o indicativo escolhido.");
+        if (dial == "351" && digits.Length != 9) throw new IdentityProblem(400, "Para Portugal, indica um telefone com 9 algarismos, sem contar o indicativo +351.");
         return (dial, digits);
     }
     public static string? MissingNameMessage(string? firstName, string? lastName) =>

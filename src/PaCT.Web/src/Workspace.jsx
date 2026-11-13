@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useEffectEvent, useRef, useState } from 'react'
+import { useCallback, useEffect, useEffectEvent, useLayoutEffect, useRef, useState } from 'react'
 import Clients from './Clients'
 import PersonalProfile from './PersonalProfile'
 import AppLayout from './AppLayout'
@@ -6,7 +6,6 @@ import AppNavigation from './AppNavigation'
 import ActionButton from './ActionButton'
 import Heading from './Heading'
 import AccountPage from './AccountPage'
-import PushConsent from './PushConsent'
 import AgendaPage from './AgendaPage'
 import ConsultationHistoryPage from './ConsultationHistoryPage'
 import FinancePage from './FinancePage'
@@ -24,19 +23,26 @@ import { observeResource } from './liveUpdates'
 import LiveResourceProvider from './LiveResourceProvider'
 import useLiveResource from './useLiveResource'
 import styles from './Workspace.module.css'
+import { installAccountRequestScope } from './managerWriteRecovery'
+import ManagerRecoveryProvider from './ManagerRecoveryProvider'
+import useRecoveryState from './useRecoveryState'
+import { useContext } from 'react'
+import { ManagerRecoveryContext } from './managerRecoveryContext'
 
 export default function Workspace(props) {
-  return <LiveResourceProvider key={props.profile.id}><WorkspaceContent {...props} /></LiveResourceProvider>
+  useLayoutEffect(() => installAccountRequestScope(props.profile.id), [props.profile.id])
+  return <ManagerRecoveryProvider key={props.profile.id} profile={props.profile}><LiveResourceProvider><WorkspaceContent {...props} /></LiveResourceProvider></ManagerRecoveryProvider>
 }
 
-function WorkspaceContent({ profile: initialProfile, busy, perform, notify, error, message, errorRef, onSignOut, onForgetBrowser, onPasskeyUpdated, onAccountClosed, onSecuritySignedOut, onPublicTestimonials, onOpenEntry, visualTheme, onThemeChange, mobileTheme }) {
+function WorkspaceContent({ profile: initialProfile, busy, perform, notify, error, message, errorRef, onSignOut, onForgetBrowser, onPasskeyUpdated, onAccountClosed, onSecuritySignedOut, onPublicTestimonials, onOpenEntry }) {
   const readAccount = useCallback(() => apiRequest('identity/me'), [])
   const account = useLiveResource('accountSecurity', 'signed-in-account', readAccount)
   const profile = account.data || initialProfile
+  const recovery = useContext(ManagerRecoveryContext)
   const client = profile.role === 'Client'
   const operational = isManager(profile.role)
   const [homePage, setHomePage] = useState(() => clientHomePage() || 'PublicHome')
-  const [page, setPage] = useState(() => {
+  const [page, setPage] = useRecoveryState('view:workspace:page', () => {
     if (client && clientHomePage()) return 'Home'
     const hash = window.location.hash.split('?')[0]
     return operational && hash === '#calendario-google' ? 'Management' : operational && hash === '#tarefas' ? 'Tasks' : hash === '#partilhas' ? 'Sharing' : 'Agenda'
@@ -49,18 +55,18 @@ function WorkspaceContent({ profile: initialProfile, busy, perform, notify, erro
       window.history.replaceState({ workspace: true }, '', client ? '#agenda' : '#inicio')
     }
   }, [client, homePage, page])
-  const [consultationEntry, setConsultationEntry] = useState(() =>
+  const [consultationEntry, setConsultationEntry] = useRecoveryState('view:workspace:consultationEntry', () =>
     client && (window.history.state?.entry?.payments || new URLSearchParams(window.location.search).get('view') === 'payments') ? { payments: true } : null)
   const [online, setOnline] = useState(navigator.onLine)
   const [reviewSummary, setReviewSummary] = useState({ count: null, error: '' })
   const [reviewRevision, setReviewRevision] = useState(0)
-  const [clientEntry, setClientEntry] = useState({ version: 0, view: 'Directory' })
-  const [packEntry, setPackEntry] = useState(null)
+  const [clientEntry, setClientEntry] = useRecoveryState('view:workspace:clientEntry', { version: 0, view: 'Directory' })
+  const [packEntry, setPackEntry] = useRecoveryState('view:workspace:packEntry', null)
   const [draftError, setDraftError] = useState('')
   const dirty = useRef(new Set())
   function hasDraft(submittedForm) {
     for (const form of dirty.current) if (!form.isConnected) dirty.current.delete(form)
-    return [...dirty.current].some(form => form !== submittedForm)
+    return [...dirty.current].some(form => form !== submittedForm) || !!recovery?.hasContent()
   }
   useEffect(() => {
     function leaving(event) { if ([...dirty.current].some(form => form.isConnected) || document.querySelector('[data-pending-command="true"]')) { event.preventDefault(); event.returnValue = '' } }
@@ -96,10 +102,12 @@ function WorkspaceContent({ profile: initialProfile, busy, perform, notify, erro
     }
     navigator.serviceWorker?.addEventListener('message', openPayments)
     return () => navigator.serviceWorker?.removeEventListener('message', openPayments)
-  }, [client, operational])
+  }, [client, operational, setConsultationEntry, setPage])
   function confirmLeaving(submittedForm) {
     if (document.querySelector('[data-pending-command="true"]')) { setDraftError('Aguarda a confirmação da operação antes de sair desta área.'); return false }
-    return !hasDraft(submittedForm) || window.confirm('Tens alterações por guardar. Queres sair desta área e descartá-las?')
+    if (!hasDraft(submittedForm)) return true
+    if (!window.confirm('Tens alterações por guardar. Queres sair desta área e descartá-las?')) return false
+    recovery?.clearContent(); return true
   }
   async function guard(action, submittedForm) { if (confirmLeaving(submittedForm)) { try { setDraftError(''); await action() } catch (failure) { setDraftError(failure.message) } } }
   function signOut() { guard(onSignOut) }
@@ -142,8 +150,8 @@ function WorkspaceContent({ profile: initialProfile, busy, perform, notify, erro
   const navigationItems = [
     ...(client ? [{ id: 'Home', label: 'Início', icon: 'home', active: page === 'Home' }] : []),
     ...((client || operational) ? [{ id: 'Agenda', label: 'Agenda', icon: 'calendar', active: page === 'Agenda' }] : []),
-    ...(operational ? [{ id: 'Consultations', label: 'Consultas', icon: 'clock', active: page === 'Consultations' }, { id: 'Finance', label: 'Financeiro', icon: 'wallet', active: page === 'Finance' }] : []),
-    ...((client || operational) ? [{ id: 'Sharing', label: 'Partilhas', icon: 'heart', active: page === 'Sharing' }] : []),
+    ...(operational ? [{ id: 'Consultations', label: 'Consultas', icon: 'clock', active: page === 'Consultations' }, { id: 'Finance', label: 'Financeiro', icon: 'bank', active: page === 'Finance' }] : []),
+    ...((client || operational) ? [{ id: 'Sharing', label: 'Partilhas', icon: 'conversations', active: page === 'Sharing' }] : []),
     ...(!client ? [{ id: 'Clients', label: 'Clientes', icon: 'people', active: page === 'Clients' }] : []),
     ...(operational ? [{ id: 'Testimonials', label: 'Testemunhos', icon: 'heart', active: page === 'Testimonials' }] : []),
     ...(operational ? [{ id: 'Tasks', label: 'Tarefas', icon: 'tasks', active: page === 'Tasks' }] : []),
@@ -153,9 +161,9 @@ function WorkspaceContent({ profile: initialProfile, busy, perform, notify, erro
   const roleLabel = client ? 'Cliente' : profile.role === 'TechnicalManager' ? 'Gestor técnico' : 'Gestora-terapeuta'
   const sessionName = (client ? profile.clientName?.trim() : null) || profile.displayName?.trim() || roleLabel
   const clientHome = client && page === 'Home'
-  const themedLayout = client && ['Home', 'Agenda', 'Sharing', 'Profile', 'Account'].includes(page)
+  const themedLayout = client && ['Home', 'Agenda', 'Sharing', 'Profile', 'Account'].includes(page) || operational && ['Agenda', 'Consultations', 'Finance', 'Account', 'Clients'].includes(page)
   return <AppLayout page={clientHome ? homePage : page} authenticated
-    visualTheme={visualTheme} onThemeChange={onThemeChange} mobileTheme={mobileTheme} themedLayout={themedLayout} onHome={client ? () => navigate('Home') : undefined} onResetCapture={event => dirty.current.delete(event.target)} onChangeCapture={event => { const form = event.target.closest('form[data-protect-draft]'); if (form) dirty.current.add(form) }}
+    themedLayout={themedLayout} onHome={client ? () => navigate('Home') : undefined} onResetCapture={event => dirty.current.delete(event.target)} onChangeCapture={event => { const form = event.target.closest('form[data-protect-draft]'); if (form) dirty.current.add(form) }}
     navigation={<AppNavigation items={navigationItems} onNavigate={navigate} />}
     sessionName={sessionName} sessionRole={client ? undefined : roleLabel}
     session={<ActionButton variant="secondary" disabled={busy} onClick={signOut}>Terminar sessão</ActionButton>} alerts={<>
@@ -173,11 +181,11 @@ function WorkspaceContent({ profile: initialProfile, busy, perform, notify, erro
       {!client && reviewSummary.count > 0 && <div className="notice error review-alert" role="status"><p>{reviewSummary.error ? 'Última informação disponível: ' : ''}{reviewSummary.count === 1 ? 'Existe 1 ocorrência de cliente por analisar.' : `Existem ${reviewSummary.count} ocorrências de clientes por analisar.`}</p><button className="text-button" disabled={busy} onClick={openReviews}>Rever ocorrências de clientes</button></div>}
       {!client && reviewSummary.error && <div className="notice error" role="alert">{reviewSummary.error}<button className="text-button" disabled={busy} onClick={() => setReviewRevision(value => value + 1)}>Voltar a verificar</button></div>}
       {error && <div className="notice error" role="alert" ref={errorRef} tabIndex="-1">{error}</div>}{message && <div className="notice success" role="status">{message}</div>}</>}>
-      {['Profile', 'Account'].includes(page) && <section className={styles.profile} aria-labelledby="my-profile-title"><Heading level={1} id="my-profile-title">Meu perfil</Heading>
-        {client ? <nav className={styles.sections} aria-label="Secções do meu perfil">
+      {client && ['Profile', 'Account'].includes(page) && <section className={styles.profile} aria-labelledby="my-profile-title"><Heading level={1} id="my-profile-title">Meu perfil</Heading>
+        {<nav className={styles.sections} aria-label="Secções do meu perfil">
           <ActionButton variant={page === 'Profile' ? 'primary' : 'secondary'} aria-current={page === 'Profile' ? 'page' : undefined} onClick={() => navigate('Profile')}>Meus dados</ActionButton>
           <ActionButton variant={page === 'Account' ? 'primary' : 'secondary'} aria-current={page === 'Account' ? 'page' : undefined} onClick={() => navigate('Account')}>A minha conta</ActionButton>
-        </nav> : <div className={styles.notifications}><PushConsent label="Activar notificações neste equipamento" primary disabled={busy} /></div>}
+        </nav>}
       </section>}
       {clientHome && <PublicPresentation key={homePage} embedded page={homePage} profile={profile} onNavigate={navigateHome}>
         {homePage === 'PublicTestimonials' && <PublicTestimonials onBack={() => navigateHome('PublicHome')} />}

@@ -1,3 +1,5 @@
+import RecoveryForm from './RecoveryForm'
+import useRecoveryState from './useRecoveryState'
 import DateRangeFields from './DateRangeFields'
 import AdaptiveSelect from './AdaptiveSelect'
 import { useRef, useState } from 'react'
@@ -18,12 +20,12 @@ function daysBetween(from, to) {
 }
 export default function AvailabilityEditorForm({ setup, disabled, publish, refresh, onBack, onSaved, onWorking, onReviewStart, feedback }) {
   const today = dayKey(new Date())
-  const [dates, setDates] = useState({ from: today, to: today }), [selected, setSelected] = useState([today])
-  const [available, setAvailable] = useState(true), [serviceId, setServiceId] = useState(''), [wholeDays, setWholeDays] = useState(true)
-  const [first, setFirst] = useState('10:00'), [last, setLast] = useState('18:00'), [audience, setAudience] = useState('All')
-  const [mode, setMode] = useState(''), [place, setPlace] = useState(''), [review, setReview] = useState(null), [consent, setConsent] = useState(false)
+  const [dates, setDates] = useRecoveryState('availability-editor' + ':dates', { from: today, to: today }), [selected, setSelected] = useRecoveryState('availability-editor' + ':selected', [today])
+  const [available, setAvailable] = useRecoveryState('availability-editor' + ':available', true), [serviceId, setServiceId] = useRecoveryState('availability-editor' + ':serviceId', ''), [wholeDays, setWholeDays] = useRecoveryState('availability-editor' + ':wholeDays', true)
+  const [first, setFirst] = useRecoveryState('availability-editor' + ':first', '10:00'), [last, setLast] = useRecoveryState('availability-editor' + ':last', '18:00'), [audience, setAudience] = useRecoveryState('availability-editor' + ':audience', 'All')
+  const [mode, setMode] = useRecoveryState('availability-editor' + ':mode', ''), [place, setPlace] = useRecoveryState('availability-editor' + ':place', ''), [review, setReview] = useState(null), [consent, setConsent] = useState(false)
   const [clientChoicesConfirmed, setClientChoicesConfirmed] = useState(false)
-  const [error, setError] = useState(''), [reviewing, setReviewing] = useState(false), [scope, setScope] = useState('')
+  const [error, setError] = useState(''), [reviewing, setReviewing] = useState(false), [scope, setScope] = useRecoveryState('availability-editor' + ':scope', '')
   const lock = useRef(false)
   const stale = review && setup.revision !== review.publication.revision
   const nothingToChange = review?.result.ranges?.length === 0
@@ -79,13 +81,13 @@ export default function AvailabilityEditorForm({ setup, disabled, publish, refre
   }
   return <div data-card-id="availability-editor-form"><p className={styles.intro}>Escolhe as datas e revê as alterações antes de publicar. As marcações existentes são mantidas.</p>
     {feedback}{error && <p role="alert" className="notice error">{error}</p>}
-    {!review && <form data-protect-draft onSubmit={e => e.preventDefault()}><fieldset disabled={disabled || reviewing} className={styles.fields}>
+    {!review && <RecoveryForm recoveryKey={'availability:selection'} recoveryScopes={['availability-editor:']} onVerified={onSaved} data-protect-draft onSubmit={e => e.preventDefault()}><fieldset disabled={disabled || reviewing} className={styles.fields}>
       <div className={styles.pair}><DateRangeFields type="date" startLabel="Data inicial" endLabel="Data final" required min={today} value={{ start: dates.from, end: dates.to }} onChange={next => changeDates({ from: next.start, to: next.end })} /></div>
       <nav className={styles.quick} aria-label="Seleção rápida do período">{[['Day', 'Dia'], ['Week', 'Semana'], ['Month', 'Mês']].map(([key, label]) => <button key={key} type="button" className="secondary" aria-pressed={scope === key} onClick={() => preset(key)}>{label}</button>)}</nav>
       <label>Disponibilidade<AdaptiveSelect aria-label="Disponibilidade" value={String(available)} onChange={e => setAvailable(e.target.value === 'true')}><option value="true">Aberta para agendamento</option><option value="false">Indisponível</option></AdaptiveSelect></label>
       {available && <label>Tipo de consulta / evento<AdaptiveSelect aria-label="Tipo de consulta / evento" value={serviceId} onChange={e => chooseService(e.target.value)}><option value="">Livre — consulta escolhida pelo cliente</option>{setup.services.filter(s => s.active !== false).map(s => <option value={s.id} key={s.id}>{s.title}</option>)}</AdaptiveSelect></label>}
-    </fieldset></form>}
-    {event ? <EventEditor fixedService key={serviceId} event={eventSeed || { definition: { serviceId } }} setup={{ data: setup }} dates={dates} disabled={disabled || reviewing} send={input => publish(input, onSaved)} onBack={onBack} /> : <form data-protect-draft onSubmit={preview}>
+    </fieldset></RecoveryForm>}
+    {event ? <EventEditor fixedService key={serviceId} event={eventSeed || { definition: { serviceId } }} setup={{ data: setup }} dates={dates} disabled={disabled || reviewing} send={input => publish(input, onSaved)} onBack={onBack} /> : <RecoveryForm recoveryKey={'availability:definition'} recoveryScopes={['availability-editor:']} onVerified={onSaved} data-protect-draft onSubmit={preview}>
       {!review ? <fieldset className={styles.fields} disabled={disabled || reviewing}>
         <fieldset className={styles.days}><legend>Dias a alterar</legend><div className={styles.dayChoices}>{days.map(day => <label key={day}><input type="checkbox" checked={selected.includes(day)} disabled={day < today} onChange={e => setSelected(e.target.checked ? [...selected, day] : selected.filter(value => value !== day))} />{labelDay(day)}</label>)}</div>
           {days.length > 1 && <div className={styles.dayTools}><button type="button" className="text-button" onClick={() => setSelected(weekdays(days.filter(day => day >= today)))}>Segunda a sexta</button><button type="button" className="text-button" onClick={() => setSelected(days.filter(day => day >= today))}>Todos os dias</button><button type="button" className="text-button" onClick={() => setSelected([])}>Limpar seleção</button></div>}
@@ -103,11 +105,11 @@ export default function AvailabilityEditorForm({ setup, disabled, publish, refre
         <p className={styles.help}>{available ? '10h–18h é apenas a predefinição. ' : ''}Só os dias assinalados são alterados.</p>
       </fieldset> : <>
         <section className={styles.summary} aria-label="Rever alterações"><h3>Rever alterações</h3><p>{review.publication.selectedDays.length} {review.publication.selectedDays.length === 1 ? 'dia' : 'dias'} · {available ? `Aberta · inícios ${first}–${last}` : 'Indisponível'} · {wholeDays ? 'substitui o horário dos dias selecionados' : 'altera apenas as horas escolhidas'}</p><p>{review.publication.selectedDays.map(labelDay).join(' · ')}</p>{available && <p>{service?.title || 'Consulta livre'} · {audience === 'All' ? 'Visitantes e registados' : 'Só registados'} · {mode === 'Remote' ? 'Remota' : mode === 'InPerson' ? 'Presencial' : 'Modalidade livre'}{mode !== 'Remote' ? ' · ' + (place || 'Local livre') : ''}</p>}<p>As marcações existentes são mantidas.</p></section>
-        {review.result.conflicts.length > 0 ? <><section className={styles.conflicts} role="alert" aria-label={hasGoogleBlocks ? 'Horários protegidos' : 'Horários com marcações'}><h3>{hasGoogleBlocks ? 'Há horários protegidos' : 'Há horários com marcações'}</h3><ul>{review.result.conflicts.map(c => <li key={c.id}><strong>{c.process.processLabel}</strong><br />{agendaDate(c.startsAt)} — {agendaDate(c.endsAt)}</li>)}</ul><p>{hasGoogleBlocks ? 'Os blocos do Google, as marcações e as respetivas pausas ficam como estão.' : 'Estes horários e os 30 minutos de pausa ficam como estão.'}</p></section>{!nothingToChange && <label className={styles.check}><input type="checkbox" checked={consent} disabled={disabled} onChange={e => setConsent(e.target.checked)} /><span>Quero alterar os restantes horários e manter estes blocos.</span></label>}</> : <p className={styles.help} role="status">Sem sobreposições. A agenda volta a ser verificada ao publicar.</p>}
+        {review.result.conflicts.length > 0 ? <><section className={styles.conflicts} role="alert" aria-label={hasGoogleBlocks ? 'Horários protegidos' : 'Horários com marcações'}><h3>{hasGoogleBlocks ? 'Há horários protegidos' : 'Há horários com marcações'}</h3><ul>{review.result.conflicts.map(c => <li key={c.id}><strong data-typography="process-status">{c.process.processLabel}</strong><br />{agendaDate(c.startsAt)} — {agendaDate(c.endsAt)}</li>)}</ul><p>{hasGoogleBlocks ? 'Os blocos do Google, as marcações e as respetivas pausas ficam como estão.' : 'Estes horários e os 30 minutos de pausa ficam como estão.'}</p></section>{!nothingToChange && <label className={styles.check}><input type="checkbox" checked={consent} disabled={disabled} onChange={e => setConsent(e.target.checked)} /><span>Quero alterar os restantes horários e manter estes blocos.</span></label>}</> : <p className={styles.help} role="status">Sem sobreposições. A agenda volta a ser verificada ao publicar.</p>}
         {nothingToChange && <p className="notice" role="status">{hasGoogleBlocks ? 'Não há horários livres para alterar. Escolhe outras datas ou horas.' : 'Não há horários sem marcações para alterar. Escolhe outras datas ou horas.'}</p>}
         {stale && <p className="notice" role="status">A agenda mudou. Volta à edição e revê as alterações.</p>}
       </>}
       <div className={styles.actions}>{review ? <><button type="button" className="secondary" disabled={disabled} onClick={() => setReview(null)}>Voltar à edição</button><button type="button" disabled={disabled || stale || nothingToChange || review.result.conflicts.length > 0 && !consent} onClick={confirm}>Validar e publicar</button></> : <><button type="button" className="secondary" disabled={disabled || reviewing} onClick={onBack}>Voltar à agenda</button><button disabled={disabled || reviewing || !selected.length}>{reviewing ? 'A rever…' : 'Rever antes de validar'}</button></>}</div>
-    </form>}
+    </RecoveryForm>}
   </div>
 }

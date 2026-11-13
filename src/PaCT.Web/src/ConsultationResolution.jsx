@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import useRecoveryState from './useRecoveryState'
 import ClosureForm from './ClosureForm'
 import CreditSettlementForm from './CreditSettlementForm'
 import { FinancialEntryForm } from './FinancePanel'
@@ -7,7 +7,7 @@ import styles from './Consultations.module.css'
 const outcomes = [['Performed', 'Consulta realizada'], ['NoShow', 'Não compareceu'], ['CancelledManager', 'Cancelada pela gestora']]
 
 export default function ConsultationResolution({ detail, people, disabled, guard, submit, onClose, instant, act }) {
-  const [choice, setChoice] = useState(null)
+  const [choice, setChoice] = useRecoveryState('view:resolution:' + detail.id, null)
   return <section className={styles.resolution} aria-label="Tratar consulta">
     {!choice ? <><h3>Como queres tratar esta consulta?</h3><div className={styles.resolutionActions}>
       {detail.actions?.includes('Receipt') && <button type="button" className="secondary" disabled={disabled} onClick={() => setChoice('Receipt')}>Registar recebimento</button>}

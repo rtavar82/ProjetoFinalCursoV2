@@ -1,3 +1,4 @@
+import DisclosureSummary from './DisclosureSummary'
 import { enrollPasskey } from './passkeys'
 import styles from './PasskeySettings.module.css'
 import PasswordField from './PasswordField'
@@ -17,10 +18,10 @@ export default function PasskeySettings({ enabled, required, busy, perform, onUp
       <button disabled={busy}>{busy ? 'A confirmar…' : 'Registar Passkey neste dispositivo'}</button>
     </form>
   return <section className={styles.panel}>{!inline && <h2>Passkeys</h2>}
-    <p>Com uma Passkey, proteges a tua conta com autenticação de dois fatores (2FA): depois da palavra-passe, confirmas a entrada no teu dispositivo.</p>
+    <p>A Passkey acrescenta uma confirmação de segurança à entrada, depois da palavra-passe.</p>
     <p>{enabled ? 'A tua conta está protegida com Passkey.' : required ? 'Regista uma Passkey para concluir o acesso à tua conta.' : 'Se quiseres ativar esta proteção, regista uma Passkey abaixo.'}</p>
-    {!enabled && !required && <p>Se reconheceres este navegador, durante 30 dias só precisas da palavra-passe para entrar. Depois, voltas a confirmar com a Passkey e podes escolher mais 30 dias. Sem esta opção, precisas da Passkey em cada nova entrada. Escolhe-a apenas num dispositivo pessoal.</p>}
-    {enabled ? <details><summary>Registar outra Passkey como alternativa</summary>{form}</details> : form}
-    <p>A impressão digital, o reconhecimento facial ou o PIN são tratados pelo dispositivo. Não são enviados para a PaCT.</p>
+    {!enabled && !required && <p>Num dispositivo pessoal, podes dispensar a Passkey neste navegador durante 30 dias. Continuas a precisar da palavra-passe.</p>}
+    {enabled ? <details><DisclosureSummary>Registar outra Passkey como alternativa</DisclosureSummary>{form}</details> : form}
+    <p>A impressão digital, o rosto e o PIN ficam no dispositivo; não são enviados à PaCT.</p>
   </section>
 }

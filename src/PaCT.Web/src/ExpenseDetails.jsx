@@ -1,3 +1,5 @@
+import moneyText from './moneyText'
+import DisclosureSummary from './DisclosureSummary'
 import Heading from './Heading'
 import InformationCard from './InformationCard'
 import MbWayLogo from './MbWayLogo'
@@ -12,8 +14,8 @@ export default function ExpenseDetails({ expense, authors = {}, review = false }
       <p>Data da despesa: {date(expense.date)}</p>
       <p>Fornecedor: {expense.supplierName || 'Sem fornecedor'}</p>
       {expense.invoiceNumber && <p>Fatura {expense.invoiceNumber} · {date(expense.invoiceDate)}</p>}
-      <p>Total: <strong>{agendaMoney(expense.total)}</strong> · Investimentos: {agendaMoney(expense.investments)}</p>
-      <p>Pago: <strong>{agendaMoney(expense.paid)}</strong> · Por pagar: <strong>{agendaMoney(expense.remaining)}</strong></p>
+      <p>Total: <strong>{moneyText(agendaMoney(expense.total))}</strong> · Investimentos: {moneyText(agendaMoney(expense.investments))}</p>
+      <p>Pago: <strong>{moneyText(agendaMoney(expense.paid))}</strong> · Por pagar: <strong>{moneyText(agendaMoney(expense.remaining))}</strong></p>
     </InformationCard>
     <RecordTable caption="Linhas da despesa" columns={[
       { key: 'description', label: 'Descrição', render: row => row.description }, { key: 'categoryName', label: 'Categoria', render: row => row.categoryName },
@@ -27,14 +29,14 @@ export default function ExpenseDetails({ expense, authors = {}, review = false }
         <p><strong>{line.description}</strong></p>
         <ul>{line.allocations.map((allocation, item) => <li key={item}>
           {allocation.activity ? allocation.activity.title + ' · ' + agendaDate(allocation.activity.startsAt) : 'Sem atividade específica'}
-          {allocation.location && ' · ' + allocation.location} · <strong>{agendaMoney(allocation.amount)}</strong>
+          {allocation.location && ' · ' + allocation.location} · <strong>{moneyText(agendaMoney(allocation.amount))}</strong>
         </li>)}</ul>
-        <p>Despesa geral: {agendaMoney((cents(line.total) - line.allocations.reduce((sum, allocation) => sum + cents(allocation.amount), 0)) / 100)}</p>
+        <p>Despesa geral: {moneyText(agendaMoney((cents(line.total) - line.allocations.reduce((sum, allocation) => sum + cents(allocation.amount), 0)) / 100))}</p>
       </div>)}
     </InformationCard>}
     {expense.document && <p>{review ? 'Documento: ' + expense.document.name : <a href={'/api/finance/expenses/' + expense.id + '/document?version=' + expense.version} download={expense.document.name}>Descarregar {expense.document.name}</a>}</p>}
-    {!!expense.payments.length && <details open={review}><summary>Pagamentos efetuados ({expense.payments.length})</summary>{expense.payments.map((p, index) => <InformationCard key={p.id || index} cardId={'expense-payment-' + index}>
-      <p><strong>{agendaMoney(p.amount)}</strong> · {p.method === 'MbWay' ? <MbWayLogo compact /> : saleMethods[p.method]} · {agendaDate(p.effectiveAt)}</p>
+    {!!expense.payments.length && <details open={review}><DisclosureSummary>Pagamentos efetuados ({expense.payments.length})</DisclosureSummary>{expense.payments.map((p, index) => <InformationCard key={p.id || index} cardId={'expense-payment-' + index}>
+      <p><strong>{moneyText(agendaMoney(p.amount))}</strong> · {p.method === 'MbWay' ? <MbWayLogo compact /> : saleMethods[p.method]} · {agendaDate(p.effectiveAt)}</p>
       {p.recordedAt && <small>{authors[p.authorId] || 'Gestão'} · Registado em {agendaDate(p.recordedAt)}</small>}
     </InformationCard>)}</details>}
     {!review && <Heading level={3}>{expense.remaining === 0 ? 'Paga' : expense.paid > 0 ? 'Parcialmente paga' : 'Por pagar'}</Heading>}

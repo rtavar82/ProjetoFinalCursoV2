@@ -1,144 +1,187 @@
+import { installManagerWriteRecovery } from './managerWriteRecovery'
 import { apiRequest } from './identityApi'
-import { checkpointRecord, recoveryCipher, readRecoveryTicket, writeRecoveryTicket, dropRecoveryTicket } from './managerRecoveryStorage'
+import { recoveryRecords, saveRecoveryRecord, deleteRecoveryRecords, recoveryCipher, readRecoveryTicket, writeRecoveryTicket, dropRecoveryTicket, RECOVERY_TTL } from './managerRecoveryStorage'
 
-const sensitive = element => element.type === 'password' || /password|token|secret|passkey|credential|csrf/i.test(element.name) || element.name === 'code' || element.autocomplete === 'one-time-code'
-const controls = form => [...form.querySelectorAll('input[name],select[name],textarea[name]')].filter(element => !sensitive(element) && !['file', 'submit', 'button'].includes(element.type))
-function formKey(form) {
-  const context = []; for (let node = form; node; node = node.parentElement) if (node.dataset?.cardId) context.push(node.dataset.cardId)
-  return form.dataset.recoveryKey || JSON.stringify([context, form.closest('dialog')?.getAttribute('aria-label'), controls(form).map(element => [element.name, element.type])])
+// A lease is held by the browser, not by a timeout: another live tab can never
+// adopt or overwrite this window, even if it is suspended for several hours.
+async function lease(id) {
+  if (!navigator.locks) throw new Error('Este navegador não permite isolar a recuperação entre janelas.')
+  return new Promise((resolve, reject) => {
+    navigator.locks.request('PaCT.ManagerRecovery:' + id, { ifAvailable: true }, lock => {
+      if (!lock) { resolve(null); return }
+      return new Promise(release => resolve(release))
+    }).catch(reject)
+  })
 }
-function fields(form) { return controls(form).map(element => ({ name: element.name, type: element.type, value: element.value, checked: element.checked, selected: element.multiple ? [...element.selectedOptions].map(option => option.value) : null })) }
-function restoreFields(form, saved) {
-  const elements = controls(form)
-  for (const [index, input] of saved.entries()) {
-    const element = elements[index]
-    if (!element || element.name !== input.name || element.type !== input.type || element.readOnly) continue
-    if (['checkbox', 'radio'].includes(element.type)) { if (element.value === input.value) element.checked = input.checked }
-    else if (element.tagName === 'SELECT') {
-      const selected = input.selected || [input.value]
-      for (const option of element.options) option.selected = selected.includes(option.value)
-    } else element.value = input.value
-  }
+async function keyFor(id, envelope, owner) {
+  const csrf = await apiRequest('identity/csrf')
+  const response = await fetch('/api/identity/manager-recovery-key', {
+    method: 'POST', credentials: 'same-origin', cache: 'no-store', signal: AbortSignal.timeout(5000),
+    headers: { 'Content-Type': 'application/json', 'X-PaCT-CSRF': csrf.token, 'X-PaCT-Account': owner }, body: JSON.stringify({ windowId: id, envelope }),
+  })
+  if (!response.ok) throw new Error('Não foi possível preparar a proteção temporária.')
+  return response.json()
 }
-
-export async function createManagerRecovery(profile, reportError) {
-  const navigation = performance.getEntriesByType('navigation')[0]?.type
-  let ticket = readRecoveryTicket()
-  const sameWindow = document.wasDiscarded === true || ['reload', 'back_forward'].includes(navigation)
-  if (ticket?.owner !== profile.id || !sameWindow) ticket = null
-  if (!ticket) ticket = { id: crypto.randomUUID(), owner: profile.id, interrupted: false }
-  const result = await apiRequest('identity/manager-recovery-key', { windowId: ticket.id, envelope: ticket.envelope || null })
-  ticket.envelope = result.envelope
-  const cipher = await recoveryCipher(result.key, profile.id, ticket.id)
-  writeRecoveryTicket(ticket)
-  const record = ticket.interrupted ? await checkpointRecord(ticket.id) : null
-  const restored = record ? await cipher.open(record) : null
-  if (restored && restored.owner !== profile.id) throw new Error('A proteção temporária não pertence a esta conta.')
-  const values = new Map(Object.entries(restored?.values || {})), registrations = new Map(), dirty = new Set()
-  const savedForms = new Map(Object.entries(restored?.forms || {})), applied = new WeakSet()
-  // An interrupted command remains uncertain until its original identifier is
-  // explicitly verified. Never restore a busy spinner or replay the command.
-  for (const [scope, value] of values) if (scope.endsWith(':pending') && value) values.set(scope.slice(0, -7) + 'uncertain', true)
-  let active = false, retired = false, generation = 0, prepared = null, job = Promise.resolve(), viewportRestored = false
-  function hasPending() { return [...values.entries()].some(([scope, value]) => scope.endsWith(':pending') && !!value || value?.fields?.pending) }
-  function currentForms() {
-    for (const form of dirty) if (!form.isConnected) dirty.delete(form)
-    return [...dirty].filter(form => form.matches('form[data-protect-draft]'))
+export function createManagerRecovery(profile, reportError, reportRecovered) {
+  const writeListeners = new Set(), activeWrites = new Set()
+  let lastForm = null
+  function notifyWrites() { for (const listener of writeListeners) listener() }
+  const entries = new Map(), registrations = new Map(), edited = new Set(), blockedRecords = new Set()
+  let viewportApplied = false, storageKnown = false, hasCheckpoint = false
+  let durableIntents = new Map()
+  const intentId = (scope, value) => scope.startsWith('write:') ? value?.key : value?.fields?.pending?.operationId || (scope.startsWith('testimonial:') ? value?.fields?.operationId : null) || (scope.endsWith(':pending') ? value?.operationId : null)
+  let id, cipher, envelope, revision = 0, release, timer, expiryTimer, active = false, retired = false, initializing, ready = false, job = Promise.resolve(), notified = false, channel
+  function warn() { reportError('Não foi possível guardar a recuperação temporária. Mantém o formulário aberto para conservar o preenchimento.') }
+  function content() { return [...entries.keys()].some(scope => !scope.startsWith('view:')) }
+  function prune() {
+    const now = Date.now()
+    for (const [scope, entry] of entries) if (!scope.startsWith('view:') && (!Number.isFinite(entry.updatedAt) || now - entry.updatedAt >= RECOVERY_TTL || entry.updatedAt > now + 60000)) entries.delete(scope)
   }
-  function snapshot() {
-    const forms = currentForms(), focused = document.activeElement
-    const focusedForm = focused?.closest('form')
-    return { format: 1, owner: profile.id, values: Object.fromEntries(values), forms: Object.fromEntries(forms.map(form => [formKey(form), fields(form)])),
-      viewport: { y: scrollY, form: focusedForm && formKey(focusedForm), input: focusedForm ? controls(focusedForm).indexOf(focused) : -1,
-        start: typeof focused?.selectionStart === 'number' ? focused.selectionStart : null, end: typeof focused?.selectionEnd === 'number' ? focused.selectionEnd : null,
-        dialogs: [...document.querySelectorAll('dialog[open]')].map(dialog => ({ label: dialog.getAttribute('aria-label'), top: dialog.scrollTop })) } }
+  async function initialize() {
+    if (retired || ready || !navigator.onLine) return
+    if (initializing) return initializing
+    initializing = (async () => {
+      const records = await recoveryRecords(profile.id), ticket = readRecoveryTicket(), now = Date.now()
+      storageKnown = true; hasCheckpoint = records.some(record => record.expiresAt > now)
+      const candidates = records.filter(record => record.expiresAt > now && !blockedRecords.has(record.id)).sort((a, b) => (b.id === ticket?.id) - (a.id === ticket?.id) || b.updatedAt - a.updatedAt)
+      for (const record of records) if (record.expiresAt <= now) await deleteRecoveryRecords(profile.id, record.id)
+      let chosen
+      for (const candidate of candidates) { release = await lease(candidate.id); if (release) { chosen = candidate; break } }
+      if (!release) { id = crypto.randomUUID(); release = await lease(id) } else id = chosen.id
+      hasCheckpoint = !!chosen
+      if (!release) throw new Error('Não foi possível isolar esta janela.')
+      try {
+        const key = await keyFor(id, chosen?.envelope || null, profile.id)
+        if (retired) { release(); release = null; return }
+        envelope = key.envelope; cipher = await recoveryCipher(key.key, profile.id, id); revision = chosen?.revision || 0
+        if (chosen) {
+          let saved
+          try { saved = await cipher.open(chosen) } catch (error) { blockedRecords.add(chosen.id); throw error }
+          if (saved.owner !== profile.id || saved.format !== 2) throw new Error('Cópia temporária inválida.')
+          durableIntents = new Map(Object.entries(saved.entries).filter(([scope, entry]) => now - entry.updatedAt < RECOVERY_TTL && intentId(scope, entry.value)).map(([scope, entry]) => [scope, intentId(scope, entry.value)]))
+          for (const [scope, entry] of Object.entries(saved.entries)) if (!edited.has(scope)) entries.set(scope, entry)
+          prune()
+          if (!content()) for (const scope of entries.keys()) if (scope.startsWith('view:')) entries.delete(scope)
+          for (const [scope, registration] of registrations) if (entries.has(scope) && !edited.has(scope)) registration.restore(entries.get(scope).value)
+          if (content() && !notified) { notified = true; reportRecovered() }
+        }
+        ready = true; notifyWrites(); writeRecoveryTicket({ id, owner: profile.id })
+        if (edited.size) schedule()
+      } catch (error) { release?.(); release = null; cipher = null; throw error }
+    })().catch(() => { warn() }).finally(() => { initializing = null })
+    return initializing
   }
-  function prepare() {
-    const version = ++generation
-    job = job.catch(() => {}).then(async () => {
-      if (retired || version !== generation || !currentForms().length && !hasPending()) return
-      for (const [scope, registration] of registrations) values.set(scope, registration.read())
-      const sealed = await cipher.seal(snapshot())
-      if (!retired && version === generation) prepared = { version, sealed }
-    })
-    void job.catch(() => reportError('Não foi possível proteger temporariamente este preenchimento. Mantém o formulário aberto.'))
-    return job
-  }
-  function dropCheckpoint() {
-    ticket.interrupted = false
-    try { if (readRecoveryTicket()?.id === ticket.id) writeRecoveryTicket(ticket) } catch { /* Storage error is reported by the next checkpoint. */ }
-    return checkpointRecord(ticket.id, null)
-  }
-  async function checkpoint() {
-    if (retired) return
-    if (!currentForms().length && !hasPending()) { await dropCheckpoint(); return }
-    ticket.interrupted = true; writeRecoveryTicket(ticket)
-    await prepare()
-    if (!retired && ticket.interrupted && prepared?.version === generation) await checkpointRecord(ticket.id, prepared.sealed)
-  }
-  function protect() { void checkpoint().catch(() => reportError('A proteção temporária falhou. Os campos continuam neste formulário aberto.')) }
-  function changed() {
-    if (!active || retired) return
-    if (!navigator.onLine || document.visibilityState === 'hidden') protect()
-    else void prepare()
-  }
-  function hydrate() {
-    for (const form of document.querySelectorAll('form[data-protect-draft]')) {
-      const key = formKey(form), saved = savedForms.get(key)
-      if (!saved || applied.has(form)) continue
-      applied.add(form); restoreFields(form, saved); dirty.add(form)
-      window.dispatchEvent(new CustomEvent('pact:recovered-form', { detail: { form } }))
-    }
-    if (!viewportRestored && [...dirty].length && restored?.viewport) {
-      viewportRestored = true
-      requestAnimationFrame(() => {
-        const view = restored.viewport
-        for (const item of view.dialogs || []) { const dialog = [...document.querySelectorAll('dialog[open]')].find(node => node.getAttribute('aria-label') === item.label); if (dialog) dialog.scrollTop = item.top }
-        window.scrollTo(0, view.y)
-        const form = [...dirty].find(node => formKey(node) === view.form), input = form && controls(form)[view.input]
-        if (input && !input.disabled) { input.focus({ preventScroll: true }); if (view.start !== null && ['text', 'search', 'tel', 'url', 'textarea'].includes(input.type)) input.setSelectionRange(view.start, view.end) }
-      })
-    }
-  }
-  function input(event) {
-    const form = event.target.closest?.('form[data-protect-draft]')
-    if (!form || sensitive(event.target)) return
-    dirty.add(form); queueMicrotask(changed)
-  }
-  function reset(event) { dirty.delete(event.target); savedForms.delete(formKey(event.target)); queueMicrotask(changed) }
-  function visibility() {
-    if (document.visibilityState === 'hidden' || !navigator.onLine) protect()
-    else { hydrate(); void dropCheckpoint().catch(() => reportError('Não foi possível retirar a cópia temporária já retomada.')) }
-  }
-  function pagehide(event) {
-    if (event.persisted) { protect(); return }
-    // Normal close/reload is not a saved session. In a system discard/crash this
-    // event may not run; only that interrupted window retains its ticket.
-    retired = true; generation++
-    if (readRecoveryTicket()?.id === ticket.id) dropRecoveryTicket()
-    void checkpointRecord(ticket.id, null).catch(() => {})
-  }
-  return {
-    get(scope, initial) { return values.has(scope) ? values.get(scope) : typeof initial === 'function' ? initial() : initial },
-    set(scope, value) { values.set(scope, value); changed() },
-    register(scope, read) {
-      const token = {}; registrations.set(scope, { token, read }); values.set(scope, read())
-      return () => { if (registrations.get(scope)?.token === token) registrations.delete(scope); queueMicrotask(() => { if (!registrations.has(scope)) { values.delete(scope); changed() } }) }
-    },
-    start() {
-      active = true; hydrate()
-      const observer = new MutationObserver(hydrate); observer.observe(document.body, { childList: true, subtree: true })
-      document.addEventListener('input', input, true); document.addEventListener('change', input, true); document.addEventListener('reset', reset, true)
-      document.addEventListener('visibilitychange', visibility); document.addEventListener('freeze', protect); document.addEventListener('resume', visibility)
-      window.addEventListener('offline', protect); window.addEventListener('online', visibility); window.addEventListener('pageshow', visibility); window.addEventListener('pagehide', pagehide)
-      return () => {
-        active = false; observer.disconnect()
-        document.removeEventListener('input', input, true); document.removeEventListener('change', input, true); document.removeEventListener('reset', reset, true)
-        document.removeEventListener('visibilitychange', visibility); document.removeEventListener('freeze', protect); document.removeEventListener('resume', visibility)
-        window.removeEventListener('offline', protect); window.removeEventListener('online', visibility); window.removeEventListener('pageshow', visibility); window.removeEventListener('pagehide', pagehide)
-        queueMicrotask(() => { if (!active) this.discard() })
+  function schedule() { if (retired) return; clearTimeout(timer); timer = setTimeout(() => { void runtime.flush() }, 250) }
+  const runtime = {
+    owner: profile.id,
+    isActive() { return active && !retired },
+    writeTicket(path, submitted, key, form = null, command = false, explicitScope = null) {
+      const descriptor = form || lastForm
+      const body = command ? JSON.parse(submitted) : null
+      const proposed = 'write:' + path + (command ? ':' + (body.id || descriptor?.key || body.action || 'new') : '')
+      const scope = explicitScope && entries.get(explicitScope)?.value.path === path ? explicitScope : proposed
+      const existing = entries.get(scope)?.value
+      if (existing && existing.submitted !== submitted) throw new Error('Existe um envio anterior sem confirmação para este registo. Verifica esse resultado antes de enviar alterações diferentes.')
+      const ticket = existing || { path, submitted, key, form: descriptor, command, createdAt: Date.now() }
+      activeWrites.add(scope)
+      return { key: ticket.key, headerKey: command ? undefined : ticket.key, command, submitted: ticket.submitted,
+        async support(supported) { if (existing && !supported) { const error = new Error('Não foi possível verificar com segurança o envio anterior. O preenchimento foi mantido.'); error.status = 409; error.keepRecovery = true; throw error } if (supported) { if (!entries.has(scope)) runtime.set(scope, ticket, ticket.createdAt); await runtime.protectIntent(scope, ticket.key) } },
+        async complete(clearForm = true) { runtime.remove(scope); activeWrites.delete(scope); if (command) runtime.completeCommand(ticket.key); if (clearForm && ticket.form && runtime.canClearForm(ticket.form)) { runtime.remove('form:' + ticket.form.key); runtime.removePrefix('phone:' + ticket.form.key + ':'); for (const prefix of ticket.form.scopes) runtime.removePrefix(prefix) } if (lastForm?.key === ticket.form?.key) lastForm = null; notifyWrites(); await runtime.flush() },
+        async reject() { runtime.remove(scope); activeWrites.delete(scope); notifyWrites(); await runtime.flush() },
+        uncertain() { activeWrites.delete(scope); notifyWrites() },
       }
     },
-    discard() { retired = true; generation++; if (readRecoveryTicket()?.id === ticket.id) dropRecoveryTicket(); void checkpointRecord(ticket.id, null).catch(() => {}); values.clear(); savedForms.clear(); dirty.clear() },
+    subscribeWrites(listener) { writeListeners.add(listener); return () => writeListeners.delete(listener) },
+    lastSubmittedForm() { return lastForm },
+    completeCommand(operationId) { for (const [scope, entry] of [...entries]) { if (scope.startsWith('write:') && entry.value.command && entry.value.key === operationId) { runtime.remove(scope); activeWrites.delete(scope) } else if (scope.endsWith(':pending') && entry.value?.operationId === operationId) { runtime.remove(scope); registrations.get(scope)?.restore(null) } } notifyWrites() },
+    captureForm(form) {
+      if (!form?.dataset.recoveryKey) return null
+      const key = form.dataset.recoveryKey, scopes = JSON.parse(form.dataset.recoveryScopes || '[]')
+      const matches = scope => scope === 'form:' + key || scope.startsWith('phone:' + key + ':') || scopes.some(prefix => scope.startsWith(prefix))
+      return { key, scopes, generic: form.dataset.recoveryNative === 'true', generations: Object.fromEntries([...entries].filter(([scope]) => matches(scope)).map(([scope, entry]) => [scope, entry.changeId])) }
+    },
+    canClearForm(form) {
+      const matches = scope => scope === 'form:' + form.key || scope.startsWith('phone:' + form.key + ':') || form.scopes.some(prefix => scope.startsWith(prefix))
+      return [...entries].filter(([scope]) => matches(scope)).every(([scope, entry]) => entry.changeId === form.generations?.[scope])
+    },
+    formTicket(key) { if (!key) return null; for (const [scope, entry] of entries) if (scope.startsWith('write:') && entry.value.form?.key === key && !activeWrites.has(scope)) return { scope, path: entry.value.path || scope.slice(6), ...entry.value }; return null },
+    resetPrefix(prefix) { runtime.removePrefix(prefix); for (const [scope, registration] of registrations) if (scope.startsWith(prefix)) registration.reset?.() },
+    get(scope, initial) { prune(); if (entries.has(scope)) return entries.get(scope).value; const value = typeof initial === 'function' ? initial() : initial; if (scope.startsWith('view:')) entries.set(scope, { value, updatedAt: Date.now() }); return value },
+    set(scope, value, updatedAt = Date.now()) { if (!scope || retired) return; entries.set(scope, { value, updatedAt, changeId: crypto.randomUUID() }); edited.add(scope); if (scope.startsWith('write:')) notifyWrites(); schedule() },
+    remove(scope) { entries.delete(scope); edited.add(scope); if (scope.startsWith('write:')) notifyWrites(); schedule() },
+    removePrefix(prefix) { for (const scope of entries.keys()) if (scope.startsWith(prefix)) { entries.delete(scope); edited.add(scope) } schedule() },
+    register(scope, restore, reset) { const token = { restore, reset }; registrations.set(scope, token); return () => { if (registrations.get(scope) === token) registrations.delete(scope) } },
+    hasContent() { prune(); return content() },
+    clearContent() { lastForm = null; for (const scope of entries.keys()) if (!scope.startsWith('view:') && !scope.startsWith('write:') && !scope.endsWith(':pending')) { entries.delete(scope); edited.add(scope) } schedule() },
+    async protectIntent(scope, operation) {
+      const inactive = () => { const error = new Error('Este formulário já não está ativo. Volta a abri-lo na conta atual.'); error.status = 409; return error }
+      if (!active || retired) throw inactive()
+      await runtime.flush()
+      if (!active || retired) throw inactive()
+      if (durableIntents.get(scope) === operation || storageKnown && !hasCheckpoint) return
+      const error = new Error('Não foi possível proteger o identificador deste envio. O envio não foi iniciado. Mantém o formulário aberto e verifica o armazenamento do navegador antes de tentar novamente.')
+      error.status = 409
+      throw error
+    },
+    flush() {
+      clearTimeout(timer)
+      job = job.catch(() => {}).then(async () => {
+        if (retired) return false
+        await initialize(); if (!ready || retired) return false
+        prune()
+        if (!content()) { await deleteRecoveryRecords(profile.id, id); revision = 0; hasCheckpoint = false; durableIntents.clear(); return true }
+        const focused = document.activeElement, focusedForm = focused?.closest('form[data-recovery-key]')
+        if (focusedForm && focused.name && focused.type !== 'password') entries.set('view:viewport', { updatedAt: Date.now(), value: { form: focusedForm.dataset.recoveryKey, name: focused.name, y: scrollY, start: focused.selectionStart, end: focused.selectionEnd } })
+        const snapshot = { format: 2, owner: profile.id, entries: Object.fromEntries(entries) }
+        const sealed = await cipher.seal(snapshot)
+        if (retired) return false
+        const updatedAt = Math.max(...[...entries.values()].map(entry => entry.updatedAt))
+        await saveRecoveryRecord({ id, owner: profile.id, envelope, updatedAt, expiresAt: updatedAt + RECOVERY_TTL, revision: revision + 1, ...sealed }, revision, () => !retired)
+        revision++; hasCheckpoint = true; durableIntents = new Map(Object.entries(snapshot.entries).filter(([scope, entry]) => intentId(scope, entry.value)).map(([scope, entry]) => [scope, intentId(scope, entry.value)])); reportError(''); return true
+      }).catch(() => { warn(); return false })
+      return job
+    },
+    async discard() {
+      retired = true; clearTimeout(timer); entries.clear(); edited.clear(); dropRecoveryTicket()
+      channel?.postMessage({ type: 'discard', owner: profile.id })
+      await job.catch(() => {})
+      await deleteRecoveryRecords(profile.id).catch(warn)
+      release?.(); release = null; cipher = null
+    },
+    start() {
+      active = true
+      const uninstallWrites = installManagerWriteRecovery(runtime)
+      void initialize()
+      const save = () => { void runtime.flush() }
+      const resume = () => { void initialize() }
+      const visibility = () => { if (document.visibilityState === 'hidden') save(); else resume() }
+      const restoreViewport = () => {
+        const view = entries.get('view:viewport')?.value
+        if (!ready || viewportApplied || !view || [...edited].some(scope => !scope.startsWith('view:'))) return
+        const form = [...document.querySelectorAll('form[data-recovery-key]')].find(form => form.dataset.recoveryKey === view.form)
+        const input = form && [...form.elements].find(input => input.name === view.name && !input.disabled)
+        if (!input) return
+        viewportApplied = true
+        requestAnimationFrame(() => { if (!input.isConnected) return; window.scrollTo(0, view.y); input.focus({ preventScroll: true }); if (view.start !== null && ['text', 'search', 'tel', 'url', 'textarea'].includes(input.type)) input.setSelectionRange(view.start, view.end) })
+      }
+      const observer = new MutationObserver(restoreViewport); observer.observe(document.body, { childList: true, subtree: true })
+      const expired = () => { retired = true; clearTimeout(timer); entries.clear(); cipher = null; release?.(); release = null }
+      const submitted = event => { const descriptor = runtime.captureForm(event.target); if (descriptor) lastForm = descriptor }
+      document.addEventListener('submit', submitted, true)
+      const signedOut = () => { void runtime.discard() }
+      window.addEventListener('offline', save); window.addEventListener('online', resume); window.addEventListener('pagehide', save)
+      window.addEventListener('pact:signed-out', signedOut); window.addEventListener('pact:session-expired', expired); document.addEventListener('visibilitychange', visibility)
+      expiryTimer = setInterval(() => { prune(); if (ready) void runtime.flush() }, 60000)
+      try { channel = new BroadcastChannel('PaCT.ManagerRecovery') } catch { warn() }
+      const ownedChannel = channel
+      if (channel) channel.onmessage = event => { if (event.data?.type === 'discard' && event.data.owner === profile.id) { retired = true; clearTimeout(timer); entries.clear(); cipher = null; release?.(); release = null; void job.finally(() => deleteRecoveryRecords(profile.id)).catch(warn); window.dispatchEvent(new Event('pact:session-expired')) } }
+      return () => {
+        active = false; document.removeEventListener('submit', submitted, true); observer.disconnect(); ownedChannel?.close(); uninstallWrites(); clearInterval(expiryTimer)
+        window.removeEventListener('offline', save); window.removeEventListener('online', resume); window.removeEventListener('pagehide', save)
+        window.removeEventListener('pact:signed-out', signedOut); window.removeEventListener('pact:session-expired', expired); document.removeEventListener('visibilitychange', visibility)
+        queueMicrotask(() => { if (!active) { void runtime.flush().finally(() => { retired = true; release?.(); release = null; cipher = null; channel?.close() }) } })
+      }
+    },
   }
+  return runtime
 }

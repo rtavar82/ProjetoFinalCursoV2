@@ -2,6 +2,7 @@ import styles from './PwaStatus.module.css'
 import { useEffect, useRef, useState } from 'react'
 import { readPublicBuild } from './publicStorage'
 import ActionButton from './ActionButton'
+import useAppInstallation from './useAppInstallation'
 
 const buildVersion = import.meta.env.PACT_BUILD_ID
 const installDeclinedKey = 'pact.installDeclined'
@@ -13,36 +14,33 @@ function hasDeclinedInstall() {
 
 export default function PwaStatus() {
   const [online, setOnline] = useState(navigator.onLine)
-  const [installPrompt, setInstallPrompt] = useState(null)
+  const installation = useAppInstallation()
+  const [installHidden, setInstallHidden] = useState(hasDeclinedInstall)
+  const installPrompt = installation.state === 'available' && !installHidden && window.matchMedia('(min-width: 781px)').matches
   const [waiting, setWaiting] = useState(null)
   const [error, setError] = useState('')
   const [reloadReady, setReloadReady] = useState(false)
   const dirtyForms = useRef(new Set())
-  const declinedInPage = useRef(false)
+
 
   useEffect(() => {
     let current = true
     let registration
     const hadController = Boolean(navigator.serviceWorker?.controller)
     function hasDraft() { return [...dirtyForms.current].some(form => form.isConnected) }
-    function changed(event) { const form = event.target.closest('form:not([data-allow-update])'); if (form) dirtyForms.current.add(form) }
+    function changed(event) { const form = event.target.closest('form[data-protect-draft]:not([data-allow-update])'); if (form) dirtyForms.current.add(form) }
+    function reset(event) { dirtyForms.current.delete(event.target); setError('') }
     async function status() {
       setOnline(navigator.onLine)
       try { await readPublicBuild() } catch { if (current) setError('O armazenamento público offline não está disponível. A utilização online continua possível.') }
     }
-    function install(event) {
-      if (!window.matchMedia('(min-width: 781px)').matches) return
-      event.preventDefault()
-      if (!declinedInPage.current && !hasDeclinedInstall()) setInstallPrompt(event)
-    }
-    function installed() { setInstallPrompt(null) }
     function installPreferenceChanged(event) {
-      if (event.key === installDeclinedKey && event.newValue === 'true') setInstallPrompt(null)
+      if (event.key === installDeclinedKey && event.newValue === 'true') setInstallHidden(true)
     }
     function message(event) {
       if (event.data?.type === 'PACT_PAGE_VERSION') event.ports[0]?.postMessage({ version: buildVersion })
       if (event.data?.type === 'PACT_CHECK_UPDATE') event.ports[0]?.postMessage({ allow: !hasDraft() })
-      if (event.data?.type === 'PACT_UPDATE_BLOCKED') setError('Guarda ou cancela as alterações nas janelas abertas antes de atualizar. Nenhum formulário foi recarregado.')
+      if (event.data?.type === 'PACT_UPDATE_BLOCKED') setError(event.data.reason === 'unresponsive' ? 'Outro separador da PaCT não respondeu. Abre-o ou fecha-o e volta a tentar atualizar.' : 'Existem alterações por guardar noutro separador da PaCT. Guarda-as ou cancela-as e volta a tentar atualizar.')
     }
     async function activated() {
       await status()
@@ -72,10 +70,11 @@ export default function PwaStatus() {
         navigator.serviceWorker.controller?.postMessage({ type: 'PACT_PAGE_READY' })
       } catch { if (current) setError('Não foi possível preparar o modo público offline. Verifica a ligação e atualiza a página quando não tiveres alterações por guardar.') }
     }
+    document.addEventListener('reset', reset, true)
     document.addEventListener('input', changed)
     document.addEventListener('change', changed)
     window.addEventListener('online', status); window.addEventListener('offline', status)
-    window.addEventListener('beforeinstallprompt', install); window.addEventListener('appinstalled', installed)
+
     window.addEventListener('storage', installPreferenceChanged)
     navigator.serviceWorker?.addEventListener('message', message)
     navigator.serviceWorker?.addEventListener('controllerchange', activated)
@@ -83,9 +82,10 @@ export default function PwaStatus() {
     prepare()
     return () => {
       current = false
+      document.removeEventListener('reset', reset, true)
       document.removeEventListener('input', changed); document.removeEventListener('change', changed)
       window.removeEventListener('online', status); window.removeEventListener('offline', status)
-      window.removeEventListener('beforeinstallprompt', install); window.removeEventListener('appinstalled', installed)
+
       window.removeEventListener('storage', installPreferenceChanged)
       navigator.serviceWorker?.removeEventListener('message', message); navigator.serviceWorker?.removeEventListener('controllerchange', activated)
       document.removeEventListener('visibilitychange', update)
@@ -93,15 +93,16 @@ export default function PwaStatus() {
   }, [])
 
   function refresh() {
+    setError('')
     if ([...dirtyForms.current].some(form => form.isConnected)) { setError('Guarda ou cancela as alterações antes de atualizar.'); return }
     if (reloadReady) window.location.reload()
     else waiting?.postMessage({ type: 'PACT_ACTIVATE_UPDATE' })
   }
   function declineInstall() {
-    declinedInPage.current = true
+
     try { localStorage.setItem(installDeclinedKey, 'true') }
     catch { /* Keep the refusal for this page if browser storage is unavailable. */ }
-    setInstallPrompt(null)
+    setInstallHidden(true)
   }
 
   if (!installPrompt && !waiting && !error && !reloadReady) return null
@@ -109,7 +110,7 @@ export default function PwaStatus() {
     {installPrompt && <div className={styles.installActions}>
       <p>Instala a minha app no teu ambiente de trabalho para acederes directamente.</p>
       <div className={styles.installChoices}>
-        <ActionButton onClick={async () => { await installPrompt.prompt(); await installPrompt.userChoice; setInstallPrompt(null) }}>Instalar a PaCT</ActionButton>
+        <ActionButton onClick={async () => { await installation.install() }}>Instalar a PaCT</ActionButton>
         <ActionButton onClick={declineInstall}>Não instalar agora</ActionButton>
       </div>
     </div>}

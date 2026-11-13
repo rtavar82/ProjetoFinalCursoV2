@@ -1,5 +1,6 @@
+import moneyText from './moneyText'
+import AppArrow from './AppArrow'
 import { useEffect, useState } from 'react'
-import AppIcon from './AppIcon'
 import ActionButton from './ActionButton'
 import ConsultationDialog from './ConsultationDialog'
 import Heading from './Heading'
@@ -59,13 +60,13 @@ export default function PublicPaymentDialog({ service, information, person, onAg
         {service.presentation?.recommendations && <p>{service.presentation.recommendations}</p>}
         {!sentir && service.packOffer && <><p>{service.packOffer.description}</p><p>{service.packOffer.durationText}</p></>}
       </section>
-      <ActionButton variant="secondary" className={styles.agendaAction} onClick={onAgenda}>{service.serviceKind ? 'Ver datas e vagas' : 'Ver horários'} <AppIcon name="arrow" /></ActionButton>
+      <ActionButton variant="secondary" className={styles.agendaAction} onClick={onAgenda}>{service.serviceKind ? 'Ver datas e vagas' : 'Ver horários'} <AppArrow direction="right" /></ActionButton>
       <PublicPracticalInformation duration={duration} modality={modality}>
         {!compactDetails && locations.map(location => <p key={location.key}><strong>{location.name}</strong> · {location.description}</p>)}
       </PublicPracticalInformation>
       <section className={styles.policy}><Heading level={3}>Valor e condições</Heading>
         {contributionOnly ? <PublicContributionTerms information={information} /> : <>
-          {priceSummary ? <p><strong>{priceSummary}</strong></p> : prices.map(price => <p key={price}><strong>{price}{service.packOffer ? ' por sessão' : ''}</strong></p>)}
+          {priceSummary ? <p><strong>{moneyText(priceSummary)}</strong></p> : prices.map(price => <p key={price}><strong>{moneyText(price)}{service.packOffer ? ' por sessão' : ''}</strong></p>)}
           {advance && <p>{reikiPrepayment
             ? 'Pagamento antecipado. No agendamento, consulta as condições aplicáveis antes de efetuares o pagamento.'
             : 'Pagamento antecipado. Consulta as condições aplicáveis no agendamento antes de efetuares o pagamento.'}</p>}

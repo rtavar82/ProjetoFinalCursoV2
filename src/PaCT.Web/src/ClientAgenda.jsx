@@ -1,9 +1,12 @@
+import moneyText from './moneyText'
+import DisclosureSummary from './DisclosureSummary'
 import eventStatusLabel from './eventStatusLabel'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { apiRequest } from './identityApi'
 import { announceOperation, dismissSuccess } from './actionNotices'
 import useLiveResource from './useLiveResource'
 import AgendaPresentation from './AgendaPresentation'
+import AdaptiveSelect from './AdaptiveSelect'
 import ClientCalendar from './ClientCalendar'
 import ClientBookingDialog from './ClientBookingDialog'
 import ClientEventDetail from './ClientEventDetail'
@@ -129,22 +132,28 @@ export default function ClientAgenda({ initialEntry, guard }) {
   return <AgendaPresentation aria-label="Agenda do cliente" data-pending-command={busy || uncertain ? 'true' : undefined}
     onChangeCapture={event => { if (event.target.closest('dialog form')) detailDirty.current = true }}>
     {!detail && !request && !eventEntry && !eventId && feedback}
-    <nav className={styles.primaryTabs} aria-label="Agenda"><button className={view === 'Calendar' ? styles.selected : 'secondary'} aria-pressed={view === 'Calendar'} onClick={() => guard(() => setView('Calendar'))}>Agendar</button><button className={view === 'List' ? styles.selected : 'secondary'} aria-pressed={view === 'List'} onClick={() => guard(() => setView('List'))}>As minhas marcações</button></nav>
+    <nav className={`${styles.primaryTabs} ${styles.clientPrimaryTabs}`} aria-label="Agenda"><button data-typography="compact-action" className={view === 'Calendar' ? styles.selected : 'secondary'} aria-pressed={view === 'Calendar'} onClick={() => guard(() => setView('Calendar'))}>Agendar</button><button data-typography="compact-action" className={view === 'List' ? styles.selected : 'secondary'} aria-pressed={view === 'List'} onClick={() => guard(() => setView('List'))}>As minhas marcações</button></nav>
     <div hidden={view !== 'Calendar'}><ClientCalendar shareRole="client" key={browseService} initialServiceId={browseService} enabled={view === 'Calendar'} onChoose={startRequest} onEvent={openEvent} /></div>
-    {view === 'List' && <><nav className={styles.tabs} aria-label="Separadores de consultas">{tabs.map(([id, label]) => <button key={id} className={section === id ? styles.selected : 'secondary'} aria-pressed={section === id} onClick={() => changeSection(id)}>{label}</button>)}</nav>
-      <p className={styles.muted}>{explanations[section]}</p>
+    {view === 'List' && <><nav className={`${styles.tabs} ${styles.clientSections}`} aria-label="Separadores de consultas">{tabs.map(([id, label]) => <button key={id} className={section === id ? styles.selected : 'secondary'} aria-pressed={section === id} onClick={() => changeSection(id)}>{label}</button>)}</nav>
+      <label className={styles.clientSectionPicker}>
+        Mostrar mais opções de marcações
+        <AdaptiveSelect className={styles.sectionPickerSelect} value={section} aria-describedby="client-appointments-description" onChange={event => changeSection(event.currentTarget.value)}>
+            {tabs.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
+        </AdaptiveSelect>
+      </label>
+      <p id="client-appointments-description" className={styles.muted}>{explanations[section]}</p>
       {section === 'Closed' && <nav className={styles.tabs} aria-label="Leitura das consultas"><button className={!seen ? '' : 'secondary'} onClick={() => guard(() => { setSeen(false); setPage(1) })}>Por ver{result && !search ? ` (${result.totalUnseen})` : ''}</button><button className={seen ? '' : 'secondary'} onClick={() => guard(() => { setSeen(true); setPage(1) })}>Histórico{result && !search ? ` (${result.totalSeen})` : ''}</button></nav>}
       {section === 'Closed' && seen && <ClientHistorySearch key={initialEntry?.revision || 'history'} services={result?.searchServices} onSearch={query => { setHistorySearch(query); setPage(1) }} />}
       {search && <p role="status" className={styles.muted}>Resultados em todos os teus registos.</p>}
-      {result && <div className={styles.balances}><p>Saldo disponível na conta: <strong>{result.balance == null ? '—' : agendaMoney(result.balance)}</strong></p><p className={styles.debt}>Valor em dívida: <strong>{result.totalDebt == null ? '—' : agendaMoney(result.totalDebt)}</strong>{result.undefinedDebt ? ' · Acrescem valores por definir.' : ''}</p></div>}
+      {result && <div className={styles.balances}><p>Saldo disponível na conta: <strong>{moneyText(result.balance == null ? '—' : agendaMoney(result.balance))}</strong></p><p className={styles.debt}>Valor em dívida: <strong>{moneyText(result.totalDebt == null ? '—' : agendaMoney(result.totalDebt))}</strong>{result.undefinedDebt ? ' · Acrescem valores por definir.' : ''}</p></div>}
       <InformationCard cardId="client-appointments" loading={list.loading} error={list.error} onRetry={list.refresh}>
         <div className={styles.list}>{result?.items.map(c => <AppointmentCard key={(c.kind || 'Consultation') + ':' + c.id} consultation={c}
           stateLabel={c.kind === 'Participation' ? eventStatusLabel(c, { participation: c }) : c.process.processLabel} typeLabel={c.activityKind === 'Retreat' ? 'Retiro' : c.activityKind === 'Group' ? 'Grupo' : 'Consulta individual'}
           actionLabel={c.section === 'Payments' ? 'Ver pagamento' : c.state === 'Performed' ? 'Ver consulta e acompanhamento' : 'Ver detalhes'}
           onOpen={() => c.kind === 'Participation' ? guard(() => setEventEntry(c)) : void open(c.id, c.state === 'Performed' && c.section === 'Closed')}
         >
-          {c.section === 'Payments' && !/Aguarda confirmação de recebimento|Falta liquidar/.test(c.process.processLabel) && <p>{c.finalAmount == null && c.state === 'Performed' ? 'Valor por definir' : 'Pagamento pendente'}</p>}
-          {c.kind === 'Participation' && c.amountDue > 0 && <p>Por pagar: {agendaMoney(c.amountDue)}</p>}
+          {c.section === 'Payments' && !/Aguarda confirmação de recebimento|Falta liquidar/.test(c.process.processLabel) && <p data-typography="process-status">{c.finalAmount == null && c.state === 'Performed' ? 'Valor por definir' : 'Pagamento pendente'}</p>}
+          {c.kind === 'Participation' && c.amountDue > 0 && <p>Por pagar: {moneyText(agendaMoney(c.amountDue))}</p>}
         </AppointmentCard>)}</div>
         {result?.total === 0 && <p className={styles.empty}>Não há marcações nesta lista.</p>}
         <Pagination total={result?.total} page={page} label="Páginas das marcações" onChange={next => guard(() => setPage(next))} />
@@ -167,8 +176,8 @@ function ClientDetail({ detail: c, latest, feedback, disabled, act, onClose, onR
     <AppointmentSummary consultation={c} showTitle={false} stateLabel={<ConsultationStatus as="span" consultation={c} showAmount={!paymentFocus} />} typeLabel="Consulta individual" location={paymentFocus ? false : <ConsultationLocation {...c} />} />{feedback}
     {changed && <p className="notice" role="status">A consulta mudou. O preenchimento foi mantido.<button className="text-button" disabled={disabled} onClick={onReview}>Rever consulta</button></p>}
     {latest.error && <p role="alert" className="notice error">{latest.error}</p>}
-    {paymentFocus ? <><ClientPaymentPanel consultation={c} disabled={disabled || changed} act={act} /><details className={styles.historySearch}><summary>Informação da consulta</summary><ConsultationLocation {...c} /><ConsultationValue consultation={c} /><p>Crédito disponível: {agendaMoney(c.balance)}</p></details></>
-      : <><ConsultationValue consultation={c} />{c.paymentConditions?.label && !['Free', 'Gift', 'Contribution'].includes(paymentMode) && <p>{c.paymentConditions.label}</p>}<p>Crédito disponível: {agendaMoney(c.balance)}</p><ConsultationPaymentHistory entries={c.paymentHistory} /></>}
+    {paymentFocus ? <><ClientPaymentPanel consultation={c} disabled={disabled || changed} act={act} /><details className={styles.historySearch}><DisclosureSummary>Informação da consulta</DisclosureSummary><ConsultationLocation {...c} /><ConsultationValue consultation={c} /><p>Crédito disponível: {moneyText(agendaMoney(c.balance))}</p></details></>
+      : <><ConsultationValue consultation={c} />{c.paymentConditions?.label && !['Free', 'Gift', 'Contribution'].includes(paymentMode) && <p>{c.paymentConditions.label}</p>}<p>Crédito disponível: {moneyText(agendaMoney(c.balance))}</p><ConsultationPaymentHistory entries={c.paymentHistory} /></>}
     {c.state === 'Confirmed' && c.creditProposals?.some(p => !p.decision) && <p>Proposta de utilização de crédito enviada à gestão.</p>}
     {c.state === 'NoShow' && <p>Não compareceste à consulta. Não tens nenhum valor a pagar por esta consulta.</p>}
     {!paymentFocus && c.actions?.includes('Accept') && <ConsultationConditionsForm key={`${c.id}:${c.version}:${c.termsVersion}`} consultation={c} disabled={disabled || changed} onAccept={values => act('Accept', values)} />}

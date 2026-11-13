@@ -1,3 +1,5 @@
+import moneyText from './moneyText'
+import DisclosureSummary from './DisclosureSummary'
 import { useState } from 'react'
 import ActionButton from './ActionButton'
 import AdaptiveSelect from './AdaptiveSelect'
@@ -17,7 +19,7 @@ export default function ExpenseAllocationFields({ allocations, total, onChange, 
     onChange(allocations.map(allocation => allocation.key === key ? { ...allocation, ...change } : allocation))
   }
   return <details onToggle={event => setOpen(event.currentTarget.open)}>
-    <summary>Repartir a linha (opcional)</summary>
+    <DisclosureSummary>Repartir a linha (opcional)</DisclosureSummary>
     <p>Associa valores a uma atividade, a um local ou a ambos. O restante fica como despesa geral.</p>
     {allocations.map((allocation, index) => <InformationCard key={allocation.key} cardId={'expense-allocation-' + allocation.key}
       title={'Repartição ' + (index + 1)} headingLevel={5}>
@@ -49,7 +51,7 @@ export default function ExpenseAllocationFields({ allocations, total, onChange, 
     {activities.error && picking === null && <InformationCard cardId="expense-activity-error" error={activities.error} onRetry={activities.refresh} />}
     <ActionButton variant="secondary" disabled={disabled || allocations.length >= 20} onClick={() =>
       onChange([...allocations, { key: crypto.randomUUID(), activity: null, location: null, amount: '' }])}>Acrescentar repartição</ActionButton>
-    {allocations.length > 0 && (general >= 0 ? <p>Despesa geral: <strong>{agendaMoney(general)}</strong></p>
+    {allocations.length > 0 && (general >= 0 ? <p>Despesa geral: <strong>{moneyText(agendaMoney(general))}</strong></p>
       : <p className="notice error" role="alert">A repartição excede o total da linha com IVA.</p>)}
   </details>
 }

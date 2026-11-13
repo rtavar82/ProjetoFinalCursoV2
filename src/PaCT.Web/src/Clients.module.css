@@ -1,19 +1,13 @@
 .page { min-width: 0; }
-.page :global(.section-tabs), .page :global(.button-row) { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
-.page :global(.section-tabs) button, .page :global(.button-row) button { width: auto; margin: 0; }
-.page :global(.section-tabs) { margin: 28px 0; gap: 8px; }
-.page :global(.section-tabs) button, .page :global(.button-row) button { flex: 1 1 100%; }
-.page :global(.client-badge) { display: inline-block; font-size: var(--font-size-overline); color: var(--accent); background: var(--tint); padding: 4px 9px; border-radius: 7px; margin-top: 8px; }
+.content { display: grid; gap: var(--space-6); align-content: start; }
+.clientHeading { display: grid; gap: var(--space-3); margin-bottom: var(--space-5); }
+.clientHeading > h2 { margin: 0; }
+.badge { display: inline-block; justify-self: start; color: var(--accent); background: var(--tint); padding: var(--space-1) var(--space-3); border-radius: var(--space-2); font-size: var(--font-size-label); margin: 0; }
+.clientAreas { display: grid; gap: var(--space-5); }
+.clientAreas > nav { padding-bottom: var(--space-5); border-bottom: 1px solid var(--line); }
 .page :global(.client-form) :global(.field-help) { margin: 0; }
-.page :global(.review-card) { border: 1px solid #dfd6b8; background: #fffdf6; padding: 18px; border-radius: 16px; margin-top: 24px; }
-.page :global(.review-card) fieldset { min-width: 0; display: grid; gap: 12px; border: 1px solid var(--line); border-radius: 12px; padding: 18px; }
-.page :global(.review-card) :global(.checkbox) { overflow-wrap: anywhere; }
-.page :global(.comparison-links) { display: grid; gap: 8px; margin-top: 16px; }
-.page :global(.comparison-links) :global(.text-button) { text-align: left; padding: 8px 0; margin: 0; text-decoration-line: underline; }
-.page :global(.client-comparison) { width: min(640px, calc(100% - 24px)); max-height: calc(100dvh - 24px); padding: var(--card-padding); overflow: auto; }
-.page :global(.client-comparison) p { font-size: var(--font-size-small); }
-.page :global(.client-data-summary) { display: grid; gap: 14px; }
-.page :global(.client-data-summary) > div { border-bottom: 1px solid var(--line); padding-bottom: 10px; }
+.page :global(.client-data-summary) { display: grid; gap: var(--space-3); }
+.page :global(.client-data-summary) > div { border-bottom: 1px solid var(--line); padding-bottom: var(--space-2); }
 .page :global(.client-data-summary) dt { color: var(--muted); font-size: var(--font-size-caption); }
-.page :global(.client-data-summary) dd { margin: 4px 0 0; overflow-wrap: anywhere; }
-@media (min-width: 421px) { .page :global(.section-tabs) { gap: 12px; } .page :global(.section-tabs) button { flex: 0 1 auto; } .page :global(.review-card) { padding: 24px; } }
+.page :global(.client-data-summary) dd { margin: var(--space-1) 0 0; overflow-wrap: anywhere; }
+.reviews { display: grid; gap: var(--space-5); min-width: 0; }

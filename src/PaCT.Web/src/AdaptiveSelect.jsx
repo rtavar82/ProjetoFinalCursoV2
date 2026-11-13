@@ -1,6 +1,7 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import DialogHeader from './DialogHeader'
+import SelectControl from './SelectControl'
 import MbWayLogo from './MbWayLogo'
 import styles from './AdaptiveSelect.module.css'
 
@@ -30,8 +31,11 @@ function SelectPicker({ id, select, onClose, onChoose }) {
     const element = dialog.current
     element.showModal()
     list.current.focus()
-    return () => element.close()
-  }, [])
+    return () => {
+      element.close()
+      if (select.isConnected && !select.matches(':disabled')) select.focus({ preventScroll: true })
+    }
+  }, [select])
   useEffect(() => {
     const observer = new MutationObserver(() => setOptions(optionsOf(select)))
     observer.observe(select, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ['disabled', 'hidden', 'label', 'value'] })
@@ -117,7 +121,7 @@ export default function AdaptiveSelect({ onPointerDown, onClick, onKeyDown, onCh
   const id = useId()
   const [openedSelect, setOpenedSelect] = useState(null)
   function bind(element) { select.current = element; if (typeof ref === 'function') ref(element); else if (ref) ref.current = element }
-  function close() { setOpenedSelect(null); if (select.current?.isConnected) select.current.focus({ preventScroll: true }) }
+  function close() { setOpenedSelect(null) }
   function canOpen(element) { return !props.multiple && !(props.size > 1) && !element.matches(':disabled') }
   function choose(index) {
     const element = select.current, option = element?.options[index]
@@ -128,7 +132,7 @@ export default function AdaptiveSelect({ onPointerDown, onClick, onKeyDown, onCh
     close()
   }
   return <>
-    <select {...props} ref={bind} aria-expanded={!!openedSelect} aria-haspopup="dialog" aria-controls={openedSelect ? id + '-list' : undefined} onChange={event => { onChange?.(event); setOpenedSelect(null) }}
+    <SelectControl {...props} data-recovery-controlled={props.value !== undefined || undefined} ref={bind} aria-expanded={!!openedSelect} aria-haspopup="dialog" aria-controls={openedSelect ? id + '-list' : undefined} onChange={event => { onChange?.(event); setOpenedSelect(null) }}
       onPointerDown={event => { onPointerDown?.(event); if (!event.defaultPrevented && canOpen(event.currentTarget)) { event.preventDefault(); if (event.pointerType !== 'touch') setOpenedSelect(event.currentTarget) } }}
       onClick={event => { onClick?.(event); if (!event.defaultPrevented && canOpen(event.currentTarget)) { event.preventDefault(); setOpenedSelect(event.currentTarget) } }}
       onKeyDown={event => { onKeyDown?.(event); if (!event.defaultPrevented && canOpen(event.currentTarget) && (['Enter', ' ', 'F4'].includes(event.key) || event.altKey && event.key === 'ArrowDown')) { event.preventDefault(); setOpenedSelect(event.currentTarget) } }} />

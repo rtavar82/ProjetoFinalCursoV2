@@ -1,0 +1,9 @@
+.summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  list-style: none;
+}
+.summary::-webkit-details-marker { display: none; }
+.summary > svg[data-arrow-direction] { margin-inline-start: auto; }

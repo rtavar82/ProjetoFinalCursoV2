@@ -1,34 +1,55 @@
-// Only encrypted interruption checkpoints go into this database. The protected
-// key envelope and window identity live in sessionStorage, never a draft list.
+// Manager drafts only. No plaintext content or unwrapped key is persisted.
 export const MANAGER_RECOVERY_DATABASE = 'PaCT.ManagerInterruption.v1'
 export const MANAGER_RECOVERY_TICKET = 'pact.manager-interruption.window.v1'
+export const RECOVERY_TTL = 8 * 60 * 60 * 1000
 const encoder = new TextEncoder(), decoder = new TextDecoder()
-
 async function database() {
   return new Promise((resolve, reject) => {
-    const request = indexedDB.open(MANAGER_RECOVERY_DATABASE, 1)
-    request.onupgradeneeded = () => request.result.createObjectStore('sessions', { keyPath: 'id' })
+    let blocked = false
+    const request = indexedDB.open(MANAGER_RECOVERY_DATABASE, 2)
+    request.onupgradeneeded = () => { if (!request.result.objectStoreNames.contains('sessions')) request.result.createObjectStore('sessions', { keyPath: 'id' }) }
     request.onerror = () => reject(request.error)
-    request.onsuccess = () => { const db = request.result; db.onversionchange = () => db.close(); resolve(db) }
+    request.onblocked = () => { blocked = true; reject(new Error('O armazenamento temporário está ocupado por outra versão.')) }
+    request.onsuccess = () => { const db = request.result; if (blocked) { db.close(); return } db.onversionchange = () => db.close(); resolve(db) }
   })
 }
-export async function checkpointRecord(id, value) {
+export async function recoveryRecords(owner) {
   const db = await database()
   try {
     return await new Promise((resolve, reject) => {
-      const transaction = db.transaction('sessions', value === undefined ? 'readonly' : 'readwrite')
-      const store = transaction.objectStore('sessions')
-      const request = value === undefined ? store.get(id) : value === null ? store.delete(id) : store.put({ id, ...value })
-      transaction.oncomplete = () => resolve(request.result)
-      transaction.onabort = transaction.onerror = () => reject(transaction.error || request.error)
+      const tx = db.transaction('sessions', 'readonly'), request = tx.objectStore('sessions').getAll()
+      tx.oncomplete = () => resolve(request.result.filter(record => record.owner === owner))
+      tx.onabort = tx.onerror = () => reject(tx.error || request.error)
     })
   } finally { db.close() }
 }
-export function readRecoveryTicket() {
-  try { return JSON.parse(sessionStorage.getItem(MANAGER_RECOVERY_TICKET) || 'null') } catch { return null }
+export async function saveRecoveryRecord(record, expectedRevision, isCurrent = () => true) {
+  const db = await database()
+  try {
+    return await new Promise((resolve, reject) => {
+      const tx = db.transaction('sessions', 'readwrite'), store = tx.objectStore('sessions'), request = store.get(record.id)
+      request.onsuccess = () => {
+        if (!isCurrent() || (request.result?.revision || 0) !== expectedRevision || request.result && request.result.owner !== record.owner) { tx.abort(); return }
+        try { store.put(record) } catch { tx.abort() }
+      }
+      tx.oncomplete = resolve
+      tx.onabort = tx.onerror = () => reject(tx.error || new Error('A cópia temporária mudou noutra janela.'))
+    })
+  } finally { db.close() }
 }
-export function writeRecoveryTicket(ticket) { sessionStorage.setItem(MANAGER_RECOVERY_TICKET, JSON.stringify(ticket)) }
-export function dropRecoveryTicket() { sessionStorage.removeItem(MANAGER_RECOVERY_TICKET) }
+export async function deleteRecoveryRecords(owner, id = null) {
+  const db = await database()
+  try {
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction('sessions', 'readwrite'), request = tx.objectStore('sessions').openCursor()
+      request.onsuccess = () => { const cursor = request.result; if (!cursor) return; if (cursor.value.owner === owner && (id === null || cursor.key === id)) cursor.delete(); cursor.continue() }
+      tx.oncomplete = resolve; tx.onabort = tx.onerror = () => reject(tx.error || request.error)
+    })
+  } finally { db.close() }
+}
+export function readRecoveryTicket() { try { return JSON.parse(sessionStorage.getItem(MANAGER_RECOVERY_TICKET) || 'null') } catch { return null } }
+export function writeRecoveryTicket(ticket) { try { sessionStorage.setItem(MANAGER_RECOVERY_TICKET, JSON.stringify(ticket)) } catch { /* The encrypted record can still be discovered after reopening. */ } }
+export function dropRecoveryTicket() { try { sessionStorage.removeItem(MANAGER_RECOVERY_TICKET) } catch { /* Storage may be disabled. */ } }
 
 export async function recoveryCipher(rawKey, owner, windowId) {
   const key = await crypto.subtle.importKey('raw', Uint8Array.from(atob(rawKey), char => char.charCodeAt(0)), 'AES-GCM', false, ['encrypt', 'decrypt'])

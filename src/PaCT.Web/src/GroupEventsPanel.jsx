@@ -1,3 +1,8 @@
+import moneyText from './moneyText'
+import RecoveryForm from './RecoveryForm'
+import useRecoveryState from './useRecoveryState'
+import useRecoveryRecord from './useRecoveryRecord'
+import DisclosureSummary from './DisclosureSummary'
 import AgendaShareReference from './AgendaShareReference'
 import CalendarInput from './CalendarInput'
 import eventStatusLabel from './eventStatusLabel'
@@ -29,7 +34,7 @@ import styles from './GroupEventsPanel.module.css'
 
 
 export default function GroupEventsPanel({ manager = false, send, disabled = false, guard = action => action(), feedback, initialEntry, onClose }) {
-  const [openedDetail, setDetail] = useState(null)
+  const [openedDetail, setDetail] = useRecoveryRecord('event', 'consultations/events/', 'events', true)
   const detailId = openedDetail?.summary.id
   const readDetail = useCallback(() => apiRequest('consultations/events/' + detailId), [detailId])
   const latestDetail = useLiveResource('events', 'event-detail:' + detailId, readDetail, !!detailId)
@@ -38,10 +43,10 @@ export default function GroupEventsPanel({ manager = false, send, disabled = fal
   const [error, setError] = useState('')
   const readSetup = useCallback(signal => apiRequest('consultations/setup', undefined, { signal }), [])
   const setup = useLiveResource('agenda', 'event-services', readSetup, manager && !!editing)
-  const open = useCallback(async id => { try { setDetail(await apiRequest('consultations/events/' + id)); setError('') } catch (failure) { setError(failure.message) } }, [])
+  const open = useCallback(async id => { try { setDetail(await apiRequest('consultations/events/' + id)); setError('') } catch (failure) { setError(failure.message) } }, [setDetail])
   const initialEventId = initialEntry?.events ? initialEntry.id : null
   const initialRevision = initialEntry?.revision
-  useEffect(() => { if (initialEventId) { let active = true; apiRequest('consultations/events/' + initialEventId).then(value => { if (active) setDetail(value) }).catch(failure => { if (active) setError(failure.message) }); return () => { active = false } } }, [initialEventId, initialRevision])
+  useEffect(() => { if (initialEventId) { let active = true; apiRequest('consultations/events/' + initialEventId).then(value => { if (active) setDetail(value) }).catch(failure => { if (active) setError(failure.message) }); return () => { active = false } } }, [initialEventId, initialRevision, setDetail])
   function dismiss() { setDetail(null); onClose?.() }
   function close() { guard(dismiss) }
   async function command(input, retry = false, cleanup = null) {
@@ -59,7 +64,7 @@ export default function GroupEventsPanel({ manager = false, send, disabled = fal
     {detail && <ConsultationDialog title={detail.summary.title} label="Detalhe do evento" disabled={disabled} onClose={close}>
       <AppointmentSummary consultation={detail.summary} showTitle={false} stateLabel={eventStatusLabel(detail.summary, { manager, participations: manager ? [] : detail.ownParticipations })} typeLabel={detail.summary.kind === 'Retreat' ? 'Retiro' : 'Grupo'} />{feedback}{detail.instructions && <p className={styles.note}>{detail.instructions}</p>}
       {!manager && <>{detail.summary.registrationOpen && detail.summary.scheduleBlocked && <p>As inscrições estão temporariamente indisponíveis.</p>}{!detail.summary.hasParticipation && detail.summary.registrationOpen && !detail.summary.scheduleBlocked && detail.summary.eligible && (!detail.summary.isFree
-        ? <section aria-label="Inscrição na consulta de grupo"><h3>Inscrição na consulta de grupo</h3>{detail.summary.remaining === 0 && <p>O evento está lotado. O pedido entra na fila de desistências; o prazo de pagamento só começa quando a gestão confirmar a entrada.</p>}<p>{detail.paymentConditions?.label}</p><p>{detail.summary.referencePrice === null ? 'Contribuição livre' : agendaMoney(detail.summary.referencePrice)}</p>
+        ? <section aria-label="Inscrição na consulta de grupo"><h3>Inscrição na consulta de grupo</h3>{detail.summary.remaining === 0 && <p>O evento está lotado. O pedido entra na fila de desistências; o prazo de pagamento só começa quando a gestão confirmar a entrada.</p>}<p>{detail.paymentConditions?.label}</p><p>{moneyText(detail.summary.referencePrice === null ? 'Contribuição livre' : agendaMoney(detail.summary.referencePrice))}</p>
           <ConsultationConditionsForm consultation={{ paymentConditions: detail.paymentConditions, balance: detail.balance, referencePrice: detail.summary.referencePrice }} disabled={disabled}
             submitLabel={detail.summary.remaining === 0 ? 'Aceitar condições e pedir entrada na fila de desistências' : detail.paymentConditions?.mode === 'Prepayment' ? 'Confirmar inscrição. De seguida farei este pagamento.' : 'Aceitar condições e confirmar inscrição'}
             onAccept={fields => command({ action: 'JoinEvent', id: detail.summary.id, version: detail.summary.version, choice: detail.summary.remaining === 0 ? 'Waiting' : undefined, ...fields })} /></section>
@@ -103,16 +108,17 @@ function AddParticipant({ event, disabled, send }) {
 }
 
 export function EventEditor({ event, setup, disabled, send, onBack, fixedService = false, dates }) {
+  const recoveryId = event.id || event.definition?.id || 'new:' + (event.definition?.serviceId || 'manual')
   const [error, setError] = useState('')
-  const [billingMode, setBillingMode] = useState(event.definition?.billingMode || 'Prepayment')
-  const [selectedService, setSelectedService] = useState(event.definition?.serviceId || '')
+  const [billingMode, setBillingMode] = useRecoveryState('event-editor:' + recoveryId + ':billingMode', event.definition?.billingMode || 'Prepayment')
+  const [selectedService, setSelectedService] = useRecoveryState('event-editor:' + recoveryId + ':selectedService', event.definition?.serviceId || '')
   const service = setup.data?.services.find(s => s.id === selectedService)
   const places = [...new Set([...physicalLocations(setup.data), event.id && event.definition?.publicLocation].filter(Boolean))]
   const retreat = service?.serviceKind === 'Retreat'
   const paidOccurrence = service && !retreat && service.paymentMode !== 'Free' && billingMode === 'Prepayment'
   return <InformationCard title={event.id ? 'Editar evento' : 'Criar grupo ou retiro'} cardId="event-editor" loading={setup.loading} error={setup.error}>
     {error && <p role="alert" className="notice error">{error}</p>}
-    <form data-protect-draft onSubmit={async e => { e.preventDefault(); const fields = new FormData(e.currentTarget); setError(''); try {
+    <RecoveryForm recoveryKey={'event-editor:' + recoveryId} recoveryVersion={event.version || 0} recoveryScopes={['event-editor:' + recoveryId + ':', 'availability-editor:']} onVerified={onBack} data-protect-draft onSubmit={async e => { e.preventDefault(); const fields = new FormData(e.currentTarget); setError(''); try {
       const start = dates ? dates.from + 'T' + fields.get('start') : fields.get('start')
       const end = dates ? dates.to + 'T' + fields.get('end') : fields.get('end')
       if (!start || !end || end <= start) throw new Error('O fim do evento deve ser posterior ao início. Corrige a data e a hora de fim.')
@@ -127,13 +133,13 @@ export function EventEditor({ event, setup, disabled, send, onBack, fixedService
       {service?.paymentMode !== 'Free' && (retreat || billingMode === 'Prepayment') && <InformationCard title="Utilização de crédito pelo cliente" headingLevel={3} cardId="event-credit-authorization"><label className="checkbox"><input type="checkbox" name="allowClientCredit" defaultChecked={event.definition?.allowClientCredit || false} />Permitir utilizar crédito disponível na inscrição</label><p>A utilização é opcional e só aparece ao cliente com crédito autorizado disponível.</p></InformationCard>}
       {event.id && <><label className="checkbox"><input type="checkbox" name="promoted" />Divulgar também em Partilhas</label><label>Texto de divulgação (opcional)<textarea name="promotionText" maxLength="2000" defaultValue={event.definition?.promotionText || ''} /></label></>}
       <button>Publicar e sair</button>
-    </fieldset></form><button type="button" className="secondary" disabled={disabled} onClick={onBack}>Voltar aos eventos</button>
+    </fieldset></RecoveryForm><button type="button" className="secondary" disabled={disabled} onClick={onBack}>Voltar aos eventos</button>
   </InformationCard>
 }
 
 function EventRoster({ event, disabled, send, guard, initialParticipationId }) {
   const [page, setPage] = useState(1)
-  const [selected, setSelected] = useState(null)
+  const [selected, setSelected] = useRecoveryRecord('event-participation:' + event.summary.id, 'consultations/events/' + event.summary.id + '/participants/', 'events')
   const [error, setError] = useState('')
   const read = useCallback(signal => apiRequest(`consultations/events/${event.summary.id}/participants?page=${page}`, undefined, { signal }), [event.summary.id, page])
   const roster = useLiveResource('events', `roster:${event.summary.id}:${page}`, read)
@@ -144,7 +150,7 @@ function EventRoster({ event, disabled, send, guard, initialParticipationId }) {
     let active = true
     apiRequest(`consultations/events/${event.summary.id}/participants/${id}`).then(p => { if (active) { setSelected(p); setError('') } }).catch(failure => { if (active) setError(failure.message) })
     return () => { active = false }
-  }, [initialParticipationId, event.summary.id])
+  }, [initialParticipationId, event.summary.id, setSelected])
   async function act(command, retry, cleanup) { const result = await send(command, retry, cleanup); if (result) {
     if (command.action === 'RegisterParticipation') setSelected(await apiRequest(`consultations/events/${event.summary.id}/participants/${command.id}`))
     else setSelected(null)
@@ -187,10 +193,10 @@ export function Participation({ participation: p, event, disabled, send, manager
     {manager && <WhatsAppMessage personId={p.personId} contact={p.personId ? undefined : p.guestContact}
       startsAt={event.summary.startsAt} disabled={disabled} />}
     {!manager && paymentVisible && <ClientPaymentPanel consultation={clientPayment} disabled={disabled} act={clientAct} participation />}
-    {p.acceptedConditions && <details><summary>Condições aceites na inscrição</summary><ConditionsContent conditions={{ ...p.acceptedConditions, paymentInformation: null }} /></details>}
+    {p.acceptedConditions && <details><DisclosureSummary>Condições aceites na inscrição</DisclosureSummary><ConditionsContent conditions={{ ...p.acceptedConditions, paymentInformation: null }} /></details>}
     {manager && p.canReceive && <FinancialEntryForm people={[{ id: p.personId, data: { firstName: names?.[p.personId] || 'Ficha de cliente' } }]} participation={{ ...p, paymentMode: event.summary.paymentMode }} disabled={disabled} instant={instant} reviewBeforeSubmit submit={async (e, input) => { e.preventDefault(); return send(input(new FormData(e.currentTarget))) }} />}
     {manager && (p.remaining > 0 || p.financialState === 'ContributionUndefined') && <InformationCard title="Pagamento da participação" headingLevel={3} cardId="participation-payment">
-      <p>Por pagar: <strong>{p.financialState === 'ContributionUndefined' ? 'Contribuição por definir' : agendaMoney(p.remaining)}</strong></p>
+      <p>Por pagar: <strong>{moneyText(p.financialState === 'ContributionUndefined' ? 'Contribuição por definir' : agendaMoney(p.remaining))}</strong></p>
       {p.paymentDeclaredAt && <p>Aguarda confirmação de recebimento pela terapeuta.</p>}
     </InformationCard>}
     {manager && p.canSettle && <CreditSettlementForm record={p} manager={manager} participation disabled={disabled} act={act} />}

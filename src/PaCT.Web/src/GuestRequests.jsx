@@ -1,3 +1,4 @@
+import DisclosureSummary from './DisclosureSummary'
 import AdaptiveSelect from './AdaptiveSelect'
 import { useCallback, useEffect, useState } from 'react'
 import { apiRequest } from './identityApi'
@@ -45,7 +46,7 @@ export default function GuestRequests({ send, disabled, guard, onCreateClient, f
           onCreateClient={onCreateClient && (() => guard(onCreateClient))} />
         <button type="button" className="secondary" disabled={disabled} onClick={() => { if (window.confirm('Confirmas a recusa deste pedido?')) decide('RejectGuestRequest') }}>Recusar pedido</button>
       </>}
-      {detail.history.length > 0 && <details><summary>Histórico do pedido</summary>{detail.history.map((entry, index) => <p key={`${entry.at}:${index}`}>{agendaDate(entry.at)} · {({ StartGuestTreatment: 'Em tratamento', LinkGuestRequest: 'Ficha associada', RejectGuestRequest: 'Recusado' })[entry.action]}</p>)}</details>}
+      {detail.history.length > 0 && <details><DisclosureSummary>Histórico do pedido</DisclosureSummary>{detail.history.map((entry, index) => <p key={`${entry.at}:${index}`}>{agendaDate(entry.at)} · {({ StartGuestTreatment: 'Em tratamento', LinkGuestRequest: 'Ficha associada', RejectGuestRequest: 'Recusado' })[entry.action]}</p>)}</details>}
     </ConsultationDialog>}
   </>
 }
@@ -74,7 +75,7 @@ function GuestApproval({ detail, disabled, decide, onCreateClient }) {
     {coincident && <section className={styles.identity} aria-label="Contactos coincidentes">
       <p className="notice" role="status">Existem contactos coincidentes com outras fichas. Esta ocorrência também está em Clientes.</p>
       <h3>Pretendes unir estes dados registados pelo visitante a um cliente que já tenha registo?</h3>
-      <details className={styles.search}><summary>Pesquisar cliente para associar</summary>
+      <details className={styles.search}><DisclosureSummary>Pesquisar cliente para associar</DisclosureSummary>
         <ClientSearch canSelect={canBookForClient} selected={selected} onSelect={choose} disabled={disabled || keepSeparate} unavailableIds={[personId]} />
       </details>
       {selected && <><p>Ao aprovar, o pedido fica associado à ficha escolhida. Os dados dessa ficha são mantidos e a ficha criada para este pedido deixa de estar ativa.</p>

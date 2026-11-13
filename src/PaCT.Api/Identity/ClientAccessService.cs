@@ -3,13 +3,13 @@ using System.Text.Json;
 namespace PaCT.Api.Identity;
 
 public sealed class ClientAccessService(IClientAccessStore store, IIdentityStore identities, IdentityService identity,
-    IdentitySecurity security, ISecurityEmailTransport transport, TimeProvider time)
+    IdentitySecurity security, ISecurityEmailTransport transport, TimeProvider time, ITherapistInvitationStore invitations)
 {
     private DateTime Now => time.GetUtcNow().UtcDateTime;
     private static IdentityProblem Changed() => new(409, "A conta mudou entretanto. Atualiza a segurança da conta antes de continuar.");
     private static IdentityProblem InvalidLink() => new(400, "Este link já não é válido. Pede à gestão um novo envio.");
-    private static bool Available(IdentityAccount? account) => account is { Role: Roles.Client, ClosedAt: null,
-        PersonActive: true, LinkStatus: "Verified", EmailConfirmedAt: not null, PasswordHash: not null };
+    private static bool Available(IdentityAccount? account) => account is { ClosedAt: null, PersonActive: true, LinkStatus: "Verified", EmailConfirmedAt: not null, PasswordHash: not null }
+        && account.Role is Roles.Client or Roles.TherapistManager;
 
     private async Task<IdentityAccount> ManagerAsync(string id, string? password, CancellationToken ct)
     {
@@ -29,22 +29,29 @@ public sealed class ClientAccessService(IClientAccessStore store, IIdentityStore
         return manager;
     }
 
-    private static async Task<IdentityAccount> ClientAsync(IClientAccessSession session, string personId)
+    private async Task<IdentityAccount> TargetAsync(IClientAccessSession session, string? personId, IdentityAccount manager, bool therapist, CancellationToken ct)
     {
-        var account = await session.AccountAsync(personId, true);
-        if (!Available(account)) throw new IdentityProblem(409, "Esta ficha não tem uma conta de cliente ativa com o registo concluído.");
-        return account!;
+        if (therapist)
+        {
+            if (manager.Role != Roles.TechnicalManager) throw new IdentityProblem(403, "Só o gestor técnico pode gerir o acesso da gestora-terapeuta.");
+            personId = (await invitations.FindTherapistAsync(ct))?.PersonId;
+        }
+        var account = personId is null ? null : await session.AccountAsync(personId, true);
+        if (!Available(account) || account!.Role != (therapist ? Roles.TherapistManager : Roles.Client))
+            throw new IdentityProblem(409, therapist ? "A conta da gestora-terapeuta não está ativa ou ainda não concluiu o registo."
+                : "Esta ficha não tem uma conta de cliente ativa com o registo concluído.");
+        return account;
     }
 
     private ClientAccessDetails Details(ClientAccessAction action) => JsonSerializer.Deserialize<ClientAccessDetails>(
         security.Decrypt(action.Id, "client-access-action", action.Details)) ?? throw InvalidLink();
 
-    public async Task<object> StatusAsync(string personId, string author, CancellationToken ct)
+    public async Task<object> StatusAsync(string? personId, string author, CancellationToken ct, bool therapist = false)
     {
-        await ManagerAsync(author, null, ct);
+        var manager = await ManagerAsync(author, null, ct);
         return await store.ExecuteAsync<object>(async session =>
         {
-            var account = await ClientAsync(session, personId);
+            var account = await TargetAsync(session, personId, manager, therapist, ct);
             var actions = await session.ActionsAsync(account.Id);
             var pending = actions.FirstOrDefault(a => Current(a, account, Now));
             return new { accountId = account.Id, version = account.Version,
@@ -55,22 +62,22 @@ public sealed class ClientAccessService(IClientAccessStore store, IIdentityStore
         }, ct);
     }
 
-    public async Task<object> RequestAsync(string personId, string author, ClientAccessRequest input, bool resetPasskeys, CancellationToken ct)
+    public async Task<object> RequestAsync(string? personId, string author, ClientAccessRequest input, bool resetPasskeys, CancellationToken ct, bool therapist = false)
     {
         if (input.OperationId == Guid.Empty || !input.ConfirmIdentity || input.Password is null)
-            throw new IdentityProblem(400, "Confirma a identidade do cliente e indica a tua palavra-passe.");
+            throw new IdentityProblem(400, "Confirma a identidade da pessoa e indica a tua palavra-passe.");
         var manager = await ManagerAsync(author, input.Password, ct);
         var email = resetPasskeys ? null : IdentityValidation.Email(input.NewEmail ?? "");
         return await store.ExecuteAsync<object>(async session =>
         {
             var actor = await session.AccountAsync(author);
             if (actor?.SecurityStamp != manager.SecurityStamp || actor.Role != manager.Role || actor.ClosedAt is not null) throw Changed();
-            var account = await ClientAsync(session, personId);
+            var account = await TargetAsync(session, personId, manager, therapist, ct);
             var kind = resetPasskeys ? "ResetPasskeys" : "ChangeEmail";
             var operationId = input.OperationId.ToString("D");
             if (await session.ActionAsync(operationId) is { } prior)
             {
-                if (prior.AccountId != account.Id || prior.PersonId != personId || prior.CreatedByAccountId != author || prior.Kind != kind
+                if (prior.AccountId != account.Id || prior.PersonId != account.PersonId || prior.CreatedByAccountId != author || prior.Kind != kind
                     || !string.Equals(Details(prior).NewEmail, email, StringComparison.OrdinalIgnoreCase)) throw Changed();
                 return Result(prior);
             }
@@ -81,15 +88,15 @@ public sealed class ClientAccessService(IClientAccessStore store, IIdentityStore
             if (hash is not null)
             {
                 if (hash.SequenceEqual(account.EmailHash)) throw new IdentityProblem(400, "Este já é o email de acesso da conta.");
-                if (await session.EmailUsedAsync(hash, personId)) throw new IdentityProblem(409, "Este email já está associado a outra ficha ou conta. Verifica os dados antes de continuar.");
+                if (await session.EmailUsedAsync(hash, account.PersonId)) throw new IdentityProblem(409, "Este email já está associado a outra ficha ou conta. Verifica os dados antes de continuar.");
                 transport.CheckConfiguration();
             }
             var actions = await session.ActionsAsync(account.Id);
             if (!resetPasskeys) AccountEmailLimits.Check(actions, "ChangeEmail", author, now);
             var count = resetPasskeys ? await session.PasskeyCountAsync(account.Id) : 0;
-            var action = new ClientAccessAction(operationId, account.Id, personId, author, kind, resetPasskeys ? "Applied" : "Pending",
+            var action = new ClientAccessAction(operationId, account.Id, account.PersonId, author, kind, resetPasskeys ? "Applied" : "Pending",
                 Guid.NewGuid().ToString("D"), account.EmailHash, hash,
-                security.Encrypt(operationId, "client-access-action", JsonSerializer.Serialize(new ClientAccessDetails(email, oldEmail, count))),
+                security.Encrypt(operationId, "client-access-action", JsonSerializer.Serialize(new ClientAccessDetails(email, oldEmail, count, account.Role))),
                 now, resetPasskeys ? now : now.AddHours(24), resetPasskeys ? now : null);
             if (resetPasskeys) await session.ResetPasskeysAsync(account, now);
             else
@@ -108,16 +115,18 @@ public sealed class ClientAccessService(IClientAccessStore store, IIdentityStore
         }, ct);
     }
 
-    private static object Result(ClientAccessAction action) => new { action.Id, action.Status,
+    private object Result(ClientAccessAction action) => new { action.Id, action.Status,
         message = action.Kind == "ResetPasskeys"
-            ? "As Passkeys foram removidas e as sessões anteriores terminaram. O cliente pode entrar com a mesma palavra-passe e registar uma nova Passkey."
+            ? Details(action).TargetRole == Roles.TherapistManager
+                ? "As Passkeys da terapeuta foram removidas e os acessos anteriores terminaram. Na próxima entrada, terá de registar uma nova Passkey."
+                : "As Passkeys foram removidas e as sessões anteriores terminaram. O cliente pode entrar com a mesma palavra-passe e registar uma nova Passkey."
             : action.Status == "Confirmed" ? "O novo email já foi confirmado."
-            : action.Status == "Pending" ? "O pedido de confirmação ficou em fila para o novo email. O email atual mantém-se até o cliente confirmar."
+            : action.Status == "Pending" ? "O pedido de confirmação ficou em fila para o novo email. O email atual mantém-se até à confirmação."
             : "Este pedido foi substituído. Atualiza a segurança da conta antes de continuar." };
 
-    private static bool Current(ClientAccessAction action, IdentityAccount account, DateTime now) => action.Kind == "ChangeEmail"
+    private bool Current(ClientAccessAction action, IdentityAccount account, DateTime now) => action.Kind == "ChangeEmail"
         && action.Status == "Pending" && action.ExpiresAt > now && action.AccountId == account.Id && action.PersonId == account.PersonId
-        && action.PreviousEmailHash.SequenceEqual(account.EmailHash) && Available(account);
+        && action.PreviousEmailHash.SequenceEqual(account.EmailHash) && Available(account) && Details(action).TargetRole == account.Role;
 
     public async Task<bool> CanSendEmailAsync(EmailJob job, EmailPayload payload, CancellationToken ct)
     {

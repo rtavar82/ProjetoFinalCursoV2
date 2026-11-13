@@ -1,46 +1,33 @@
-.page { display: grid; gap: 24px; min-width: 0; }
+.page { display: grid; gap: var(--space-6); min-width: 0; }
 .card { min-width: 0; }
-.card h1 { margin: 8px 0 10px; }
-.card h2 { margin: 8px 0 0; }
-.eyebrow { color: var(--muted); font-size: var(--font-size-overline); letter-spacing: .12em; text-transform: uppercase; margin: 0; }
-.actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin-top: 24px; }
-.actions button { width: 100%; min-height: 52px; margin: 0; padding: 12px; }
-.actions p { font-size: var(--font-size-caption); line-height: 1.6; color: var(--muted); margin: 10px 0 0; }
-.views { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 14px; }
-.views button { margin: 0; min-width: 0; padding-inline: .5rem; }
-.visitorHeader { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
-.visitorHeader p { margin: 0; color: var(--muted); }
-.visitorHeader button { width: auto; margin: 0; }
-.heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
-.heading > :global(.text-button) { flex: 0 0 auto; width: auto; margin: 0; padding: 8px 0; font-size: var(--font-size-caption); }
-.description { color: var(--muted); font-size: var(--font-size-label); line-height: 1.7; margin: 24px 0 18px; }
-.tabs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin: 0 0 16px; }
-.tabs button { position: relative; width: 100%; min-height: 60px; padding: 10px; margin: 0; }
-.tabs button:has(.count) { padding-top: 24px; }
-.count { position: absolute; top: 4px; right: 8px; font-size: var(--font-size-badge); line-height: 18px; font-weight: 700; font-variant-numeric: tabular-nums; }
-.tabs button[aria-pressed='true'] { color: white; background: var(--accent); border-color: var(--accent); }
-.period { border: 1px solid var(--line); border-radius: 16px; padding: 18px; margin-bottom: 16px; background: var(--canvas); }
-.periodModes { display: flex; gap: 8px; margin-bottom: 16px; }
-.periodModes button { width: auto; margin: 0; min-height: 44px; padding: 10px 16px; }
-.periodModes button[aria-pressed='true'] { border-color: var(--accent); background: var(--tint); color: var(--ink); }
-.periodDetails > summary { width: fit-content; min-height: 44px; display: list-item; align-content: center; font-size: var(--font-size-label); color: var(--accent); cursor: pointer; }
-.periodDetails[open] > summary { margin-bottom: 12px; }
-.periodDetails > p { margin: 10px 0 0; font-size: var(--font-size-caption); }
-.period label { max-width: 340px; color: var(--muted); }
-.period input { min-height: 44px; }
-.periodNavigation { display: flex; justify-content: space-between; align-items: center; gap: 6px; margin-top: 14px; }
-.periodNavigation button { width: auto; min-height: 44px; padding: 8px 0; margin: 0; }
-.results { display: grid; gap: 14px; }
+.tools { padding-bottom: var(--space-4); border-bottom: 1px solid var(--line); border-radius: 0; }
+.actions, .views { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); }
+.actions > button, .views > button { width: 100%; min-width: 0; min-height: var(--control-height); margin: 0; padding: var(--space-3); }
+.views { margin-top: var(--space-2); }
+.heading { display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); margin-bottom: var(--space-4); }
+.heading > h2 { margin: 0; }
+.heading > :global(.text-button) { flex: 0 0 auto; width: auto; margin: 0; padding: var(--space-2) 0; }
+.description { color: var(--muted); font-size: var(--font-size-label); margin: var(--space-3) 0 var(--space-4); }
+.period { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--space-2) var(--space-3); padding-bottom: var(--space-4); border-bottom: 1px solid var(--line); }
+.periodModes, .periodNavigation { display: flex; align-items: center; gap: var(--space-2); }
+.periodModes > button, .periodNavigation > button { flex: 0 0 auto; width: auto; min-height: var(--control-height); margin: 0; padding: var(--space-2) var(--space-4); }
+.periodModes > button[aria-pressed='true'] { border-color: var(--accent); background: var(--accent); color: var(--surface-inverse-text); }
+.periodNavigation > button:has(svg) { width: var(--control-height); padding: var(--space-2); }
+.periodDetails { grid-column: 1 / -1; }
+.periodDetails > summary { min-height: var(--control-height); color: var(--accent); }
+.periodDetails[open] > summary { margin-bottom: var(--space-3); }
+.periodDetails label { max-width: 340px; color: var(--muted); }
+.range { margin: var(--space-4) 0; font-size: var(--font-size-small); color: var(--muted); }
+.results { display: grid; gap: var(--space-4); }
 .pending { color: var(--ink); font-weight: 600; }
 .reference { font-size: var(--font-size-overline); color: var(--muted); }
-.empty { text-align: center; border: 1px solid var(--line); border-radius: 16px; padding: 36px 20px; background: var(--surface); }
-@media (max-width: 479px) {
-  .tabs { gap: 6px; }
-  .tabs button { padding: 10px 5px; }
-  .actions { gap: 10px; }
-  .heading { gap: 10px; align-items: flex-start; }
-  .heading > :global(.text-button) { max-width: 70px; }
-  .period { padding: 14px; }
+.empty { text-align: center; border: 1px solid var(--line); border-radius: var(--card-radius); padding: var(--space-8) var(--space-5); background: var(--surface); }
+.visitorHeader { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-3); }
+.visitorHeader p { margin: 0; color: var(--muted); }
+.visitorHeader button { width: auto; margin: 0; }
+@media (max-width: 759px) {
+  .heading { align-items: flex-start; flex-direction: column; gap: 0; }
+  .period { grid-template-columns: 1fr; }
+  .periodModes, .periodNavigation { justify-content: center; }
+  .periodModes > button { min-width: 84px; }
 }
-@media (max-width: 599px) { .actions { grid-template-columns: 1fr; } }
-@media (max-width: 767px) { .tabs { grid-template-columns: repeat(2, minmax(0, 1fr)); } }

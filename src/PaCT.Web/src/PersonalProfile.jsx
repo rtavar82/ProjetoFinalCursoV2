@@ -1,3 +1,4 @@
+import DisclosureSummary from './DisclosureSummary'
 import { useEffect, useRef, useState } from 'react'
 import { apiRequest } from './identityApi'
 import ClientProfileForm from './ClientProfileForm'
@@ -17,6 +18,6 @@ export default function PersonalProfile({ busy, perform, notify }) {
     {error && <p role="alert" className="notice error">{error}</p>}{!client && !error && <p role="status">A carregar os teus dados…</p>}
     {client?.identityReviewStatus === 'Pending' && <div className="notice" role="status"><strong>Identidade por verificar</strong><p>A gestão está a verificar os teus dados. Podes continuar a usar a tua conta. Nenhuma ficha anterior foi associada automaticamente.</p></div>}
     {client && <ClientProfileForm key={client.version} client={client} personal busy={busy} onSave={save} />}
-    {reviews.length > 0 && <details><summary>Revisões dos meus dados</summary>{reviews.map(review => <p key={review.id}>{dateOf(review.createdAt)} — {review.message}</p>)}</details>}
+    {reviews.length > 0 && <details><DisclosureSummary>Revisões dos meus dados</DisclosureSummary>{reviews.map(review => <p key={review.id}>{dateOf(review.createdAt)} — {review.message}</p>)}</details>}
   </InformationCard>
 }

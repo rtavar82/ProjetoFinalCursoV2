@@ -28,3 +28,14 @@ public sealed class ClientAccessConfirmationController(ClientAccessService acces
         return Ok(new { message = "Email confirmado. Já podes entrar com o novo email e a tua palavra-passe habitual." });
     }
 }
+
+// The target is resolved by the server: callers cannot choose another manager or client.
+[ApiController, Route("api/identity/therapist-management/access"), Authorize(Roles = Roles.TechnicalManager)]
+[RequestSizeLimit(8192), ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
+public sealed class TherapistAccessController(ClientAccessService access) : ControllerBase
+{
+    private string Author => User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+    [HttpGet] public async Task<IActionResult> Status(CancellationToken ct) => Ok(await access.StatusAsync(null, Author, ct, therapist: true));
+    [HttpPost("email"), EnableRateLimiting("account")] public async Task<IActionResult> Email(ClientAccessRequest input, CancellationToken ct) => Ok(await access.RequestAsync(null, Author, input, false, ct, therapist: true));
+    [HttpPost("reset-passkeys"), EnableRateLimiting("account")] public async Task<IActionResult> Reset(ClientAccessRequest input, CancellationToken ct) => Ok(await access.RequestAsync(null, Author, input, true, ct, therapist: true));
+}

@@ -1,3 +1,4 @@
+import moneyText from './moneyText'
 import AdaptiveSelect from './AdaptiveSelect'
 import { useEffect, useRef, useState } from 'react'
 import ConsultationDialog from './ConsultationDialog'
@@ -20,7 +21,7 @@ function RequestDetails({ value, startsAt }) {
     <div><dt>Horário</dt><dd>{agendaClock(startsAt)} — {agendaClock(end)}</dd></div>
     <div><dt>Modalidade</dt><dd>{value.modality === 'Remote' ? 'Remota' : 'Presencial'}</dd></div>
     {value.modality === 'InPerson' && <div><dt>Local</dt><dd>{value.publicLocation}</dd></div>}
-    <div><dt>Valor</dt><dd>{servicePrice(value)}</dd></div>
+    <div><dt>Valor</dt><dd>{moneyText(servicePrice(value))}</dd></div>
   </dl>
 }
 
@@ -85,7 +86,7 @@ export default function ClientBookingDialog({ seed, send, disabled, guard, onClo
           <label>Modalidade<AdaptiveSelect aria-label="Modalidade do pedido" value={selected?.modality || ''} required disabled={currentModes.length <= 1} onChange={event => choose(variants.find(v => v.id === selected.id && v.modality === event.target.value))}>{[...new Set([...currentModes, selected?.modality].filter(Boolean))].map(mode => <option value={mode} key={mode}>{mode === 'Remote' ? 'Remota' : 'Presencial'}</option>)}</AdaptiveSelect></label>
           {selected && (selected.modality === 'InPerson' || alternatives.length > 1) && <label>{selected.modality === 'InPerson' ? 'Local' : 'Opção'}<AdaptiveSelect aria-label={selected.modality === 'InPerson' ? 'Local do pedido' : 'Opção do pedido'} value={variantKey(selected)} required disabled={alternatives.length <= 1} onChange={event => choose(alternatives.find(v => variantKey(v) === event.target.value))}>{!latest && <option value={variantKey(selected)}>{selected.publicLocation || 'Opção anterior'}</option>}{alternatives.map(v => <option key={variantKey(v)} value={variantKey(v)}>{v.publicLocation || 'Remota'}</option>)}</AdaptiveSelect></label>}
           {selected?.modality === 'InPerson' && <p className={styles.muted}>{selected.paymentMode === 'Prepayment' ? 'A morada completa fica disponível após a confirmação do pagamento antecipado pago.' : 'A morada completa fica disponível após a confirmação.'}</p>}
-          {selected && <div className={styles.requestSummary}><p>Início previsto: <strong>{agendaClock(fields.startsAt)}</strong></p><p>Fim previsto: <strong>{agendaClock(new Date(Date.parse(fields.startsAt) + selected.durationMinutes * 60000))}</strong></p><p>Duração prevista: <strong>{selected.durationMinutes} min</strong></p><p>{servicePrice(selected)}</p></div>}
+          {selected && <div className={styles.requestSummary}><p>Início previsto: <strong>{agendaClock(fields.startsAt)}</strong></p><p>Fim previsto: <strong>{agendaClock(new Date(Date.parse(fields.startsAt) + selected.durationMinutes * 60000))}</strong></p><p>Duração prevista: <strong>{selected.durationMinutes} min</strong></p><p>{moneyText(servicePrice(selected))}</p></div>}
           <div className={styles.accountNote}><strong>Pedido associado à tua conta</strong><p>A tua identificação e contacto seguem junto com o pedido.</p></div>
           <BookingRequestNotice paymentMode={selected?.paymentMode} />
           {needsAcceptance && (requestConditions ? <ConditionsAcceptanceFields conditions={requestConditions} disabled={disabled || checking} accepted={accepted} onChange={value => editor.change('acceptedTermsVersion', value ? requestConditions.version : null)} /> : <p role="status">A consultar as condições da consulta…</p>)}

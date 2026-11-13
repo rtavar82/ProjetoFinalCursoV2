@@ -26,7 +26,7 @@ export default function AppFrame({ children }) {
     <FloatingNotices />
     <ContentFreshness />
     <SubmittedForms />
-    <div ref={notices} className={styles.notices}><PwaStatus /></div>
+    <div ref={notices} data-ui="app-banners" className={styles.notices}><PwaStatus /></div>
     {children}
   </div>
 }

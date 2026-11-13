@@ -1,3 +1,4 @@
+import AppArrow from './AppArrow'
 import { agendaDay, dayKey, monthDays, shiftMonth } from './agendaTime'
 import styles from './ClientAgenda.module.css'
 
@@ -16,15 +17,15 @@ export default function AgendaMonthGrid({ calendar, selection, onSelect, hasItem
   }
   return <div className={styles.calendar} aria-busy={loading || refreshing}>
     <div className={styles.monthTools}>
-      <button type="button" className="text-button" aria-label="Mês anterior" disabled={month <= firstMonth} onClick={() => chooseMonth(shiftMonth(month, -1))}>‹</button>
-      <label className={styles.monthTitle}>{title}<input className={styles.monthInput} aria-label="Mês da agenda" type="month" value={month} min={firstMonth} max={lastMonth} onChange={event => chooseMonth(event.target.value)} /></label>
-      <button type="button" className="text-button" aria-label="Mês seguinte" disabled={!lastMonth || month >= lastMonth} onClick={() => chooseMonth(shiftMonth(month, 1))}>›</button>
+      <button type="button" className="text-button" data-typography="calendar-navigation" aria-label="Mês anterior" disabled={month <= firstMonth} onClick={() => chooseMonth(shiftMonth(month, -1))}><AppArrow direction="left" /></button>
+      <label className={styles.monthTitle} data-typography="calendar-month">{title}<input className={styles.monthInput} aria-label="Mês da agenda" type="month" value={month} min={firstMonth} max={lastMonth} onChange={event => chooseMonth(event.target.value)} /></label>
+      <button type="button" className="text-button" data-typography="calendar-navigation" aria-label="Mês seguinte" disabled={!lastMonth || month >= lastMonth} onClick={() => chooseMonth(shiftMonth(month, 1))}><AppArrow direction="right" /></button>
     </div>
-    <div className={styles.week} aria-hidden="true">{['seg.', 'ter.', 'qua.', 'qui.', 'sex.', 'sáb.', 'dom.'].map(day => <span key={day}>{day}</span>)}</div>
+    <div className={styles.week} data-typography="calendar-weekday" aria-hidden="true">{['seg.', 'ter.', 'qua.', 'qui.', 'sex.', 'sáb.', 'dom.'].map(day => <span key={day}>{day}</span>)}</div>
     <div className={styles.days}>{Array.from({ length: offset }, (_, index) => <span key={'blank-' + index} />)}{monthDays(month).map(day => {
       const marked = hasItems(day)
       return <button type="button" key={day} aria-label={[agendaDay(day), marked && dayStatus].filter(Boolean).join(' · ')}
-        aria-pressed={selectedDay === day} data-marked={marked} className={styles.day}
+        aria-pressed={selectedDay === day} data-marked={marked} className={styles.day} data-typography="calendar-day"
         disabled={!data || day < firstDay || day > lastDay} onClick={() => onSelect({ month, day })}>
         <span>{Number(day.slice(-2))}</span><span className={styles.dot} aria-hidden="true">{marked ? '•' : ''}</span>
       </button>

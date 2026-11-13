@@ -211,7 +211,7 @@ export default function CalendarInput({ type = 'datetime-local', ref, excludeMin
     close()
   }
   return <span className={styles.field}>
-    <input {...props} type={type} ref={bind} className={styles.input} aria-haspopup="dialog" aria-expanded={!!activeInput}
+    <input {...props} data-recovery-controlled={props.value !== undefined || undefined} type={type} ref={bind} className={styles.input} aria-haspopup="dialog" aria-expanded={!!activeInput}
       aria-controls={activeInput ? id : undefined} onClick={show}
       onPointerDown={event => { if (!event.currentTarget.readOnly && !event.currentTarget.matches(':disabled')) event.preventDefault() }}
       onKeyDown={event => {

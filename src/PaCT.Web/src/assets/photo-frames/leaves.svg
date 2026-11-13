@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" fill="none">
+<defs><linearGradient id="leaf" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#e2e6bf"/><stop offset=".55" stop-color="#afbf8b"/><stop offset="1" stop-color="#63784f"/></linearGradient><linearGradient id="bud"><stop stop-color="#fff8df"/><stop offset="1" stop-color="#d8ceaa"/></linearGradient><path id="leafShape" d="M0 0C-26-4-37-18-33-26C-16-25-3-16 0 0Z"/><filter id="shade" x="-35%" y="-35%" width="170%" height="170%"><feDropShadow dx="1" dy="1.5" stdDeviation="1.5" flood-color="#253e34" flood-opacity=".26"/></filter></defs>
+<g filter="url(#shade)" stroke="#70845a" stroke-linejoin="round">
+<path d="M9 192C12 129 15 71 53 43C87 19 134 15 194 9" stroke="#e8e8bd" stroke-width="3.2" stroke-linecap="round"/>
+<g fill="url(#leaf)" stroke-width=".7">
+<use href="#leafShape" transform="translate(12 175) rotate(12)"/><use href="#leafShape" transform="translate(14 155) rotate(128)"/>
+<use href="#leafShape" transform="translate(17 136) rotate(15)"/><use href="#leafShape" transform="translate(20 116) rotate(141)"/>
+<use href="#leafShape" transform="translate(28 94) rotate(18)"/><use href="#leafShape" transform="translate(37 73) rotate(148)"/>
+<use href="#leafShape" transform="translate(52 49) rotate(32)"/><use href="#leafShape" transform="translate(73 34) rotate(171)"/>
+<use href="#leafShape" transform="translate(94 25) rotate(62)"/><use href="#leafShape" transform="translate(116 21) rotate(191)"/>
+<use href="#leafShape" transform="translate(139 17) rotate(75)"/><use href="#leafShape" transform="translate(162 13) rotate(192)"/>
+</g>
+<g fill="url(#bud)" stroke="#c2bf97" stroke-width=".6"><ellipse cx="35" cy="37" rx="5" ry="10" transform="rotate(-20 35 37)"/><ellipse cx="44" cy="30" rx="5" ry="9" transform="rotate(15 44 30)"/><ellipse cx="153" cy="24" rx="5" ry="8" transform="rotate(70 153 24)"/></g>
+<path d="M42 46L36 38M43 43L44 33M144 19L151 25" stroke="#d8dbaf" stroke-width="1.5"/>
+</g></svg>

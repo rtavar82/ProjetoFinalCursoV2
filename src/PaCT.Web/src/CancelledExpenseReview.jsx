@@ -1,3 +1,4 @@
+import moneyText from './moneyText'
 import { useState } from 'react'
 import ActionButton from './ActionButton'
 import AdaptiveSelect from './AdaptiveSelect'
@@ -26,7 +27,7 @@ export default function CancelledExpenseReview({ item, line, version, disabled, 
         } })
       } catch { /* Keep the selected action and reason until the operation succeeds. */ }
     }}>
-    <p>{line.description} · <strong>{agendaMoney(allocation.amount)}</strong></p>
+    <p>{line.description} · <strong>{moneyText(agendaMoney(allocation.amount))}</strong></p>
     <p>{allocation.activity.title} · {agendaDate(allocation.activity.startsAt)}</p>
     {review ? <><p><strong>{labels[decision]}</strong>{destination && ' · ' + destination.title}</p><p>Motivo: {reason}</p>
       <p>A decisão altera apenas a repartição do gasto.</p></> : <>

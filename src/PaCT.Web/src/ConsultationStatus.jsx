@@ -1,3 +1,4 @@
+import moneyText from './moneyText'
 import labels from './consultationLabels'
 import { agendaMoney } from './agendaTime'
 
@@ -6,5 +7,5 @@ export default function ConsultationStatus({ consultation, className, showAmount
   const financial = /Aguarda confirmação de recebimento|Falta liquidar/.test(process) ? '' : labels[consultation.financialState]
   const due = showAmount && ['Unpaid', 'ContributionPending'].includes(consultation.financialState) && consultation.amountDue > 0
     ? `: ${agendaMoney(consultation.amountDue)}` : ''
-  return <Element className={className}>{process}{financial && !process.toLocaleLowerCase('pt-PT').includes(financial.toLocaleLowerCase('pt-PT')) ? ` · ${financial}${due}` : ''}</Element>
+  return <Element className={className} data-typography="process-status">{moneyText(process)}{financial && !process.toLocaleLowerCase('pt-PT').includes(financial.toLocaleLowerCase('pt-PT')) ? moneyText(` · ${financial}${due}`) : ''}</Element>
 }

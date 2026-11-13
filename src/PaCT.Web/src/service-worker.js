@@ -71,7 +71,7 @@ self.addEventListener('message', event => {
     const clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
     const consent = await Promise.all(clients.map(client => ask(client, 'PACT_CHECK_UPDATE')))
     if (consent.every(response => response?.allow === true)) await self.skipWaiting()
-    else event.source?.postMessage({ type: 'PACT_UPDATE_BLOCKED' })
+    else event.source?.postMessage({ type: 'PACT_UPDATE_BLOCKED', reason: consent.some(response => response?.allow === false) ? 'draft' : 'unresponsive' })
   })())
   if (event.data?.type === 'PACT_PAGE_READY') event.waitUntil(cleanUnusedPublicCaches())
 })

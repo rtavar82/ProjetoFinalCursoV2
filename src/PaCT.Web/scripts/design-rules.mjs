@@ -43,6 +43,13 @@ export default {
   rules: {
     'shared-presentation': {
       meta: { type: 'problem', schema: [], messages: {
+        pageHeading: 'Reutilizar Heading level={1} para a identidade visual partilhada dos títulos de página.',
+        navigation: 'Reutilizar AppNavigation para a navegação principal partilhada entre perfis.',
+        globalTheme: 'O tema pertence a VisualThemeProvider na raiz do documento; não criar temas locais.',
+        themedSelect: 'Reutilizar AdaptiveSelect nos seletores visíveis para que o popup herde o tema global.',
+        arrow: 'Reutilizar AppArrow para o desenho e a animação das setas.',
+        disclosure: 'Reutilizar DisclosureSummary para os indicadores de secções desdobráveis.',
+        select: 'Reutilizar AdaptiveSelect ou SelectControl para a seta comum dos seletores.',
         inline: 'Usar os papéis e tokens da base visual; não definir tipografia inline.',
         pagination: 'Reutilizar Pagination para manter a mesma navegação e regra de visibilidade.',
         calendarInput: 'Reutilizar CalendarInput para escolher datas e horas.',
@@ -50,12 +57,22 @@ export default {
       } },
       create(context) {
         return {
-          JSXAttribute(node) { inspectInlineTypography(node, property => context.report({ node: property, messageId: 'inline' })) },
+          JSXAttribute(node) {
+            if (node.name.name === 'data-visual-theme') context.report({ node, messageId: 'globalTheme' })
+            inspectInlineTypography(node, property => context.report({ node: property, messageId: 'inline' }))
+          },
+          JSXText(node) { if (/[←→↑↓‹›⌄▾▴]/.test(node.value)) context.report({ node, messageId: 'arrow' }) },
           JSXElement(node) {
             const opening = node.openingElement
             const attribute = name => opening.attributes.find(item => item.type === 'JSXAttribute' && item.name.name === name)?.value?.value
             const element = opening.name.name
+            if (element === 'h1') context.report({ node, messageId: 'pageHeading' })
             const file = context.filename.replaceAll('\\', '/')
+            if (element === 'nav' && attribute('aria-label') === 'Navegação principal' && !file.endsWith('/src/AppNavigation.jsx')) context.report({ node, messageId: 'navigation' })
+            if (element === 'SelectControl' && !file.endsWith('/src/AdaptiveSelect.jsx')) context.report({ node, messageId: 'themedSelect' })
+            if (element === 'summary' && !file.endsWith('/src/DisclosureSummary.jsx')) context.report({ node, messageId: 'disclosure' })
+            if (element === 'select' && !file.endsWith('/src/SelectControl.jsx') && !opening.attributes.some(item => item.name?.name === 'hidden')) context.report({ node, messageId: 'select' })
+            if (element === 'AppIcon' && /^(arrow|chevron|caret|reset)/i.test(attribute('name') || '')) context.report({ node, messageId: 'arrow' })
             if (element === 'input' && ['date', 'datetime-local', 'time'].includes(attribute('type')) && !file.endsWith('/src/CalendarInput.jsx')) context.report({ node, messageId: 'calendarInput' })
             if (element === 'CalendarInput' && ['end', 'to', 'publicationEnd'].includes(attribute('name')) && !file.endsWith('/src/DateRangeFields.jsx')) context.report({ node, messageId: 'dateRange' })
             if (element !== 'nav' || file.endsWith('/src/Pagination.jsx')) return

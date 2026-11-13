@@ -1,3 +1,1 @@
-.filters { border: 1px solid var(--line); border-radius: 16px; background: #fff; padding: 4px 18px; margin-block: 20px; min-width: 0; }
-.filters > summary { font-size: var(--font-size-body); font-weight: 600; min-height: 48px; }
-.filters[open] { padding-bottom: 18px; }
+.tools { padding-bottom: var(--space-4); border-bottom: 1px solid var(--line); }

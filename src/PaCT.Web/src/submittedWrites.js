@@ -1,7 +1,8 @@
 import { reportStaleContent } from './readFreshness.js'
 
-// A submitted operation lives only in this open window. Never persist passwords,
-// commands or files, and never repeat an uncertain write without replay protection.
+// This transport keeps its active attempts in this open window. Never persist
+// authentication data here. Optional encrypted manager checkpoints are handled
+// separately; never repeat an uncertain write without replay protection.
 const pending = new Set()
 const cancelled = () => new Error('O envio pendente foi cancelado. O preenchimento não foi enviado.')
 export function cancelSubmittedWrites() { for (const cancel of [...pending]) cancel() }
@@ -69,5 +70,6 @@ export function canReplay(path, body, operationKey) {
     || /^consultations\/[0-9a-f-]+\/price-correction-preview$/.test(path) || !!body?.operationId && (path === 'consultations/commands' || path === 'consultations/guests'
     || /^consultations\/events\/[^/]+\/requests$/.test(path)
     || /^clients\/[^/]+\/access\/(email|reset-passkeys)$/.test(path)
+    || /^identity\/therapist-management\/access\/(email|reset-passkeys)$/.test(path)
     || path === 'identity/password-change')
 }

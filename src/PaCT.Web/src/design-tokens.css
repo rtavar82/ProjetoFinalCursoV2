@@ -50,6 +50,14 @@
   --control-radius: 12px;
   --icon-size: 20px;
   --brand-icon-size: 32px;
+  --brand-signature-width: clamp(108px, 32vw, 156px);
+  --brand-butterfly-size: clamp(48px, 14vw, 64px);
+  --brand-butterfly-hero-size: clamp(96px, 12vw, 176px);
+  --brand-butterfly-opening-scale: 1.12;
+  --photo-frame-forest: #42533b;
+  --photo-frame-sage: #819068;
+  --photo-frame-soft: #a8b693;
+  --photo-frame-ivory: #f4edd8;
   --surface-inverse-text: #fff;
   --notice-bg: #f5f0e5;
   --notice-line: #e7ddc7;
@@ -90,4 +98,4 @@
   --theme-start: #cec0e5; --theme-end: #aecfc0;
 }
 @media (min-width: 768px) { :root { --card-padding: 24px; --font-size-count: 43px; } }
-@media (min-width: 1080px) { :root { --font-size-brand: 29px; } }
+@media (min-width: 1080px) { :root { --font-size-brand: 29px; --brand-signature-width: 168px; } }

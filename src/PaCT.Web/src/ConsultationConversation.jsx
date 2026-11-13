@@ -87,7 +87,7 @@ function MessageComposer({ id, value, manager, unread, disabled }) {
   return <MessageForm key={revision} id={id} value={value} manager={manager} unread={unread} disabled={disabled} onConfirmed={() => setRevision(n => n + 1)} />
 }
 function MessageForm({ id, value, manager, unread, disabled, onConfirmed }) {
-  const editor = useEditorState({ text: '', photoIds: [], pending: null, audio: null, video: null }, value.conversationVersion)
+  const editor = useEditorState({ text: '', photoIds: [], pending: null, audio: null, video: null }, value.conversationVersion, manager ? 'message:' + id : null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   async function send(retry = false) {
@@ -104,13 +104,17 @@ function MessageForm({ id, value, manager, unread, disabled, onConfirmed }) {
       }
       if (!command) return
       if (!retry) {
-        for (let i = 0; i < current.files.length; i++) await uploadConversationPhoto(id, command.photoIds[i], current.files[i], command.conversationVersion)
-        if (current.fields.video) await uploadConversationVideo(id, current.fields.video, command.conversationVersion)
+        for (let i = 0; i < current.files.length; i++) await uploadConversationPhoto(id, command.photoIds[i], current.files[i], command.conversationVersion, editor.owner)
+        if (current.fields.video) await uploadConversationVideo(id, current.fields.video, command.conversationVersion, editor.owner)
         editor.change('pending', command)
+        await editor.protectIntent(command.operationId)
       }
-      const result = current.fields.audio ? await sendConversationAudio(id, command, current.fields.audio) : await apiRequest('consultations/commands', command)
+      const result = current.fields.audio ? await sendConversationAudio(id, command, current.fields.audio, editor.owner) : await apiRequest('consultations/commands', command, { expectedAccount: editor.owner })
+      if (!editor.isActive()) return
       if (result.id !== command.operationId) throw new Error('Não foi possível confirmar o envio desta mensagem. O texto foi mantido neste formulário.')
       announceOperation(command, result)
+      editor.reset()
+      await editor.flush()
       onConfirmed()
     } catch (failure) {
       setError(failure.message)
@@ -118,7 +122,7 @@ function MessageForm({ id, value, manager, unread, disabled, onConfirmed }) {
     } finally { setBusy(false) }
   }
   const pending = !!editor.fields.pending
-  return <form data-protect-draft data-pending-command={busy || pending ? 'true' : undefined} onSubmit={event => { event.preventDefault(); void send() }}>
+  return <form data-recovery-key={'message:' + id} data-protect-draft data-pending-command={busy || pending ? 'true' : undefined} onSubmit={event => { event.preventDefault(); void send() }}>
     {error && <p role="alert" className="notice error">{error}</p>}
     {editor.conflict && !pending && <div className="notice"><p>O estado da conversa mudou. O texto foi mantido.</p><button type="button" className="secondary" onClick={editor.acceptCurrentVersion}>Revi o estado da conversa; manter a mensagem</button></div>}
     <label>{manager ? 'Mensagem partilhada com o cliente' : 'Mensagem partilhada com a terapeuta'}<textarea name="followupMessage" maxLength="8000" required={editor.files.length === 0 && !editor.fields.audio && !editor.fields.video} value={editor.fields.text} disabled={disabled || busy || pending || value.blocked} onChange={event => editor.change('text', event.target.value)} /></label>

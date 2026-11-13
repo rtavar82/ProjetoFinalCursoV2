@@ -6,6 +6,27 @@
 .primaryTabs { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-block: var(--space-3) var(--space-4); }
 .primaryTabs button { width: auto; }
 .primaryTabs button, .tabs button { margin: 0; min-width: 0; }
+.clientSectionPicker { display: none; }
+@media (max-width: 759px) {
+  .clientPrimaryTabs {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-2);
+    margin-block: var(--space-3) var(--space-5);
+  }
+  .clientPrimaryTabs > button {
+    width: 100%;
+    min-height: var(--control-height);
+    padding: var(--space-2);
+  }
+  .tabs.clientSections { display: none; }
+  .clientSectionPicker {
+    display: grid;
+    gap: var(--space-2);
+    margin-block: var(--space-5) var(--space-4);
+  }
+  .sectionPickerSelect { background: var(--tint); color: var(--accent); border-color: var(--accent); }
+}
 .tabs { display: flex; flex-wrap: wrap; gap: .5rem; margin-block: 1.2rem; }
 .tabs button { width: auto; padding: .75rem 1rem; }
 .selected, .selected:hover:not(:disabled) { background: var(--tint); color: var(--ink); border-color: var(--accent); }
@@ -14,11 +35,12 @@
 .calendarLayout { display: grid; grid-template-columns: minmax(0,1fr); min-width: 0; }
 .monthTools { display: grid; grid-template-columns: 44px minmax(0,1fr) 44px; align-items: center; gap: .3rem; margin-bottom: 1rem; }
 .monthTools button { padding: .3rem; margin: 0; }
+.monthTools button > svg[data-arrow-direction] { width: var(--font-size-icon); height: var(--font-size-icon); }
 .monthTitle { text-align: center; font-weight: 600; min-width: 0; position: relative; }
 .monthTitle:focus-within { outline: 2px solid var(--accent); outline-offset: 4px; border-radius: .4rem; }
 .monthInput { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
 .week, .days { display: grid; grid-template-columns: repeat(7,minmax(0,1fr)); text-align: center; }
-.week { font-size: var(--font-size-overline); color: var(--muted); margin-bottom: .6rem; }
+.week { color: var(--muted); margin-bottom: .6rem; }
 .day { margin: 0; min-height: 44px; padding: .4rem 0 0; min-width: 0; border: 0; background: transparent; color: var(--ink); border-radius: .7rem; font-weight: 400; }
 .day[data-marked='true'] { background: var(--tint); }
 .day:hover:not(:disabled) { background: var(--tint); color: var(--ink); }
@@ -50,7 +72,6 @@ button.slot:hover:not(:disabled) { background: var(--tint); }
 .historySearch > summary h2 { margin: 0 0 .8rem; color: var(--accent); text-decoration-line: underline; text-decoration-thickness: 1px; text-underline-offset: .18em; }
 .historySearch > summary p { margin: 0; }
 .historySearch > summary > svg { width: 20px; height: 20px; flex-shrink: 0; color: var(--accent); }
-.historySearch[open] > summary > svg { transform: rotate(180deg); }
 .historySearch > form { display: grid; gap: .9rem; margin-top: 1.2rem; }
 .historySearch label { min-width: 0; }
 .historySearch input, .historySearch select { min-width: 0; width: 100%; }

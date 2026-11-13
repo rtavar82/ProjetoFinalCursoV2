@@ -13,6 +13,7 @@ A PaCT0.2 é uma aplicação web desenvolvida para o projeto final do curso de T
 
 - Interface em React e JavaScript, compilada com Vite e preparada para instalação como PWA.
 - API em C# com ASP.NET Core (.NET 10) e base de dados MySQL.
+- IndexedDB para os metadados públicos da PWA e a recuperação cifrada dos formulários dos gestores, até 8 horas desde a última edição.
 
 ## Executar localmente
 

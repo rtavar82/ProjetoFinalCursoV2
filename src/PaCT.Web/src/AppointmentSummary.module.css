@@ -1,10 +1,12 @@
 .summary { display: flex; flex-direction: column; gap: 16px; min-width: 0; overflow-wrap: anywhere; }
 .summary p { margin: 0; }
-.summary .state { width: 100%; margin: 0; padding: 10px 16px; border-radius: 18px; font-size: var(--font-size-body); line-height: 1.5; }
+.summary .state { width: 100%; margin: 0; padding: 10px 16px; border-radius: 18px; line-height: 1.5; }
 .heading { min-width: 0; }
 .summary .type { color: var(--muted); font-size: var(--font-size-small); line-height: 1.5; margin-top: 2px; }
 .summary .client { font-size: var(--font-size-small); margin-top: 8px; }
 .details { display: grid; gap: 8px; font-size: var(--font-size-lead); line-height: 1.5; }
-.details > [aria-label='Local da consulta'] { margin: 0; }
-.details > p::before { content: '–'; color: var(--muted); }
+.detail { display: grid; grid-template-columns: var(--icon-size) minmax(0, 1fr); align-items: start; gap: var(--space-2); }
+.detailIcon { width: var(--icon-size); height: var(--icon-size); margin-top: calc((1.5em - var(--icon-size)) / 2); color: var(--accent); }
+.detailContent { min-width: 0; }
+.detailContent > [aria-label='Local da consulta'] { margin: 0; }
 @media (max-width: 359px) { .details { font-size: var(--font-size-body); } }

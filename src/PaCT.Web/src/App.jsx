@@ -1,4 +1,7 @@
-import { useEffect, useEffectEvent, useRef, useState, useSyncExternalStore } from 'react'
+import BrandButterfly from './BrandButterfly'
+import Heading from './Heading'
+import AppArrow from './AppArrow'
+import { useEffect, useEffectEvent, useRef, useState } from 'react'
 import { request } from './identityApi'
 import RegistrationFields from './RegistrationFields'
 import ClientProfileForm from './ClientProfileForm'
@@ -7,7 +10,6 @@ import Workspace from './Workspace'
 import InvitedTherapistRegistration from './InvitedTherapistRegistration'
 import './App.css'
 import AppLayout from './AppLayout'
-import AppIcon from './AppIcon'
 import ActionButton from './ActionButton'
 import AuthPage from './AuthPage'
 import authStyles from './AuthPage.module.css'
@@ -24,7 +26,7 @@ import { cancelSubmittedWrites } from './submittedWrites'
 import { dismissSuccess, showSuccess } from './actionNotices'
 import PrivacyProvider from './PrivacyProvider'
 import { isManager } from './identityRoles'
-import { readVisualTheme, saveVisualTheme } from './visualTheme'
+
 
 const publicPages = { PublicOpening: '', PublicHome: 'inicio', PublicTherapist: 'terapeuta',
   PublicTestimonials: 'testemunhos', PublicSharing: 'partilhas', PublicAgenda: 'agenda', SignIn: 'entrar' }
@@ -36,14 +38,6 @@ function stageForPublicRoute(stage, profile) {
 const workspaceHash = profile => profile?.role === 'Client' ? '#agenda' : '#inicio'
 
 const accessSteps = ['ClientRegister', 'ClientEmailSent', 'ClientReview', 'PasswordRecoveryRequest', 'PasswordRecoveryRequested', 'PasswordRecoveryLink', 'ClientEmailLink']
-const mobileThemeMedia = window.matchMedia('(width < 760px)')
-
-function subscribeToMobileTheme(onChange) {
-  mobileThemeMedia.addEventListener('change', onChange)
-  return () => mobileThemeMedia.removeEventListener('change', onChange)
-}
-
-const usesMobileTheme = () => mobileThemeMedia.matches
 
 function readLink() {
   const parameters = new URLSearchParams(window.location.hash.slice(1))
@@ -64,8 +58,6 @@ export default function App() {
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
   const [profile, setProfile] = useState(null)
-  const [visualTheme, setVisualTheme] = useState(readVisualTheme)
-  const mobileTheme = useSyncExternalStore(subscribeToMobileTheme, usesMobileTheme)
   useEffect(() => { cancelSubmittedWrites() }, [profile?.id])
   const [guestSelection, setGuestSelection] = useState(null)
   const [publicService, setPublicService] = useState(() => publicRoute().serviceId)
@@ -240,11 +232,6 @@ export default function App() {
     : ['ConfigureAuthenticator', 'VerifyFactor', 'RecoveryCodes', 'VerifyPasskey'].includes(stage) ? 3 : stage === 'SignedIn' ? 4 : 0
 
   function notify(text, failure = false) { setError(failure ? text : ''); setMessage(''); if (!failure) showSuccess(text) }
-  function changeTheme(theme) {
-    setVisualTheme(theme)
-    saveVisualTheme(theme)
-  }
-  const themeProps = { visualTheme, onThemeChange: changeTheme }
   function navigatePublic(next, serviceId = '') {
     if (document.querySelector('[data-pending-command="true"]')) return
     if ((guestSelection || document.querySelector('[data-guest-request="true"]')) && !window.confirm('Queres sair e descartar o preenchimento do pedido?')) return
@@ -270,7 +257,7 @@ export default function App() {
   </PrivacyProvider>
 
   function renderStage() {
-  if (stage === 'SignedIn' && profile) return <Workspace {...themeProps} mobileTheme={mobileTheme} profile={profile} busy={busy} perform={perform} notify={notify} error={error} message={message} errorRef={errorRef}
+  if (stage === 'SignedIn' && profile) return <Workspace profile={profile} busy={busy} perform={perform} notify={notify} error={error} message={message} errorRef={errorRef}
     onPublicTestimonials={() => navigatePublic('PublicTestimonials')}
     onOpenEntry={() => { setError(''); setMessage(''); setStage('PublicOpening'); window.scrollTo(0, 0) }}
     onSignOut={() => perform(async () => { await request('sign-out', {}); setProfile(null); setRecoveryCodes([]); setStage('SignIn') })}
@@ -279,9 +266,9 @@ export default function App() {
     onSecuritySignedOut={text => { setProfile(null); notify(text); setStage('SignIn') }}
     onAccountClosed={text => { setProfile(null); notify(text); setStage('SignIn') }} />
 
-  if (stage === 'PublicOpening') return <PublicOpening {...themeProps} onNavigate={navigatePublic}
+  if (stage === 'PublicOpening') return <PublicOpening onNavigate={navigatePublic}
     onEnter={profile ? enterWorkspace : () => navigatePublic('SignIn')} />
-  if (stage.startsWith('Public')) return <PublicPresentation key={stage} {...themeProps} page={stage} onNavigate={navigatePublic} profile={profile} onAccount={enterWorkspace}>
+  if (stage.startsWith('Public')) return <PublicPresentation key={stage} page={stage} onNavigate={navigatePublic} profile={profile} onAccount={enterWorkspace}>
     {stage === 'PublicSharing' && <SharingFeed onSignIn={() => navigatePublic('SignIn')} />}
     {stage === 'PublicTestimonials' && <PublicTestimonials onBack={() => navigatePublic('PublicHome')} />}
     {stage === 'PublicAgenda' && <VisitorAgenda key={publicService} initialServiceId={publicService} authenticated={!!profile} selection={guestSelection} onChoose={choosePublicBooking} onBack={() => setGuestSelection(null)} onSignIn={() => navigatePublic('SignIn')} />}
@@ -321,12 +308,12 @@ export default function App() {
   }
 
   return (
-    <AppLayout page={stage} {...themeProps} mobileTheme={mobileTheme} themedLayout={stage === 'SignIn' || accessSteps.includes(stage)}
-      presentation={stage === 'SignIn' ? 'access' : undefined} onHome={stage === 'SignIn' ? continueAsVisitor : undefined}>
+    <AppLayout page={stage} themedLayout={stage === 'SignIn' || accessSteps.includes(stage)}
+      presentation={stage === 'SignIn' ? 'access' : stage === 'ClientRegister' ? 'registration' : undefined} onHome={stage === 'SignIn' ? continueAsVisitor : undefined}>
       <AuthPage busy={busy} presentation={stage === 'SignIn' ? 'access' : accessSteps.includes(stage) ? 'step' : undefined}
-        introduction={stage === 'SignIn' ? <><h1>Entrar no PaCT</h1><img src="/borboleta.png" alt="" width="378" height="330" /></> : <>
+        introduction={stage === 'SignIn' ? <><Heading level={1} brand={false}>Entrar no PaCT</Heading><BrandButterfly /></> : <>
           <p className="eyebrow">UM NOVO COMEÇO</p>
-          <h1>O teu espaço.<br />O teu acompanhamento.</h1>
+          <Heading level={1} brand={false}>O teu espaço.<br />O teu acompanhamento.</Heading>
           <p>{['Register', 'Invitation'].includes(stage) ? 'Prepara a PaCT para a tua atividade, com os teus dados e acesso protegido.' : 'Acede à tua conta com uma ligação segura e os teus próprios dados.'}</p>
           {['Register', 'Invitation', 'ConfigureAuthenticator', 'VerifyFactor', 'RecoveryCodes'].includes(stage) && <ol className="steps">
             {[invitationToken ? 'Criar conta da terapeuta' : 'Criar o gestor técnico', 'Confirmar o email', 'Proteger a conta', 'Entrar na gestão'].map((label, index) =>
@@ -385,7 +372,7 @@ export default function App() {
             <div className={authStyles.account}><p>Ainda não tens conta?</p>
               <ActionButton variant="secondary" disabled={busy} onClick={() => { setError(''); setMessage(''); setStage('ClientRegister') }}>Criar conta</ActionButton>
             </div>
-            <ActionButton variant="text" className={authStyles.guest} disabled={busy} onClick={continueAsVisitor}>Continuar como visitante <AppIcon name="arrow" /></ActionButton>
+            <ActionButton variant="text" className={authStyles.guest} disabled={busy} onClick={continueAsVisitor}>Continuar como visitante <AppArrow direction="right" /></ActionButton>
           </>}
           {stage === 'ClientRegister' && <><h2>Criar conta de cliente</h2><p>Preenche nome, apelido, email, telefone, nascimento, género e localidade. Depois de confirmares o email, vais definir a tua palavra-passe.</p><ClientProfileForm registration busy={busy} onSave={submitClientRegistration} /></>}
           {stage === 'ClientReview' && <><h2>Pedido em análise</h2><p>O registo não foi concluído. A gestão irá verificar o teu pedido.</p></>}

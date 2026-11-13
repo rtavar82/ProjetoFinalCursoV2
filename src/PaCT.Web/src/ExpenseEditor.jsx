@@ -1,3 +1,7 @@
+import moneyText from './moneyText'
+import RecoveryForm from './RecoveryForm'
+import DisclosureSummary from './DisclosureSummary'
+import AppArrow from './AppArrow'
 import CalendarInput from './CalendarInput'
 import { useCallback, useState } from 'react'
 import ActionButton from './ActionButton'
@@ -32,7 +36,7 @@ function PaymentFields({ payments, onChange, disabled }) {
   return <InformationCard title="Pagamentos efetuados" cardId="expense-payment-fields" headingLevel={3}>
     {!payments.length && <p>A despesa fica por pagar. Podes registar pagamentos mais tarde.</p>}
     {payments.map((payment, index) => <InformationCard key={payment.key} cardId={'expense-payment-input-' + index} variant="plain">
-      <div className="fields-grid"><label>Valor pago<input required type="number" min="0.01" max="1000000" step="0.01" value={payment.amount} onChange={e => onChange(payments.map((p, i) => i === index ? { ...p, amount: e.target.value } : p))} /></label>
+      <div className="fields-grid"><label>Valor pago<input data-recovery-controlled required type="number" min="0.01" max="1000000" step="0.01" value={payment.amount} onChange={e => onChange(payments.map((p, i) => i === index ? { ...p, amount: e.target.value } : p))} /></label>
         <label>Método<AdaptiveSelect aria-label="Método" value={payment.method} onChange={e => onChange(payments.map((p, i) => i === index ? { ...p, method: e.target.value } : p))}>{Object.entries(saleMethods).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</AdaptiveSelect></label>
         <label>Data e hora efetivas<CalendarInput required type="datetime-local" value={payment.effectiveAt} onChange={e => onChange(payments.map((p, i) => i === index ? { ...p, effectiveAt: e.target.value } : p))} /></label>
       </div><ActionButton variant="text" disabled={disabled} onClick={() => onChange(payments.filter((_, i) => i !== index))}>Retirar pagamento {index + 1}</ActionButton>
@@ -42,9 +46,9 @@ function PaymentFields({ payments, onChange, disabled }) {
 }
 
 export default function ExpenseEditor({ expense, paymentOnly = false, disabled, error, clearError, write, onClose, guard }) {
-  const [draft, setDraft] = useRecoveryState(`expense:${expense?.id || 'new'}:${expense?.version || 0}:${paymentOnly}`, () => startDraft(expense))
+  const [draft, setDraft] = useRecoveryState(`expense:${expense?.id || 'new'}:${paymentOnly}`, () => startDraft(expense))
   const [review, setReview] = useState(null), [localError, setLocalError] = useState(''), [reading, setReading] = useState(false), [documentError, setDocumentError] = useState('')
-  const [document, setDocument] = useRecoveryState(`expense:${expense?.id || 'new'}:${expense?.version || 0}:${paymentOnly}:document`, null)
+  const [document, setDocument] = useRecoveryState(`expense:${expense?.id || 'new'}:${paymentOnly}:document`, null)
   const readCategories = useCallback(async signal => {
     const rows = []; let page = 1, total
     do { const batch = await apiRequest(`management/ExpenseCategory?status=Active&page=${page++}`, undefined, { signal }); total = batch.total; if (!batch.items.length && rows.length < total) throw new Error('A lista de categorias mudou. Volta a tentar.'); rows.push(...batch.items) } while (rows.length < total)
@@ -58,7 +62,7 @@ export default function ExpenseEditor({ expense, paymentOnly = false, disabled, 
   const locked = disabled || reading
   function change(value) { setDraft(current => ({ ...current, ...value })); setLocalError(''); clearError() }
   function changeLine(key, values) { change({ lines: draft.lines.map(l => l.key === key ? { ...l, ...values } : l) }) }
-  function dismiss() { guard(() => { setDraft(startDraft(expense)); setDocument(null); onClose() }) }
+  function dismiss() { guard(() => { setDraft(startDraft(expense), false); setDocument(null, false); onClose() }) }
   async function chooseDocument(file) {
     setDocument(null); setLocalError(''); setDocumentError('')
     if (!file) return
@@ -102,28 +106,28 @@ export default function ExpenseEditor({ expense, paymentOnly = false, disabled, 
       setReview({ input, preview })
     } catch (e) { setLocalError(e.message) }
   }
-  async function confirm() { try { await write(expense?.id, review.input); setDraft(startDraft()); setDocument(null); onClose() } catch { /* Preserve the review and fields after rejection. */ } }
+  async function confirm() { try { await write(expense?.id, review.input); setDraft(startDraft(), false); setDocument(null, false); onClose() } catch { /* Preserve the review and fields after rejection. */ } }
   return <ManagerSchedulingDialog title={review ? 'Rever antes de confirmar' : paymentOnly ? 'Registar pagamento da despesa' : expense ? 'Editar despesa' : 'Nova despesa ou investimento'} disabled={locked} onClose={dismiss}>
     {(error || localError || documentError) && <p className="notice error" role="alert">{error || localError || documentError}</p>}
-    {review ? <><ExpenseDetails expense={review.preview} review /><InformationCard cardId="expense-effect"><p>Por pagar: {agendaMoney(expense?.remaining ?? total)} → <strong>{agendaMoney(review.preview.remaining)}</strong></p>{review.input.reason && <p>Motivo: {review.input.reason}</p>}</InformationCard>
+    {review ? <><ExpenseDetails expense={review.preview} review /><InformationCard cardId="expense-effect"><p>Por pagar: {moneyText(agendaMoney(expense?.remaining ?? total))} <AppArrow direction="right" /> <strong>{moneyText(agendaMoney(review.preview.remaining))}</strong></p>{review.input.reason && <p>Motivo: {review.input.reason}</p>}</InformationCard>
       <div className="button-row"><ActionButton variant="secondary" disabled={locked} onClick={() => { setReview(null); clearError(); setLocalError('') }}>Voltar atrás</ActionButton><ActionButton disabled={locked} onClick={confirm}>{paymentOnly ? 'Confirmar pagamento efetuado' : 'Confirmar e guardar'}</ActionButton></div></>
       : <>
-        {!paymentOnly && <details><summary>{draft.supplier ? 'Fornecedor: ' + draft.supplier.name : 'Escolher ou criar fornecedor (opcional)'}</summary>
+        {!paymentOnly && <details><DisclosureSummary>{draft.supplier ? 'Fornecedor: ' + draft.supplier.name : 'Escolher ou criar fornecedor (opcional)'}</DisclosureSummary>
           {draft.supplier && <ActionButton variant="text" disabled={locked} onClick={() => change({ supplier: null })}>Retirar fornecedor</ActionButton>}
           <DirectoryPanel kind="Supplier" busy={locked} guard={guard} selected={draft.supplier} onSelect={supplier => change({ supplier })} />
         </details>}
-        <form data-protect-draft onSubmit={prepare}><fieldset className={styles.fields} disabled={locked}>
+        <RecoveryForm recoveryKey={'expense:' + (expense?.id || 'new') + ':' + paymentOnly} recoveryVersion={expense?.version || 0} recoveryScopes={['expense:' + (expense?.id || 'new') + ':' + paymentOnly]} onVerified={onClose} data-protect-draft onSubmit={prepare}><fieldset className={styles.fields} disabled={locked}>
           {!paymentOnly && <>
-            <div className="fields-grid"><label>Descrição da despesa<input required maxLength="300" value={draft.description} onChange={e => change({ description: e.target.value })} /></label><label>Data da despesa<CalendarInput required type="date" max={localDate(new Date()).slice(0, 10)} value={draft.date} onChange={e => change({ date: e.target.value })} /></label></div>
-            <InformationCard title="Fatura (opcional)" cardId="expense-invoice" headingLevel={3}><div className="fields-grid"><label>Número da fatura<input maxLength="120" required={!!draft.invoiceDate} value={draft.invoiceNumber} onChange={e => change({ invoiceNumber: e.target.value })} /></label><label>Data da fatura<CalendarInput type="date" max={localDate(new Date()).slice(0, 10)} required={!!draft.invoiceNumber.trim()} value={draft.invoiceDate} onChange={e => change({ invoiceDate: e.target.value })} /></label></div></InformationCard>
+            <div className="fields-grid"><label>Descrição da despesa<input data-recovery-controlled required maxLength="300" value={draft.description} onChange={e => change({ description: e.target.value })} /></label><label>Data da despesa<CalendarInput required type="date" max={localDate(new Date()).slice(0, 10)} value={draft.date} onChange={e => change({ date: e.target.value })} /></label></div>
+            <InformationCard title="Fatura (opcional)" cardId="expense-invoice" headingLevel={3}><div className="fields-grid"><label>Número da fatura<input data-recovery-controlled maxLength="120" required={!!draft.invoiceDate} value={draft.invoiceNumber} onChange={e => change({ invoiceNumber: e.target.value })} /></label><label>Data da fatura<CalendarInput type="date" max={localDate(new Date()).slice(0, 10)} required={!!draft.invoiceNumber.trim()} value={draft.invoiceDate} onChange={e => change({ invoiceDate: e.target.value })} /></label></div></InformationCard>
             {(categories.loading || categories.error) && <InformationCard cardId="expense-categories-status" loading={categories.loading} error={categories.error} onRetry={categories.refresh} />}
             <Heading level={3}>Linhas da despesa</Heading>
             {draft.lines.map((line, index) => <InformationCard key={line.key} title={'Linha ' + (index + 1)} headingLevel={4} cardId={'expense-line-' + line.key}>
-              <label>Descrição<input required maxLength="500" value={line.description} onChange={e => changeLine(line.key, { description: e.target.value })} /></label>
+              <label>Descrição<input data-recovery-controlled required maxLength="500" value={line.description} onChange={e => changeLine(line.key, { description: e.target.value })} /></label>
               <div className="fields-grid">
-                <label className="full-width">Quantidade<input type="number" required min="0.001" max="1000000" step="0.001" value={line.quantity} onChange={e => changeLine(line.key, { quantity: e.target.value })} /></label>
+                <label className="full-width">Quantidade<input data-recovery-controlled type="number" required min="0.001" max="1000000" step="0.001" value={line.quantity} onChange={e => changeLine(line.key, { quantity: e.target.value })} /></label>
                 <div className={`full-width ${styles.pair} ${styles.keepPair}`}>
-                  <label>Preço unitário<input type="number" required min="0" max="1000000" step="0.01" value={line.unitPrice} onChange={e => changeLine(line.key, { unitPrice: e.target.value })} /></label>
+                  <label>Preço unitário<input data-recovery-controlled type="number" required min="0" max="1000000" step="0.01" value={line.unitPrice} onChange={e => changeLine(line.key, { unitPrice: e.target.value })} /></label>
                   <label>IVA<AdaptiveSelect aria-label="IVA" value={line.vat ?? 'Included'} onChange={e => changeLine(line.key, { vat: e.target.value })}>
                     <option value="Included">Incluído</option>
                     {vatRates.map(rate => <option key={rate} value={rate}>{rate} %</option>)}
@@ -131,7 +135,7 @@ export default function ExpenseEditor({ expense, paymentOnly = false, disabled, 
                 </div>
                 <label>Categoria<AdaptiveSelect aria-label="Categoria" required value={line.categoryId} onChange={e => changeLine(line.key, { categoryId: e.target.value })}><option value="">Escolhe a categoria</option>{choices.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</AdaptiveSelect></label>
                 <label>Tipo<AdaptiveSelect aria-label="Tipo" value={line.kind} onChange={e => changeLine(line.key, { kind: e.target.value })}><option value="Expense">Despesa</option><option value="Investment">Investimento</option></AdaptiveSelect></label></div>
-              <p>Total da linha: <strong>{agendaMoney(lineTotal(line))}</strong></p>{draft.lines.length > 1 && <ActionButton variant="text" onClick={() => change({ lines: draft.lines.filter(l => l.key !== line.key) })}>Retirar linha {index + 1}</ActionButton>}
+              <p>Total da linha: <strong>{moneyText(agendaMoney(lineTotal(line)))}</strong></p>{draft.lines.length > 1 && <ActionButton variant="text" onClick={() => change({ lines: draft.lines.filter(l => l.key !== line.key) })}>Retirar linha {index + 1}</ActionButton>}
               <ExpenseAllocationFields allocations={line.allocations || []} total={lineTotal(line)} disabled={locked}
                 onChange={allocations => changeLine(line.key, { allocations })} />
             </InformationCard>)}
@@ -139,12 +143,12 @@ export default function ExpenseEditor({ expense, paymentOnly = false, disabled, 
             <label>Fotografia ou PDF (opcional, até 5 MB)<input type="file" accept="image/jpeg,image/png,application/pdf" onChange={e => chooseDocument(e.target.files[0])} /></label>
             {document && <p>Documento escolhido: {document.name} <ActionButton variant="text" onClick={() => setDocument(null)}>Retirar documento escolhido</ActionButton></p>}
             {expense?.document && <label><input type="checkbox" checked={draft.removeDocument} onChange={e => { setDocument(null); change({ removeDocument: e.target.checked }) }} />Retirar o documento atual ({expense.document.name})</label>}
-            {expense && <label>Motivo da alteração<textarea required maxLength="2000" value={draft.reason} onChange={e => change({ reason: e.target.value })} /></label>}
+            {expense && <label>Motivo da alteração<textarea data-recovery-controlled required maxLength="2000" value={draft.reason} onChange={e => change({ reason: e.target.value })} /></label>}
           </>}
           {(!expense || paymentOnly) && <PaymentFields payments={draft.payments} disabled={locked} onChange={payments => change({ payments })} />}
-          <p>Total: <strong>{agendaMoney(total)}</strong> · Pago: {agendaMoney(paid)} · Por pagar: <strong>{agendaMoney(total - paid)}</strong></p>
+          <p>Total: <strong>{moneyText(agendaMoney(total))}</strong> · Pago: {moneyText(agendaMoney(paid))} · Por pagar: <strong>{moneyText(agendaMoney(total - paid))}</strong></p>
           <div className="button-row"><ActionButton variant="secondary" onClick={dismiss}>Voltar às despesas</ActionButton><ActionButton type="submit" disabled={!paymentOnly && (!categories.data || !!categories.error)}>Rever antes de confirmar</ActionButton></div>
-        </fieldset></form>
+        </fieldset></RecoveryForm>
       </>}
   </ManagerSchedulingDialog>
 }

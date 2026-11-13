@@ -1,3 +1,8 @@
+import useRecoveryState from './useRecoveryState'
+import RecoveryForm from './RecoveryForm'
+import { useContext } from 'react'
+import { ManagerRecoveryContext } from './managerRecoveryContext'
+import DisclosureSummary from './DisclosureSummary'
 import AudioPlayer from './AudioPlayer'
 import { audioAccept, validateAudioFile } from './audioAttachment'
 import { useCallback, useEffect, useId, useState } from 'react'
@@ -25,15 +30,23 @@ const moderation = { Pending: [['approve', 'Aprovar'], ['reject', 'Rejeitar'], [
 export default function SharingFeed({ profile, onSignIn, guard = action => action() }) {
   const manager = isManager(profile?.role)
   const sharedPresentation = !profile || profile.role === 'Client'
-  const [scope, setScope] = useState('feed')
-  const [paging, setPaging] = useState({ page: 1, before: '' })
-  const [editor, setEditor] = useState(null)
+  const [scope, setScope] = useRecoveryState('view:sharing:scope', 'feed')
+  const [paging, setPaging] = useRecoveryState('view:sharing:paging', { page: 1, before: '' })
+  const [editor, changeEditor] = useState(null)
+  const [editorEntry, rememberEditor] = useRecoveryState('view:sharing:editor', null)
+  function setEditor(value) { changeEditor(value); rememberEditor(value ? { id: value.id, version: value.version || 0 } : null) }
+
   const [reference, setReference] = useState('')
   const query = new URLSearchParams({ scope, page: paging.page })
   if (paging.before) query.set('before', paging.before)
   const path = 'sharing?' + query
   const read = useCallback(signal => apiRequest(path, undefined, { signal }), [path])
   const feed = useLiveResource('sharing', path, read, scope !== 'permissions')
+  useEffect(() => {
+    if (editor || !editorEntry) return
+    const current = editorEntry.version ? feed.data?.items.find(post => post.id === editorEntry.id) : { id: editorEntry.id }
+    if (current) queueMicrotask(() => changeEditor(current))
+  }, [editor, editorEntry, feed.data])
   const canPublish = manager || feed.data?.canPublish === true
 
   function changeScope(next) {
@@ -80,7 +93,7 @@ function SharingCard({ post, profile, canPublish, onEdit, onAgenda, refresh, onN
   const publicPost = post.status === 'Pending' || post.status === 'Approved'
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  const [comment, setComment] = useState(null)
+  const [comment, setComment] = useRecoveryState('view:sharing:comment:' + post.id, null)
   const [commentsOpen, setCommentsOpen] = useState(false)
   const [history, setHistory] = useState(null)
   const labelId = useId()
@@ -146,7 +159,7 @@ function SharingCard({ post, profile, canPublish, onEdit, onAgenda, refresh, onN
         {canPublish && post.status === 'Approved' && <ActionButton variant="secondary" onClick={() => setComment({ id: crypto.randomUUID(), version: 0 })}>Comentar</ActionButton>}
       </div>}
       {(manager || post.own || post.canEdit) && <details className={styles.postOptions}>
-        <summary>Editar publicação</summary>
+        <DisclosureSummary>Editar publicação</DisclosureSummary>
         <div className={styles.postActions}>
           <div className={styles.postActionGroup}>
             {post.canEdit && <ActionButton variant="text" onClick={onEdit} disabled={busy}>Editar</ActionButton>}
@@ -225,12 +238,13 @@ function completeLink({ currentTarget: input, nativeEvent }) {
 }
 
 function PostEditor({ post, manager, refresh, onClose, onSaved }) {
+  const recovery = useContext(ManagerRecoveryContext)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  const [reference, setReference] = useState(post.agendaReference || '')
+  const [reference, setReference] = useRecoveryState('sharing:' + post.id + ':reference', post.agendaReference || '')
   const [preview, setPreview] = useState(null)
   const [checking, setChecking] = useState(false)
-  const [removed, setRemoved] = useState([])
+  const [removed, setRemoved] = useRecoveryState('sharing:' + post.id + ':removed', [])
   const [attachments, setAttachments] = useState([])
   useEffect(() => () => attachments.forEach(item => URL.revokeObjectURL(item.url)), [attachments])
 
@@ -267,6 +281,7 @@ function PostEditor({ post, manager, refresh, onClose, onSaved }) {
       removed.forEach(id => form.append('removeMediaIds', id))
       await uploadSharingPost(post.id, form)
       showSuccess(post.version ? 'Publicação atualizada.' : 'Publicação enviada.')
+      recovery?.remove('form:sharing:' + post.id); recovery?.removePrefix('sharing:' + post.id + ':'); await recovery?.flush()
       onSaved()
     } catch (failure) { setError(failure.message) }
     finally { setBusy(false) }
@@ -288,7 +303,7 @@ function PostEditor({ post, manager, refresh, onClose, onSaved }) {
 
   return <ConsultationDialog title={post.version ? 'Editar publicação' : 'Nova publicação'} disabled={busy} onClose={onClose}>
     <p>O teu nome público e o conteúdo da publicação ficam visíveis no feed.</p>
-    <form onSubmit={save} data-protect-draft data-pending-command={busy || undefined} className={styles.editor}>
+    <RecoveryForm recoveryKey={'sharing:' + post.id} recoveryVersion={post.version || 0} recoveryExclude={['agendaReference']} onRecovered={selectFiles} onSubmit={save} data-protect-draft data-pending-command={busy || undefined} className={styles.editor}>
       <label>Texto<textarea name="text" defaultValue={post.text || ''} maxLength={5000} rows={5} disabled={busy} /></label>
       <label>Link (opcional)<input name="link" type="url" defaultValue={post.link || ''} placeholder="https://" onChange={completeLink} maxLength={2048} disabled={busy} /></label>
       <label>Referência da Agenda<input name="agendaReference" value={reference} onChange={event => { setReference(event.target.value); setPreview(null) }} maxLength={50} disabled={busy || checking} /></label>
@@ -312,25 +327,26 @@ function PostEditor({ post, manager, refresh, onClose, onSaved }) {
       {post.own && <div className={styles.postActionGroup}>
         <ActionButton variant="text" disabled={busy} onClick={remove}>Eliminar publicação</ActionButton>
       </div>}
-    </form>
+    </RecoveryForm>
   </ConsultationDialog>
 }
 
 function CommentEditor({ comment, onClose, onSave }) {
+  const recovery = useContext(ManagerRecoveryContext)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   return <ConsultationDialog title={comment.version ? 'Editar comentário' : 'Novo comentário'} onClose={onClose} disabled={busy}>
-    <form className={styles.editor} data-protect-draft data-pending-command={busy || undefined} onSubmit={async event => {
+    <RecoveryForm recoveryKey={'sharing-comment:' + comment.id} recoveryVersion={comment.version || 0} className={styles.editor} data-protect-draft data-pending-command={busy || undefined} onSubmit={async event => {
       event.preventDefault()
       const text = new FormData(event.currentTarget).get('text').trim()
       if (!text) { setError('Escreve um comentário.'); return }
       setError(''); setBusy(true)
-      try { await onSave(text) } catch (failure) { setError(failure.message) } finally { setBusy(false) }
+      try { await onSave(text); recovery?.remove('form:sharing-comment:' + comment.id); await recovery?.flush() } catch (failure) { setError(failure.message) } finally { setBusy(false) }
     }}>
       <label>Comentário<textarea name="text" defaultValue={comment.text || ''} maxLength={2000} required disabled={busy} rows={4} /></label>
       {error && <p role="alert" className="notice error">{error}</p>}
       <ActionButton type="submit" disabled={busy}>Guardar comentário</ActionButton>
-    </form>
+    </RecoveryForm>
   </ConsultationDialog>
 }
 

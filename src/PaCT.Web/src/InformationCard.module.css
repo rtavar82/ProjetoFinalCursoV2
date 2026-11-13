@@ -6,3 +6,10 @@
 .content { min-width: 0; }
 .content:empty { display: none; }
 @media (min-width: 48rem) { .header { flex-direction: row; align-items: center; justify-content: space-between; } .actions { width: auto; } }
+
+.withFooter { display: flex; flex-direction: column; gap: var(--space-4); }
+.withFooter > .header { margin-bottom: 0; }
+.withFooter > .content { display: grid; gap: var(--space-3); }
+.withFooter > .content > p { margin: 0; }
+.footer { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-3); margin-top: auto; }
+.footer > button { flex: 1 1 0; width: 100%; min-width: 0; margin: 0; }

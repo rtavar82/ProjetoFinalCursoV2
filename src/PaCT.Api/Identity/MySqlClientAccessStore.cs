@@ -92,8 +92,8 @@ public sealed class MySqlClientAccessStore(DatabaseConnectionSettings settings) 
             await using (var command = Command("""
                 UPDATE accounts SET email_login_hash=@hash,email_confirmed_at=@now,security_stamp=UUID(),
                   updated_at=GREATEST(created_at,@now),version=version+1
-                WHERE id=@id AND version=@version AND security_stamp=@stamp AND role='Client' AND closed_at IS NULL
-                """, ("@hash", hash), ("@now", now), ("@id", account.Id), ("@version", account.Version), ("@stamp", account.SecurityStamp)))
+                WHERE id=@id AND version=@version AND security_stamp=@stamp AND role=@role AND role IN ('Client','TherapistManager') AND closed_at IS NULL
+                """, ("@hash", hash), ("@now", now), ("@id", account.Id), ("@version", account.Version), ("@stamp", account.SecurityStamp), ("@role", account.Role)))
                 if (await command.ExecuteNonQueryAsync(ct) != 1) throw new IdentityProblem(409, "A conta mudou entretanto. Pede um novo envio.");
             await using (var command = Command("""
                 UPDATE people SET email_ciphertext=@email,email_hash=@hash,updated_at=GREATEST(created_at,@now),version=version+1
@@ -107,8 +107,8 @@ public sealed class MySqlClientAccessStore(DatabaseConnectionSettings settings) 
             await using (var command = Command("""
                 UPDATE accounts SET passkey_enabled_at=NULL,authenticator_secret=NULL,two_factor_enabled_at=NULL,
                   last_totp_step=NULL,recovery_code_hashes=NULL,security_stamp=UUID(),updated_at=GREATEST(created_at,@now),version=version+1
-                WHERE id=@id AND version=@version AND security_stamp=@stamp AND role='Client' AND closed_at IS NULL
-                """, ("@now", now), ("@id", account.Id), ("@version", account.Version), ("@stamp", account.SecurityStamp)))
+                WHERE id=@id AND version=@version AND security_stamp=@stamp AND role=@role AND role IN ('Client','TherapistManager') AND closed_at IS NULL
+                """, ("@now", now), ("@id", account.Id), ("@version", account.Version), ("@stamp", account.SecurityStamp), ("@role", account.Role)))
                 if (await command.ExecuteNonQueryAsync(ct) != 1) throw new IdentityProblem(409, "A conta mudou entretanto. Atualiza a informação.");
             await using (var command = Command("DELETE FROM account_passkeys WHERE account_id=@id", ("@id", account.Id)))
                 await command.ExecuteNonQueryAsync(ct);

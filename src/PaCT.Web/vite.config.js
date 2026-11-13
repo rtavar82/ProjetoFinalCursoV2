@@ -18,7 +18,7 @@ const publicOffline = {
   name: 'pact-public-offline', enforce: 'post', apply: 'build',
   generateBundle(_, bundle) {
     const assets = Object.keys(bundle).filter(file => file.startsWith('assets/') && /\.(js|css|woff2|png|svg)$/.test(file)).map(file => '/' + file)
-    const precache = ['/', '/borboleta.png', '/manifest.webmanifest', '/app-icon.svg', '/app-icon-192.png', '/app-icon-512.png', ...sourceFiles(join(projectRoot, 'public/presentation')).map(file => '/presentation/' + file.split(/[\\/]/).pop()), ...assets]
+    const precache = ['/', '/borboleta.png', '/manifest.webmanifest', '/app-icon.svg', '/app-icon-192.png', '/app-icon-512.png', '/app-icon-maskable-512.png', '/apple-touch-icon.png', ...sourceFiles(join(projectRoot, 'public/presentation')).map(file => '/presentation/' + file.split(/[\\/]/).pop()), ...assets]
     const storage = readFileSync(join(projectRoot, 'src/publicStorage.js'), 'utf8').replaceAll('export ', '')
     const worker = readFileSync(join(projectRoot, 'src/service-worker.js'), 'utf8').replace('__BUILD_ID__', version).replace("['__PRECACHE__']", JSON.stringify(precache))
     this.emitFile({ type: 'asset', fileName: 'service-worker.js', source: storage + '\n' + worker })

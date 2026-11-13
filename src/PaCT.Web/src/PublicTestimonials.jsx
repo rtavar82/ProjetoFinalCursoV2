@@ -1,3 +1,4 @@
+import AppArrow from './AppArrow'
 import { useEffect, useRef, useState } from 'react'
 import useEmblaCarousel from 'embla-carousel-react'
 import { createTestimonialMotion } from './testimonialMotion'
@@ -5,7 +6,6 @@ import useLiveResource from './useLiveResource'
 import { readPublicTestimonials } from './testimonialData'
 import ConsultationDialog from './ConsultationDialog'
 import ActionButton from './ActionButton'
-import AppIcon from './AppIcon'
 import Heading from './Heading'
 import styles from './Testimonials.module.css'
 
@@ -13,7 +13,6 @@ export function TestimonialViewer({ item, onClose, imageUrl = item.imageUrl }) {
   const [returnFocus] = useState(() => document.activeElement)
   useEffect(() => () => { if (returnFocus?.isConnected) returnFocus.focus({ preventScroll: true }) }, [returnFocus])
   return <ConsultationDialog title="Testemunho" className={styles.viewer} label="Testemunho" onClose={onClose}>
-    <h2>Testemunho</h2>
     {imageUrl && <img src={imageUrl} alt="Imagem da publicação" />}
     {item.text && <p className={styles.fullText}>{item.text}</p>}
   </ConsultationDialog>
@@ -22,7 +21,7 @@ export function TestimonialViewer({ item, onClose, imageUrl = item.imageUrl }) {
 export default function PublicTestimonials({ onBack }) {
   const resource = useLiveResource('publicTestimonials', 'public-testimonials', readPublicTestimonials)
   return <section className={styles.page} aria-labelledby="testimonials-title">
-    <ActionButton variant="text" onClick={onBack}>← Voltar ao início</ActionButton>
+    <ActionButton variant="text" onClick={onBack}><AppArrow direction="left" /> Voltar ao início</ActionButton>
     <Heading level={1} id="testimonials-title">Testemunhos</Heading>
     {resource.data?.length > 0 && <p className={styles.hint}>Seleciona um cartão para ver a imagem e o texto completos.</p>}
     {resource.error && <div className="notice error" role="alert"><p>{resource.error}</p><ActionButton variant="secondary" onClick={resource.refresh}>Voltar a tentar</ActionButton></div>}
@@ -105,8 +104,8 @@ function TestimonialCarousel({ items }) {
     onFocusCapture={event => setFocused(event.target.matches(':focus-visible'))}
     onBlurCapture={event => { if (!event.currentTarget.contains(event.relatedTarget)) setFocused(false) }}>
     {canMove && <div className={styles.controls}>
-      <ActionButton variant="secondary" onClick={() => move(-1)} aria-label="Testemunho anterior"><AppIcon name="arrow" className={styles.previous} /></ActionButton>
-      <ActionButton variant="secondary" onClick={() => move(1)} aria-label="Testemunho seguinte"><AppIcon name="arrow" /></ActionButton>
+      <ActionButton variant="secondary" onClick={() => move(-1)} aria-label="Testemunho anterior"><AppArrow direction="left" /></ActionButton>
+      <ActionButton variant="secondary" onClick={() => move(1)} aria-label="Testemunho seguinte"><AppArrow direction="right" /></ActionButton>
     </div>}
     <div className={styles.viewport} ref={viewport}>
       <div className={styles.track}>{items.map((item, index) => <div key={item.id} className={styles.slide} role="group" aria-roledescription="publicação" aria-label={`${index + 1} de ${items.length}`}>

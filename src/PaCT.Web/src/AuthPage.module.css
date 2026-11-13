@@ -31,7 +31,7 @@
 .access { gap: var(--space-4); margin: 0; padding-block: var(--space-3) var(--space-8); }
 .access .introduction { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: var(--space-3); min-height: 128px; }
 .access .introduction h1 { margin: 0; }
-.access .introduction img { align-self: end; width: clamp(88px, 28vw, 116px); height: auto; margin-bottom: var(--space-1); }
+.access .introduction > :is(img, [data-ui="brand-butterfly"], [data-ui="opening-butterfly-slot"]) { align-self: end; width: clamp(88px, 28vw, 116px); height: auto; margin-bottom: var(--space-1); }
 .access .panel { width: min(100%, 430px); margin-inline: auto; display: grid; gap: var(--space-3); }
 .access .panel form { margin: 0; gap: var(--space-3); }
 .access .panel :is(input, select) { border-color: var(--field-line); }
@@ -60,8 +60,15 @@
 @media (min-width: 760px) {
   .access { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; gap: clamp(32px, 7vw, 86px); }
   .access .introduction { position: static; grid-template-columns: minmax(0, 1fr); gap: var(--space-8); }
-  .access .introduction img { justify-self: center; width: clamp(170px, 23vw, 230px); }
+  .access .introduction > :is(img, [data-ui="brand-butterfly"], [data-ui="opening-butterfly-slot"]) { justify-self: center; width: clamp(170px, 23vw, 230px); }
   .openingActions {
     margin-block-start: min(14.75rem, 41dvh);
   }
+}
+
+.openingButterfly { display: block; position: relative; aspect-ratio: 378 / 330; }
+.openingButterfly > :global([data-ui='brand-butterfly']) {
+  position: absolute; inset-block-start: 50%; inset-inline-start: 50%;
+  width: calc(100% * var(--brand-butterfly-opening-scale)); margin: 0;
+  transform: translate(-50%, -50%);
 }

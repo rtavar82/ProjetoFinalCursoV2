@@ -1,3 +1,6 @@
+import moneyText from './moneyText'
+import RecoveryForm from './RecoveryForm'
+import useRecoveryState from './useRecoveryState'
 import { useCallback, useState } from 'react'
 import ActionButton from './ActionButton'
 import AdaptiveSelect from './AdaptiveSelect'
@@ -18,7 +21,11 @@ const modes = { Prepayment: 'Pagamento antecipado', Postpayment: 'Pagamento post
 export default function ConsultationCataloguePanel({ guard, busy }) {
   const read = useCallback(signal => apiRequest('consultations/catalogue', undefined, { signal }), [])
   const resource = useLiveResource('agenda', 'catalogue', read)
-  const [editor, setEditor] = useState(null)
+  const [localEditor, setLocalEditor] = useState(null)
+  const [editorEntry, rememberEditor] = useRecoveryState('view:catalogue:editor', null)
+  const restoredService = editorEntry?.id ? resource.data?.find(service => service.id === editorEntry.id) : null
+  const editor = localEditor || (editorEntry && (!editorEntry.id || restoredService) ? { service: restoredService, remove: editorEntry.remove } : null)
+  function setEditor(value) { setLocalEditor(value); rememberEditor(value ? { id: value.service?.id || null, remove: value.remove } : null) }
   const open = (service = null, remove = false) => guard(() => setEditor({ service, remove }))
   return <>
     <InformationCard title="Consultas individuais" loading={resource.loading} error={resource.error} onRetry={resource.refresh}
@@ -29,7 +36,7 @@ export default function ConsultationCataloguePanel({ guard, busy }) {
     {resource.data?.length > 0 && <CardGrid>{resource.data.map(service => <InformationCard title={service.title} key={service.id}
       actions={<><ActionButton variant="secondary" disabled={busy || !!resource.error} onClick={() => open(service)}>Editar</ActionButton>
         <ActionButton variant="text" disabled={busy || !!resource.error} aria-label={`Apagar ${service.title}`} onClick={() => open(service, true)}>Apagar</ActionButton></>}>
-      <p>{service.durationMinutes} min{service.priced ? ` · ${agendaMoney(service.referencePrice)}` : ''}</p>
+      <p>{service.durationMinutes} min{moneyText(service.priced ? ` · ${agendaMoney(service.referencePrice)}` : '')}</p>
     </InformationCard>)}</CardGrid>}
     {editor && <CatalogueEditor {...editor} busy={busy} guard={guard} onClose={() => setEditor(null)} />}
   </>
@@ -38,28 +45,28 @@ export default function ConsultationCataloguePanel({ guard, busy }) {
 function RateFields({ rate, value, onChange, inherit = false }) {
   const change = (key, event) => onChange({ ...value, [key]: event.target.value })
   return <div className="fields-grid">
-    <label>Duração (minutos)<input type="number" min="15" max="720" step="1" required={!inherit}
+    <label>Duração (minutos)<input data-recovery-controlled type="number" min="15" max="720" step="1" required={!inherit}
       placeholder={inherit ? 'Duração base' : undefined} value={value.durationMinutes} onChange={event => change('durationMinutes', event)} /></label>
-    {rate.priced && <label>Preço<input type="number" min="0.01" max="1000000" step="0.01" required={!inherit}
+    {rate.priced && <label>Preço<input data-recovery-controlled type="number" min="0.01" max="1000000" step="0.01" required={!inherit}
       placeholder={inherit ? 'Preço base' : undefined} value={value.referencePrice} onChange={event => change('referencePrice', event)} /></label>}
   </div>
 }
 
 function CatalogueEditor({ service, remove, guard, busy, onClose }) {
-  const [title, setTitle] = useState(service?.title ?? '')
-  const [description, setDescription] = useState(service?.presentation?.description ?? '')
-  const [introduction, setIntroduction] = useState(service?.presentation?.introduction ?? '')
-  const [recommendations, setRecommendations] = useState(service?.presentation?.recommendations ?? '')
-  const [paymentMode, setPaymentMode] = useState(service?.paymentMode ?? '')
+  const [title, setTitle] = useRecoveryState('catalogue:' + (service?.id || 'new') + ':title', service?.title ?? '')
+  const [description, setDescription] = useRecoveryState('catalogue:' + (service?.id || 'new') + ':description', service?.presentation?.description ?? '')
+  const [introduction, setIntroduction] = useRecoveryState('catalogue:' + (service?.id || 'new') + ':introduction', service?.presentation?.introduction ?? '')
+  const [recommendations, setRecommendations] = useRecoveryState('catalogue:' + (service?.id || 'new') + ':recommendations', service?.presentation?.recommendations ?? '')
+  const [paymentMode, setPaymentMode] = useRecoveryState('catalogue:' + (service?.id || 'new') + ':paymentMode', service?.paymentMode ?? '')
   const [inPerson, setInPerson] = useState(false), [remote, setRemote] = useState(false)
-  const [base, setBase] = useState(() => settings(service ?? {}))
+  const [base, setBase] = useRecoveryState('catalogue:' + (service?.id || 'new') + ':base', () => settings(service ?? {}))
   const deliveryOptions = service?.options ?? []
-  const [options, setOptions] = useState(() => deliveryOptions.map(settings))
+  const [options, setOptions] = useRecoveryState('catalogue:' + (service?.id || 'new') + ':options', () => deliveryOptions.map(settings))
   const [review, setReview] = useState(false), [sending, setSending] = useState(false), [error, setError] = useState('')
   const disabled = busy || sending
   const priced = service?.priced ?? ['Prepayment', 'Postpayment'].includes(paymentMode)
-  const summary = (rate, value) => <p>{value.durationMinutes || base.durationMinutes} min{rate.priced
-    ? ` · ${agendaMoney(Number(value.referencePrice || base.referencePrice))}` : ''}</p>
+  const summary = (rate, value) => <p>{value.durationMinutes || base.durationMinutes} min{moneyText(rate.priced
+    ? ` · ${agendaMoney(Number(value.referencePrice || base.referencePrice))}` : '')}</p>
 
   function prepare(event) {
     event.preventDefault()
@@ -109,13 +116,13 @@ function CatalogueEditor({ service, remove, guard, busy, onClose }) {
       </InformationCard>
       <div className="button-row"><ActionButton variant="secondary" disabled={disabled} onClick={() => setReview(false)}>Voltar à edição</ActionButton>
         <ActionButton disabled={disabled} onClick={publish}>Publicar</ActionButton></div>
-    </> : <form data-protect-draft onSubmit={prepare}>
+    </> : <RecoveryForm recoveryKey={'catalogue:' + (service?.id || 'new')} recoveryVersion={service?.version || 0} recoveryScopes={['catalogue:' + (service?.id || 'new')]} onVerified={onClose} data-protect-draft onSubmit={prepare}>
       <fieldset className={styles.fields} disabled={disabled}>
         <InformationCard title="Apresentação pública" headingLevel={3}>
-          <label>Nome da consulta<input required maxLength={200} value={title} onChange={event => setTitle(event.target.value)} /></label>
-          <label>Frase de apresentação (opcional)<input maxLength={500} value={introduction} onChange={event => setIntroduction(event.target.value)} /></label>
-          <label>Descrição<textarea required maxLength={10000} value={description} onChange={event => setDescription(event.target.value)} /></label>
-          <label>Recomendações (opcional)<textarea maxLength={4000} value={recommendations} onChange={event => setRecommendations(event.target.value)} /></label>
+          <label>Nome da consulta<input data-recovery-controlled required maxLength={200} value={title} onChange={event => setTitle(event.target.value)} /></label>
+          <label>Frase de apresentação (opcional)<input data-recovery-controlled maxLength={500} value={introduction} onChange={event => setIntroduction(event.target.value)} /></label>
+          <label>Descrição<textarea data-recovery-controlled required maxLength={10000} value={description} onChange={event => setDescription(event.target.value)} /></label>
+          <label>Recomendações (opcional)<textarea data-recovery-controlled maxLength={4000} value={recommendations} onChange={event => setRecommendations(event.target.value)} /></label>
         </InformationCard>
         <InformationCard title="Valores base" headingLevel={3}>
           {service ? <p>{modes[paymentMode]}</p> : <>
@@ -135,6 +142,6 @@ function CatalogueEditor({ service, remove, guard, busy, onClose }) {
         <div className="button-row"><ActionButton variant="secondary" onClick={() => guard(onClose)}>Voltar à gestão</ActionButton>
           <ActionButton type="submit">Rever antes de publicar</ActionButton></div>
       </fieldset>
-    </form>}
+    </RecoveryForm>}
   </ManagerSchedulingDialog>
 }

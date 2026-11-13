@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" fill="none">
+<defs><linearGradient id="wing" x1="20" y1="20" x2="100" y2="105" gradientUnits="userSpaceOnUse"><stop stop-color="#c8b2d0"/><stop offset=".65" stop-color="#a88cb8"/><stop offset="1" stop-color="#806b91"/></linearGradient><filter id="shadow" x="-25%" y="-25%" width="150%" height="150%"><feDropShadow dx="0" dy="1.3" stdDeviation="1.4" flood-color="#253e34" flood-opacity=".2"/></filter></defs>
+<g filter="url(#shadow)" stroke="#78628c" stroke-linecap="round" stroke-linejoin="round">
+<path d="M59 66C38 59 7 32 14 13C17 4 40 13 53 30L62 59C69 36 85 10 102 9C118 13 108 43 91 59L68 70C83 64 109 70 104 87C99 105 76 103 64 79C53 103 27 112 19 95C12 79 34 65 59 66Z" fill="url(#wing)" stroke-width="2.4"/>
+<path d="M60 66L17 15M60 66L24 23M60 66L37 19M60 66L19 40M60 66L37 45M64 65L102 12M64 65L92 17M64 65L106 32M64 65L88 42M59 72L22 94M59 72L30 100M60 73L40 90M66 73L100 86M66 73L90 96M66 73L76 93" stroke-width="1.2"/>
+<path d="M17 28C31 27 45 32 51 43M22 47C33 44 43 47 53 54M98 25C85 29 80 35 78 45M104 45C92 44 83 51 77 58M25 84C40 82 49 83 55 79M98 80C88 84 77 82 69 77" stroke-width=".9"/>
+<path d="M61 61C60 54 62 51 65 56L68 74L65 84L62 74Z" fill="#776083" stroke-width="1.4"/>
+<path d="M64 56C57 44 58 38 53 36M65 55C70 43 76 41 78 40" stroke-width="1.4"/><circle cx="53" cy="36" r="1.2" fill="#65734e"/><circle cx="78" cy="40" r="1.2" fill="#65734e"/>
+</g></svg>

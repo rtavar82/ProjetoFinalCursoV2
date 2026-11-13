@@ -1,7 +1,7 @@
+import DisclosureSummary from './DisclosureSummary'
 import DateRangeFields from './DateRangeFields'
 import AdaptiveSelect from './AdaptiveSelect'
 import { useState } from 'react'
-import AppIcon from './AppIcon'
 import { setDateRangeParams } from './agendaTime'
 import styles from './ClientAgenda.module.css'
 
@@ -21,7 +21,7 @@ export default function ClientHistorySearch({ services = [], onSearch }) {
     } catch (failure) { setError(failure.message) }
   }
   return <details className={`${styles.filters} ${styles.historySearch}`}>
-    <summary><div><h2>Pesquisar nos teus registos</h2><p>Inclui todos os teus pedidos, marcações e consultas, de qualquer separador, incluindo grupos, oficinas e retiros.</p></div><AppIcon name="arrowDown" /></summary>
+    <DisclosureSummary><div><h2>Pesquisar nos teus registos</h2><p>Inclui todos os teus pedidos, marcações e consultas, de qualquer separador, incluindo grupos, oficinas e retiros.</p></div></DisclosureSummary>
     <form aria-label="Pesquisa no histórico" onSubmit={submit}>
     <label>Tipo de consulta<AdaptiveSelect name="serviceId" value={values.serviceId} onChange={change}><option value="">Todos os tipos</option>{services.map(service => <option key={service.id} value={service.id}>{service.title}</option>)}</AdaptiveSelect></label>
     <div className={styles.historyDates}>

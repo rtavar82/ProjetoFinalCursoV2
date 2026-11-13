@@ -1,3 +1,5 @@
+import moneyText from './moneyText'
+import DisclosureSummary from './DisclosureSummary'
 import { useCallback, useState } from 'react'
 import ActionButton from './ActionButton'
 import AdaptiveSelect from './AdaptiveSelect'
@@ -9,6 +11,8 @@ import InformationCard from './InformationCard'
 import { addDays, agendaDate, agendaMoney, dayKey, setDateRangeParams, shiftMonth } from './agendaTime'
 import { apiRequest } from './identityApi'
 import useLiveResource from './useLiveResource'
+import SectionTabs from './SectionTabs'
+import layout from './FinancialLayout.module.css'
 
 const periods = { Day: 'Dia', Week: 'Semana', Month: 'Mês', Year: 'Ano', Custom: 'Personalizado' }
 
@@ -31,7 +35,8 @@ function periodQuery(start, end, filters = {}) {
 
 const dateLabel = day => day ? day.split('-').reverse().join('/') : ''
 
-export default function FinancialReportsPanel({ disabled, origins, movementKinds }) {
+export default function FinancialReportsPanel({ disabled, origins, movementKinds, presentation = 'default' }) {
+  const workspace = presentation === 'workspace'
   const [day, setDay] = useState(() => dayKey(new Date()))
   const [mode, setMode] = useState('Month')
   const [custom, setCustom] = useState(() => {
@@ -66,7 +71,7 @@ export default function FinancialReportsPanel({ disabled, origins, movementKinds
     } catch (error) { setExportError(error.message) }
     finally { setExporting(false) }
   }
-  return <section aria-label="Relatórios financeiros">
+  return <section className={workspace ? layout.page : undefined} aria-label="Relatórios financeiros">
     <InformationCard cardId="finance-report-filters" title="Relatórios financeiros">
       <form onSubmit={event => {
         event.preventDefault()
@@ -77,9 +82,9 @@ export default function FinancialReportsPanel({ disabled, origins, movementKinds
         if (query === selection.query) resource.refresh()
         else setSelection({ start, end, query })
       }}>
-        <nav className="consultation-tabs" aria-label="Período do relatório">{Object.entries(periods).map(([id, label]) =>
+        {workspace ? <SectionTabs label="Período do relatório" columns={5} variant="tools" compactMobile value={mode} disabled={disabled} items={Object.entries(periods).map(([id, label]) => ({ id, label }))} onChange={setMode} /> : (<nav className="consultation-tabs" aria-label="Período do relatório">{Object.entries(periods).map(([id, label]) =>
           <ActionButton key={id} variant={mode === id ? 'primary' : 'secondary'} aria-pressed={mode === id} disabled={disabled}
-            onClick={() => setMode(id)}>{label}</ActionButton>)}</nav>
+            onClick={() => setMode(id)}>{label}</ActionButton>)}</nav>)}
         {mode === 'Custom' ? <div className="fields-grid">
           <DateRangeFields type="date" startLabel="Desde" endLabel="Até" value={custom} onChange={range => setCustom(range)} required />
         </div> : <>
@@ -87,7 +92,7 @@ export default function FinancialReportsPanel({ disabled, origins, movementKinds
             onChange={event => setDay(event.target.value)} /></label>
           {day && <p>{dateLabel(start)}{start !== end && ' — ' + dateLabel(end)}</p>}
         </>}
-        <details><summary>Filtrar por cliente ou movimento</summary>
+        <details><DisclosureSummary>Filtrar por cliente ou movimento</DisclosureSummary>
           <ClientSearch purpose="filter" selected={client} onSelect={setClient} disabled={disabled} />
           <div className="fields-grid">
             <label>Origem dos movimentos<AdaptiveSelect name="origin" disabled={disabled}><option value="">Todas</option>{Object.entries(origins).map(([id, label]) => <option key={id} value={id}>{label}</option>)}</AdaptiveSelect></label>
@@ -107,9 +112,9 @@ export default function FinancialReportsPanel({ disabled, origins, movementKinds
         <p>Apuramento {agendaDate(report.asOf)}</p>
         {report.notes?.map(note => <p key={note}>{note}</p>)}
       </InformationCard>
-      <CardGrid>{report.sections?.map(section => <InformationCard key={section.title} title={section.title} headingLevel={3}>
-        <dl>{section.rows.map((row, index) => <div key={index}><dt>{row.label}</dt>
-          <dd><strong>{row.unit === 'EUR' ? agendaMoney(row.value) : `${row.value} ${row.unit}`}</strong></dd></div>)}</dl>
+      <CardGrid layout={workspace ? 'appointments' : undefined}>{report.sections?.map(section => <InformationCard key={section.title} title={section.title} headingLevel={3}>
+        <dl className={workspace ? layout.reportValues : undefined}>{section.rows.map((row, index) => <div key={index}><dt>{row.label}</dt>
+          <dd><strong>{moneyText(row.unit === 'EUR' ? agendaMoney(row.value) : `${row.value} ${row.unit}`)}</strong></dd></div>)}</dl>
       </InformationCard>)}</CardGrid>
     </>}
   </section>

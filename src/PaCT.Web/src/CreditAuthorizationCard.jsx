@@ -1,3 +1,4 @@
+import moneyText from './moneyText'
 import { useCallback } from 'react'
 import InformationCard from './InformationCard'
 import useLiveResource from './useLiveResource'
@@ -11,8 +12,8 @@ export default function CreditAuthorizationCard({ personId, balance, amount, che
   const available = balance ?? result.data?.balance ?? 0
   const maximum = Math.max(0, Math.min(available, amount ?? available))
   return <InformationCard title="Autorização de utilização de crédito" headingLevel={3} cardId="credit-authorization" className={styles.card} loading={result.loading} error={result.error} onRetry={result.refresh}>
-    <p>Crédito disponível: <strong>{agendaMoney(available)}</strong></p>
+    <p>Crédito disponível: <strong>{moneyText(agendaMoney(available))}</strong></p>
     <label className="checkbox"><input type="checkbox" name="allowClientCredit" checked={checked} onChange={onChange} disabled={disabled || result.loading || !!result.error || maximum <= 0} />Autorizar o cliente a usar este crédito.</label>
-    <p className={styles.metadata}>Até {agendaMoney(maximum)}, por opção do cliente.</p>
+    <p className={styles.metadata}>Até {moneyText(agendaMoney(maximum))}, por opção do cliente.</p>
   </InformationCard>
 }

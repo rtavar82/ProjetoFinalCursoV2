@@ -1,0 +1,5 @@
+.butterfly {
+  display: inline-block; width: var(--brand-butterfly-size); aspect-ratio: 362 / 325;
+  flex-shrink: 0; background: var(--accent);
+  mask: url('/presentation/borboleta-angulo.png') center / contain no-repeat;
+}

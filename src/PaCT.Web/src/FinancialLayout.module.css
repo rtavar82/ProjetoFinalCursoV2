@@ -1,0 +1,30 @@
+.page:not([hidden]) { display: grid; gap: var(--space-6); min-width: 0; }
+.group { display: grid; gap: var(--space-4); min-width: 0; }
+.heading { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: var(--space-3); }
+.heading > h2, .heading > p { margin: 0; }
+.heading > button { width: auto; margin: 0; }
+.meta { color: var(--muted); font-size: var(--font-size-small); }
+.amount { font-size: var(--font-size-lead); font-weight: 600; font-variant-numeric: tabular-nums; }
+.dataLine { display: flex; align-items: flex-start; gap: var(--space-2); }
+.dataLine > svg { width: var(--icon-size); height: var(--icon-size); flex-shrink: 0; color: var(--accent); }
+.status { justify-self: start; color: var(--accent); background: var(--tint); border-radius: var(--control-radius); padding: var(--space-2) var(--space-3); }
+.filter { border: 1px solid var(--line); border-radius: var(--control-radius); background: var(--surface); padding: var(--space-1) var(--space-4); }
+.filter > summary { min-height: var(--control-height); }
+.filter[open] { padding-bottom: var(--space-4); }
+.fields { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-4); }
+.wide { grid-column: 1 / -1; }
+.customer { display: flex; justify-content: space-between; align-items: center; gap: var(--space-3); padding: var(--space-3) 0; border-bottom: 1px solid var(--line); }
+.customer:last-child { border-bottom: 0; }
+.customer > button { width: auto; margin: 0; text-align: left; }
+.customer > strong { flex-shrink: 0; }
+.corrections { display: grid; gap: var(--space-4); min-width: 0; }
+.correctionForms { display: grid; grid-template-columns: minmax(0, 1fr); align-items: start; gap: var(--space-4); }
+.reportValues { container-type: inline-size; display: grid; gap: var(--space-3); margin: 0; }
+.reportValues > div { display: grid; grid-template-columns: minmax(0, 1fr) minmax(12ch, max-content); align-items: baseline; gap: var(--space-3); }
+.reportValues dd { margin: 0; white-space: nowrap; text-align: end; font-variant-numeric: tabular-nums; }
+@media (min-width: 760px) { .fields, .correctionForms { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+.embeddedRecords[data-card-grid] { grid-template-columns: minmax(0, 1fr); }
+.embeddedRecords > :global(.ui-card) { border-top: 1px solid var(--line); padding-top: var(--space-4); }
+
+@container (width < 280px) { .reportValues > div { grid-template-columns: minmax(0, 1fr); gap: var(--space-1); } .reportValues dd { justify-self: end; } }

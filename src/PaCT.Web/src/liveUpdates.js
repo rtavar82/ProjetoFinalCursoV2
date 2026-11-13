@@ -48,6 +48,7 @@ export function announceSuccessfulWrite(path, body) {
   }
   if (/^consultations\/events\/[^/]+\/requests$/.test(endpoint)) resources.push('events', 'consultationNotices', 'clients', 'clientReviews')
   if (endpoint === 'consultations/guests') resources.push('agenda', 'consultationNotices', 'guestRequests', 'clients', 'clientReviews')
+  if (/^identity\/therapist-management\/access(?:\/|$)/.test(endpoint)) resources.push('accountSecurity', 'clientAccess', 'securityAudit')
   if (endpoint === 'profile' || /^identity\/(passkeys|google|password-change)/.test(endpoint)) resources.push('accountSecurity')
   if (/^identity\/email-operations\/[^/]+\/review$/.test(endpoint)) resources.push('securityEmailOperations', 'securityAudit')
   if (/^sharing(?:\/|$)/.test(endpoint)) resources.push('sharing')

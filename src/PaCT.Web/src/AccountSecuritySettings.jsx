@@ -1,3 +1,4 @@
+import DisclosureSummary from './DisclosureSummary'
 import { useRef } from 'react'
 import { request } from './identityApi'
 import PasswordField from './PasswordField'
@@ -17,7 +18,7 @@ export function GoogleSignInButton({ busy, perform }) {
   })}><span>Entrar com a conta</span><img className={styles.googleWordmark} src="/google-wordmark.svg" alt="Google" width="74" height="24" /></button>
 }
 
-export default function AccountSecuritySettings({ busy, perform, notify, guard, onSignedOut, view }) {
+export default function AccountSecuritySettings({ busy, perform, notify, guard, onSignedOut, view, initiallyOpen = false }) {
   const { data: google, error } = useLiveResource('accountSecurity', 'google-status', readGoogle, view !== 'password')
   const operationId = useRef(crypto.randomUUID())
   function passwordChange(event) {
@@ -40,7 +41,7 @@ export default function AccountSecuritySettings({ busy, perform, notify, guard, 
   }
   const password = <section className={styles.section} aria-labelledby={view ? undefined : 'password-settings-title'}>
       {!view && <h3 id="password-settings-title">Palavra-passe</h3>}
-      <details className={styles.action}><summary>Alterar palavra-passe</summary>
+      <details className={styles.action} open={initiallyOpen || undefined}><DisclosureSummary>Alterar palavra-passe</DisclosureSummary>
         <p>Recebe um email com o link para escolheres a nova palavra-passe.</p>
         <form data-protect-draft={!!view || undefined} onSubmit={passwordChange}><PasswordField label="Palavra-passe atual" name="password" autoComplete="current-password" required maxLength="128" />
           <button disabled={busy}>Enviar email para alterar a palavra-passe</button>
@@ -52,7 +53,7 @@ export default function AccountSecuritySettings({ busy, perform, notify, guard, 
       {error && <p className="notice error" role="alert">{error}</p>}
       {google?.linked && <p>Conta Google associada: {google.email}</p>}
       {google?.enabled === false && !google.linked && <p>A entrada com Google ainda não está disponível.</p>}
-      {(google?.enabled || google?.linked) && <details className={styles.action}><summary>{google.linked ? 'Desassociar Google' : 'Associar conta Google'}</summary>
+      {(google?.enabled || google?.linked) && <details className={styles.action} open={initiallyOpen || undefined}><DisclosureSummary>{google.linked ? 'Desassociar Google' : 'Associar conta Google'}</DisclosureSummary>
         <p>{google.linked ? 'Poderás continuar a entrar com o teu email e a palavra-passe.' : 'Usa a tua conta Google para entrar. A tua palavra-passe e as Passkeys mantêm-se.'}</p>
         <form data-protect-draft={!!view || undefined} onSubmit={googleChange}><PasswordField label="Confirma a tua palavra-passe" name="password" autoComplete="current-password" required maxLength="128" />
           <button disabled={busy}>{google.linked ? 'Confirmar desassociação' : 'Continuar para o Google'}</button>

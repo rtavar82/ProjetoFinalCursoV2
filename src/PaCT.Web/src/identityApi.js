@@ -2,6 +2,8 @@ import { announceSuccessfulWrite } from './liveUpdates.js'
 import { reportFreshContent, reportStaleContent } from './readFreshness.js'
 import { cancelSubmittedWrites, canReplay, clientOperation, submittedWrite } from './submittedWrites.js'
 
+import { prepareManagerWrite, managerAccountHeaders, managerAccountIsCurrent } from './managerWriteRecovery.js'
+
 export const SESSION_EXPIRED = 'pact:session-expired'
 
 export function request(path, body) { return apiRequest('identity/' + path, body) }
@@ -16,19 +18,20 @@ function rateLimitFailure(response, title) {
   return error
 }
 
-export function uploadConsultationPhoto(consultationId, photoId, file, version) { return uploadPhoto(consultationId, photoId, file, 'version', version) }
-export function uploadConversationPhoto(consultationId, photoId, file, version) { return uploadPhoto(consultationId, photoId, file, 'conversationVersion', version) }
+export function uploadConsultationPhoto(consultationId, photoId, file, version, expectedAccount) { return uploadPhoto(consultationId, photoId, file, 'version', version, expectedAccount) }
+export function uploadConversationPhoto(consultationId, photoId, file, version, expectedAccount) { return uploadPhoto(consultationId, photoId, file, 'conversationVersion', version, expectedAccount) }
 
-async function uploadPhoto(consultationId, photoId, file, versionField, version) {
+async function uploadPhoto(consultationId, photoId, file, versionField, version, expectedAccount) {
+  const accountHeaders = managerAccountHeaders(expectedAccount)
   const form = new FormData(); form.set('file', file); form.set(versionField, String(version))
   return submittedWrite(async sent => {
   const csrf = await apiRequest('identity/csrf')
   let response
   sent()
-  try { response = await fetch(`/api/consultations/${consultationId}/photos/${photoId}`, { method: 'POST', credentials: 'same-origin', cache: 'no-store', headers: { 'X-PaCT-CSRF': csrf.token }, body: form }) }
+  try { response = await fetch(`/api/consultations/${consultationId}/photos/${photoId}`, { method: 'POST', credentials: 'same-origin', cache: 'no-store', headers: { ...accountHeaders, 'X-PaCT-CSRF': csrf.token }, body: form }) }
   catch { throw new Error('Não foi possível confirmar o envio da imagem. O preenchimento foi mantido e a confirmação não foi enviada.') }
   const result = await response.json().catch(() => ({}))
-  if (response.status === 401) window.dispatchEvent(new Event(SESSION_EXPIRED))
+  if (response.status === 401 && managerAccountIsCurrent(accountHeaders)) window.dispatchEvent(new Event(SESSION_EXPIRED))
   if (!response.ok || result.id !== photoId || result.confirmed !== true) {
     const failure = new Error(result.title || 'Não foi possível confirmar esta imagem no servidor.')
     if (!response.ok) failure.status = response.status
@@ -37,7 +40,8 @@ async function uploadPhoto(consultationId, photoId, file, versionField, version)
   }, true)
 }
 
-export function sendConversationAudio(id, command, audio) {
+export function sendConversationAudio(id, command, audio, expectedAccount) {
+  const accountHeaders = managerAccountHeaders(expectedAccount)
   const form = new FormData()
   form.set('operationId', command.operationId)
   form.set('conversationVersion', String(command.conversationVersion))
@@ -50,11 +54,11 @@ export function sendConversationAudio(id, command, audio) {
     const csrf = await apiRequest('identity/csrf')
     sent()
     const response = await fetch(`/api/consultations/${id}/messages/audio`, {
-      method: 'POST', credentials: 'same-origin', cache: 'no-store', headers: { 'X-PaCT-CSRF': csrf.token },
+      method: 'POST', credentials: 'same-origin', cache: 'no-store', headers: { ...accountHeaders, 'X-PaCT-CSRF': csrf.token },
       body: form, signal: AbortSignal.timeout(120000),
     })
     const result = await response.json().catch(() => ({}))
-    if (response.status === 401) window.dispatchEvent(new Event(SESSION_EXPIRED))
+    if (response.status === 401 && managerAccountIsCurrent(accountHeaders)) window.dispatchEvent(new Event(SESSION_EXPIRED))
     if (response.status === 429) throw rateLimitFailure(response, result.title)
     if (!response.ok || result.id !== command.operationId) {
       const error = new Error(result.title || 'Não foi possível confirmar o envio do áudio. O preenchimento foi mantido.')
@@ -66,15 +70,16 @@ export function sendConversationAudio(id, command, audio) {
   }, true)
 }
 
-export function uploadConversationVideo(consultationId, item, version) {
-  return uploadPrivateAttachment(`consultations/${consultationId}/messages/video/${item.id}`, item, 'conversationVersion', version)
+export function uploadConversationVideo(consultationId, item, version, expectedAccount) {
+  return uploadPrivateAttachment(`consultations/${consultationId}/messages/video/${item.id}`, item, 'conversationVersion', version, expectedAccount)
 }
 
-export function uploadClosureAttachment(consultationId, scope, item, version) {
-  return uploadPrivateAttachment(`consultations/${consultationId}/closure-media/${scope}/${item.id}`, item, 'version', version)
+export function uploadClosureAttachment(consultationId, scope, item, version, expectedAccount) {
+  return uploadPrivateAttachment(`consultations/${consultationId}/closure-media/${scope}/${item.id}`, item, 'version', version, expectedAccount)
 }
 
-function uploadPrivateAttachment(path, item, versionField, version) {
+function uploadPrivateAttachment(path, item, versionField, version, expectedAccount) {
+  const accountHeaders = managerAccountHeaders(expectedAccount)
   const form = new FormData()
   form.set(versionField, String(version))
   form.set(item.kind === 'image' ? 'images' : item.kind, item.file)
@@ -82,11 +87,11 @@ function uploadPrivateAttachment(path, item, versionField, version) {
     const csrf = await apiRequest('identity/csrf')
     sent()
     const response = await fetch('/api/' + path, {
-      method: 'POST', credentials: 'same-origin', cache: 'no-store', headers: { 'X-PaCT-CSRF': csrf.token },
+      method: 'POST', credentials: 'same-origin', cache: 'no-store', headers: { ...accountHeaders, 'X-PaCT-CSRF': csrf.token },
       body: form, signal: AbortSignal.timeout(120000),
     })
     const result = await response.json().catch(() => ({}))
-    if (response.status === 401) window.dispatchEvent(new Event(SESSION_EXPIRED))
+    if (response.status === 401 && managerAccountIsCurrent(accountHeaders)) window.dispatchEvent(new Event(SESSION_EXPIRED))
     if (response.status === 429) throw rateLimitFailure(response, result.title)
     if (!response.ok || result.id !== item.id || result.confirmed !== true) {
       const error = new Error(result.title || 'Não foi possível preparar o anexo. O envio não foi confirmado.')
@@ -96,23 +101,29 @@ function uploadPrivateAttachment(path, item, versionField, version) {
   }, true)
 }
 
-export async function apiRequest(path, body, { signal, publicOnly = false, responseType = 'json' } = {}) {
+export async function apiRequest(path, body, { signal, publicOnly = false, responseType = 'json', recoveryScope, expectedAccount } = {}) {
+  const accountHeaders = managerAccountHeaders(expectedAccount)
   if (publicOnly && body !== undefined) throw new Error('A visualização de visitante permite apenas consultar.')
   if (body !== undefined) {
     if (path === 'identity/sign-out') cancelSubmittedWrites()
-    const submitted = body instanceof FormData ? body : JSON.stringify(body)
-    const operationKey = clientOperation(path) ? crypto.randomUUID() : undefined
+    let submitted = body instanceof FormData ? body : JSON.stringify(body)
+    let operationKey = clientOperation(path) ? crypto.randomUUID() : undefined
+    const recovery = prepareManagerWrite(path, submitted, operationKey, recoveryScope, accountHeaders['X-PaCT-Account'])
+    if (recovery) { submitted = recovery.submitted; operationKey = recovery.headerKey }
     let serverSupportsRecovery = !operationKey
-    const result = await submittedWrite(sent => sendWrite(path, submitted, sent, operationKey, supported => { serverSupportsRecovery = supported }),
-      () => serverSupportsRecovery && canReplay(path, body, operationKey))
+    let result
+    try { if (recovery?.command) await recovery.support(true); result = await submittedWrite(sent => sendWrite(path, submitted, sent, operationKey, async supported => { serverSupportsRecovery = supported; await recovery?.support(supported) }, accountHeaders),
+      () => serverSupportsRecovery && canReplay(path, body, operationKey)) } catch (error) { if (error.status && error.status < 500 && !error.keepRecovery) await recovery?.reject(); else recovery?.uncertain(); throw error }
+    await recovery?.complete(result.saved !== false && result.confirmed !== false)
     announceSuccessfulWrite(path, body)
+    if (path === 'identity/sign-out') window.dispatchEvent(new Event('pact:signed-out'))
     return result
   }
   if (!navigator.onLine) {
     reportStaleContent()
     throw new Error('Sem ligação. Não foi possível consultar a informação atual.')
   }
-  const options = { credentials: publicOnly ? 'omit' : 'same-origin', cache: 'no-store', headers: {}, signal }
+  const options = { credentials: publicOnly ? 'omit' : 'same-origin', cache: 'no-store', headers: publicOnly ? {} : accountHeaders, signal }
   let response
   options.signal = signal ? AbortSignal.any([signal, AbortSignal.timeout(15000)]) : AbortSignal.timeout(15000)
   try { response = await fetch('/api/' + path, options) }
@@ -125,7 +136,7 @@ export async function apiRequest(path, body, { signal, publicOnly = false, respo
   const result = await response.json().catch(() => ({}))
   if (!response.ok) {
     if (response.status >= 500) reportStaleContent()
-    if (response.status === 401 && !publicOnly) window.dispatchEvent(new Event(SESSION_EXPIRED))
+    if (response.status === 401 && !publicOnly && managerAccountIsCurrent(accountHeaders)) window.dispatchEvent(new Event(SESSION_EXPIRED))
     if (response.status === 429) throw rateLimitFailure(response, result.title)
     const failure = new Error(result.title || 'Não foi possível concluir o pedido. Nenhuma confirmação de sucesso foi recebida.')
     failure.status = response.status
@@ -135,23 +146,23 @@ export async function apiRequest(path, body, { signal, publicOnly = false, respo
   return result
 }
 
-async function sendWrite(path, submitted, sent, operationKey, recoverySupport) {
+async function sendWrite(path, submitted, sent, operationKey, recoverySupport, accountHeaders) {
   const multipart = submitted instanceof FormData
-  const options = { credentials: 'same-origin', cache: 'no-store', signal: AbortSignal.timeout(15000) }
+  const options = { credentials: 'same-origin', cache: 'no-store', headers: accountHeaders, signal: AbortSignal.timeout(15000) }
   const csrf = await fetch('/api/identity/csrf', options)
   if (csrf.status === 429) throw rateLimitFailure(csrf)
   if (!csrf.ok) { const error = new Error('Não foi possível preparar o envio.'); error.status = csrf.status; throw error }
   const proof = await csrf.json()
   const token = proof.token
-  if (operationKey) recoverySupport(proof.clientWriteRecovery === true)
+  if (operationKey) await recoverySupport(proof.clientWriteRecovery === true)
   sent()
   const response = await fetch('/api/' + path, {
     ...options, ...(multipart && { signal: AbortSignal.timeout(120000) }), method: 'POST',
-    headers: { ...(!multipart && { 'Content-Type': 'application/json' }), 'X-PaCT-CSRF': token, ...(operationKey ? { 'Idempotency-Key': operationKey } : {}) },
+    headers: { ...accountHeaders, ...(!multipart && { 'Content-Type': 'application/json' }), 'X-PaCT-CSRF': token, ...(operationKey ? { 'Idempotency-Key': operationKey } : {}) },
     body: submitted,
   })
   const result = await response.json().catch(() => ({}))
-  if (response.status === 401) window.dispatchEvent(new Event(SESSION_EXPIRED))
+  if (response.status === 401 && managerAccountIsCurrent(accountHeaders)) window.dispatchEvent(new Event(SESSION_EXPIRED))
   if (response.status === 429) throw rateLimitFailure(response, result.title)
   if (!response.ok) { const error = new Error(result.title || 'Não foi possível concluir o pedido. O preenchimento foi mantido.'); error.status = response.status; throw error }
   reportFreshContent()

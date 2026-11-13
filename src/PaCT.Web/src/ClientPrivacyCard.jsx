@@ -1,3 +1,4 @@
+import DisclosureSummary from './DisclosureSummary'
 import ActionButton from './ActionButton'
 import InformationCard from './InformationCard'
 import PrivacyPolicy from './PrivacyPolicy'
@@ -19,7 +20,7 @@ export default function ClientPrivacyCard({ view }) {
         <p>Leitura da versão {policy.version}: {confirmed ? 'confirmada' : 'por confirmar'}.</p>
         {!confirmed && <ActionButton variant="secondary" disabled={busy} onClick={() => decide('reading', true)}>Confirmar leitura</ActionButton>}
       </>}
-      <details><summary>Ler a política completa</summary><PrivacyPolicy content={policy.content} /></details>
+      <details><DisclosureSummary>Ler a política completa</DisclosureSummary><PrivacyPolicy content={policy.content} /></details>
     </>}
     {view === 'notifications' && <>
       <p>{policy.content.pushNotice}</p>

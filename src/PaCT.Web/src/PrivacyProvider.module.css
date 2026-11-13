@@ -2,9 +2,9 @@
   position: fixed;
   z-index: 30;
   inset-inline: max(12px, env(safe-area-inset-left)) max(12px, env(safe-area-inset-right));
-  bottom: max(12px, env(safe-area-inset-bottom));
+  bottom: calc(max(12px, env(safe-area-inset-bottom)) + var(--footer-overlay-clearance, 0px));
   max-width: 580px;
-  max-height: 65dvh;
+  max-height: min(65dvh, calc(100dvh - var(--footer-overlay-clearance, 0px) - var(--header-overlay-clearance, 0px) - 24px));
   margin-inline: auto;
   padding: 16px;
   overflow: auto;

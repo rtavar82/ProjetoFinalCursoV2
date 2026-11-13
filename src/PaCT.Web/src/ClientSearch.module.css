@@ -1,8 +1,8 @@
 .content { display: grid; gap: 18px; min-width: 0; }
-.search h3 { margin: 0; }
-.search p { margin: 0; }
-.search label { display: grid; gap: 8px; color: var(--muted); min-width: 0; }
-.search :is(input, select) { min-height: 46px; }
+.search:not(.workspace) h3 { margin: 0; }
+.search:not(.workspace) p { margin: 0; }
+.search:not(.workspace) label { display: grid; gap: 8px; color: var(--muted); min-width: 0; }
+.search:not(.workspace) :is(input, select) { min-height: 46px; }
 .searchFields { display: grid; gap: 18px; min-width: 0; }
 .searchTerm { display: grid; gap: 8px; min-width: 0; }
 .search.compact { padding: 14px; }
@@ -18,7 +18,7 @@
   border-block-start: 1px solid var(--line);
 }
 @media (min-width: 600px) { .searchFields { grid-template-columns: minmax(0, 1fr) auto; align-items: end; } }
-.search button { width: fit-content; margin: 0; }
+.search:not(.workspace) button { width: fit-content; margin: 0; }
 .help { color: var(--muted); font-size: var(--font-size-label); line-height: 1.65; }
 .search .help { margin: -10px 0 0; }
 .people { display: grid; gap: 14px; }
@@ -27,9 +27,24 @@
 .personInfo > * { flex: none; }
 .personInfo span { font-size: var(--font-size-label); }
 .person button { flex: none; white-space: nowrap; }
-.chooseIcon { display: none; }
+.chooseIcon[data-arrow-direction] { display: none; }
 @media (max-width: 599px) {
   .search .person button { display: grid; place-items: center; width: 44px; height: 44px; min-height: 44px; padding: 0; }
   .chooseLabel { display: none; }
-  .chooseIcon { display: inline; }
+  .chooseIcon[data-arrow-direction] { display: inline-block; }
 }
+
+.workspace .searchFields { grid-template-columns: minmax(0, 1fr) auto; gap: var(--space-3); align-items: end; }
+.workspace .content { gap: var(--space-5); }
+.workspace .help { margin: 0; }
+.searchHelp { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: var(--space-3); }
+.searchHelp > .help { flex: 1 1 280px; }
+.searchHelp > button { flex: none; }
+.resultList { display: grid; gap: var(--space-4); min-width: 0; }
+.workspace .people { gap: 0; }
+.workspace .directoryPerson { display: flex; justify-content: space-between; align-items: center; gap: var(--space-3); width: 100%; min-width: 0; margin: 0; padding: var(--space-4) var(--space-3); border: 0; border-bottom: 1px solid var(--line); border-radius: 0; background: transparent; text-align: left; white-space: normal; }
+.workspace .directoryPerson[aria-current='true'], .workspace .directoryPerson[aria-current='true']:hover:not(:disabled) { background: var(--tint); border-color: transparent; border-radius: var(--control-radius); color: var(--accent); }
+.directoryInfo { display: grid; gap: var(--space-1); min-width: 0; overflow-wrap: anywhere; }
+.directoryInfo > span { font-size: var(--font-size-caption); color: var(--muted); font-weight: 400; }
+
+.workspace .searchFields > button, .workspace .searchHelp > button { width: auto; margin: 0; }

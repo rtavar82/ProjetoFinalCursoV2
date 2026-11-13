@@ -1,13 +1,16 @@
-import AdaptiveSelect from './AdaptiveSelect'
+import Heading from './Heading'
+import AgendaPresentation from './AgendaPresentation'
+import SectionTabs from './SectionTabs'
+import useRecoveryRecord from './useRecoveryRecord'
+import useRecoveryState from './useRecoveryState'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { apiRequest } from './identityApi'
 import ClientProfileForm from './ClientProfileForm'
 import FinancialSalesPanel from './FinancialSalesPanel'
 import SessionPacksPanel from './SessionPacksPanel'
 import { announceOperation } from './actionNotices'
-import ClientComparison from './ClientComparison'
-import ClientDataSummary from './ClientDataSummary'
-import ClientAccessSettings from './ClientAccessSettings'
+import ClientReviewCard from './ClientReviewCard'
+import AccountAccessSettings from './AccountAccessSettings'
 import styles from './Clients.module.css'
 import useLiveResource from './useLiveResource'
 import InformationCard from './InformationCard'
@@ -17,11 +20,11 @@ import Pagination from './Pagination'
 import { invalidateResources, observeResource } from './liveUpdates'
 
 function nameOf(client) { return [client.data.firstName, client.data.lastName].filter(Boolean).join(' ') || 'Nome ainda não indicado' }
-function dateOf(value) { return new Intl.DateTimeFormat('pt-PT', { timeZone: 'Europe/Lisbon', dateStyle: 'short', timeStyle: 'short' }).format(new Date(value.endsWith('Z') ? value : value + 'Z')) }
 
 export default function Clients({ busy, perform, notify, guard, initialView = 'Directory', initialId = null, pendingReviewCount }) {
-  const [view, setView] = useState(initialId ? 'Detail' : initialView)
-  const [editedClient, setClient] = useState(null)
+  const [view, setView] = useRecoveryState('view:' + 'clients' + ':view', initialId ? 'Detail' : initialView)
+  const [area, setArea] = useRecoveryState('view:clients:area', 'Data')
+  const [editedClient, setClient] = useRecoveryRecord('client', 'clients/', 'clients')
   const dirty = useRef(false)
   const openedId = editedClient?.id
   useEffect(() => {
@@ -32,15 +35,16 @@ export default function Clients({ busy, perform, notify, guard, initialView = 'D
       catch { /* The shared read warning reports connection failures; keep the open form. */ }
     })
     return () => { current = false; stop() }
-  }, [view, openedId])
+  }, [view, openedId, setClient])
   const readInitial = useCallback(signal => apiRequest('clients/' + initialId, undefined, { signal }), [initialId])
   const initial = useLiveResource('clients', 'client-entry:' + initialId, readInitial, !!initialId && view === 'Detail' && !editedClient)
   const client = editedClient || (view === 'Detail' ? initial.data : null)
-  function open(id) { perform(async () => { const data = await apiRequest('clients/' + id); dirty.current = false; setClient(data); setView('Detail') }) }
+  function open(id) { if (view === 'Detail' && client?.id === id) return; guard(() => perform(async () => { const data = await apiRequest('clients/' + id); dirty.current = false; setClient(data); setArea('Data'); setView('Detail') })) }
+  function recoveredSave(result) { if (result.saved && result.client) { dirty.current = false; setClient(result.client); setArea('Data'); setView('Detail') } }
   function save(input) { perform(async () => {
     const saved = await apiRequest(client ? 'clients/' + client.id : 'clients', input)
     notify(saved.message, !saved.saved)
-    if (saved.saved) { dirty.current = false; setClient(saved.client); setView('Detail') }
+    if (saved.saved) { dirty.current = false; setClient(saved.client); setArea('Data'); setView('Detail') }
   }) }
   async function sendPack(command) {
     let result
@@ -51,21 +55,43 @@ export default function Clients({ busy, perform, notify, guard, initialView = 'D
     })
     return result
   }
-  return <section className={styles.page} aria-labelledby="clients-title" onChangeCapture={event => { if (event.target.closest('form.client-form') && !dirty.current) { dirty.current = true; if (client) setClient(client) } }}>
-    <div className="section-heading"><div><h1 id="clients-title">Clientes</h1><p>Pesquisa uma ficha para consultar os dados e o acompanhamento do cliente.</p></div></div>
-    <nav className="section-tabs" aria-label="Área Clientes">
-      <button disabled={busy} aria-pressed={view === 'Directory'} className={view === 'Directory' ? '' : 'secondary'} onClick={() => { if (view !== 'Directory') guard(() => { setView('Directory'); setClient(null) }) }}>Pesquisar clientes</button>
-      <button disabled={busy} className={view === 'Create' ? '' : 'secondary'} aria-pressed={view === 'Create'} onClick={() => { if (view !== 'Create') guard(() => { setClient(null); setView('Create') }) }}>Criar ficha</button>
-      <button disabled={busy} className={view === 'Reviews' ? '' : 'secondary'} aria-pressed={view === 'Reviews'} onClick={() => { if (view !== 'Reviews') guard(() => setView('Reviews')) }}>Ocorrências para rever{pendingReviewCount > 0 ? ` (${pendingReviewCount})` : ''}</button>
-    </nav>
-    <div hidden={view !== 'Directory'}><ClientSearch purpose="directory" enabled={view === 'Directory'} disabled={busy} onSelect={person => open(person.id)} /></div>
-    {view === 'Create' && <InformationCard title="Criar ficha de cliente" cardId="client-create"><ClientProfileForm key="new" manual busy={busy} onSave={save} /></InformationCard>}
-    {view === 'Detail' && !client && <InformationCard loading={initial.loading} error={initial.error} onRetry={initial.refresh} cardId="client-entry" />}
-    {view === 'Detail' && client && <InformationCard title={nameOf(client)} cardId="client-editor"><p className="client-badge">{client.hasAccount ? 'Com conta · ' + clientAccountStateLabel(client.accountState) : 'Ficha de gestão sem conta de acesso'}</p><ClientProfileForm key={client.id + ':' + client.version} client={client} busy={busy} onSave={save} />{client.hasAccount && client.accountState === 'Active' && <ClientAccessSettings key={client.id} client={client} busy={busy} perform={perform} notify={notify} />}</InformationCard>}
-    {view === 'Detail' && client && <FinancialSalesPanel key={'sales-' + client.id} personId={client.id} disabled={busy} guard={guard} />}
-    {view === 'Detail' && client && <InformationCard title="Packs de sessões" cardId="client-packs"><SessionPacksPanel key={'packs-' + client.id} personId={client.id} manager send={sendPack} disabled={busy} guard={guard} /></InformationCard>}
-    {view === 'Reviews' && <Reviews busy={busy} perform={perform} notify={notify} onChange={() => invalidateResources(['clients'])} />}
-  </section>
+  const canManageAccess = client?.hasAccount && client.accountState === 'Active'
+  const currentArea = area === 'Access' && !canManageAccess ? 'Data' : area
+  const areas = [{ id: 'Data', label: 'Dados' }, ...(canManageAccess ? [{ id: 'Access', label: 'Acesso e segurança' }] : []), { id: 'Sales', label: 'Vendas' }, { id: 'Packs', label: 'Packs de sessões' }]
+  function changeView(next) {
+    if (next === 'Directory' && ['Directory', 'Detail'].includes(view)) {
+      if (view === 'Detail') guard(() => { dirty.current = false; setView('Directory') })
+      return
+    }
+    if (next !== view) guard(() => { dirty.current = false; if (next === 'Create') setClient(null); setView(next) })
+  }
+  return <AgendaPresentation title="Clientes" eyebrow="" headingId="clients-title" description="Pesquisa uma ficha para consultar os dados e o acompanhamento do cliente." contentClassName={styles.content} aria-labelledby="clients-title"
+    onChangeCapture={event => { if (event.target.closest('form.client-form') && !dirty.current) { dirty.current = true; if (client) setClient(client) } }}>
+    <SectionTabs label="Área Clientes" columns={3} variant="tools" compactMobile disabled={busy}
+      items={[{ id: 'Directory', label: 'Pesquisar clientes' }, { id: 'Create', label: 'Criar ficha', variant: 'tinted' }, { id: 'Reviews', label: 'Ocorrências para rever', ...(pendingReviewCount > 0 ? { count: pendingReviewCount } : {}) }]}
+      value={view === 'Detail' ? 'Directory' : view} onChange={changeView} />
+    <div className={styles.page} hidden={!['Directory', 'Detail'].includes(view)}>
+      <ClientSearch purpose="directory" presentation="workspace" enabled={['Directory', 'Detail'].includes(view)} disabled={busy}
+        activeId={client?.id} detailOpen={view === 'Detail'} onBack={() => changeView('Directory')} onSelect={person => open(person.id)}>
+        {view === 'Detail' && !client && <InformationCard variant="plain" loading={initial.loading} error={initial.error} onRetry={initial.refresh} cardId="client-entry" />}
+        {view === 'Detail' && client && <div data-card-id="client-editor">
+          <header className={styles.clientHeading}><Heading level={2} appearance="card-title">{nameOf(client)}</Heading>
+            <p className={styles.badge}>{client.hasAccount ? 'Com conta · ' + clientAccountStateLabel(client.accountState) : 'Ficha de gestão sem conta de acesso'}</p>
+          </header>
+          <div className={styles.clientAreas}>
+            <SectionTabs label="Áreas da ficha" columns={areas.length} variant="tools" compactMobile items={areas} value={currentArea} disabled={busy}
+              onChange={next => { if (next !== currentArea) setArea(next) }} />
+            <div hidden={currentArea !== 'Data'}><ClientProfileForm key={client.id + ':' + client.version} client={client} busy={busy} onSave={save} onRecoveredSave={recoveredSave} /></div>
+            {canManageAccess && <div hidden={currentArea !== 'Access'}><AccountAccessSettings inline key={client.id} client={client} busy={busy} perform={perform} notify={notify} /></div>}
+            <div hidden={currentArea !== 'Sales'}><FinancialSalesPanel key={'sales-' + client.id} personId={client.id} presentation="embedded" enabled={currentArea === 'Sales'} disabled={busy} guard={guard} /></div>
+            <div hidden={currentArea !== 'Packs'}><SessionPacksPanel key={'packs-' + client.id} personId={client.id} manager presentation="embedded" enabled={currentArea === 'Packs'} send={sendPack} disabled={busy} guard={guard} /></div>
+          </div>
+        </div>}
+      </ClientSearch>
+    </div>
+    {view === 'Create' && <InformationCard title="Criar ficha de cliente" cardId="client-create"><ClientProfileForm key="new" manual busy={busy} onSave={save} onRecoveredSave={recoveredSave} /></InformationCard>}
+    {view === 'Reviews' && <div className={styles.page}><Reviews busy={busy} perform={perform} notify={notify} onChange={() => invalidateResources(['clients'])} /></div>}
+  </AgendaPresentation>
 }
 
 
@@ -77,40 +103,10 @@ function Reviews({ busy, perform, notify, onChange }) {
     const result = await apiRequest('clients/reviews/' + review.id, { version: review.version, ...decision })
     notify(result.message); setReviews({ items: await apiRequest('clients/reviews') }); setPage(1); onChange()
   }) }
-  return <section className="record-panel"><h2>Ocorrências para rever</h2><p>Uma coincidência não prova que sejam a mesma pessoa. A proposta ainda não substituiu os dados atuais.</p>
+  return <section className={styles.reviews}><Heading level={2}>Ocorrências para rever</Heading><p>Compara as fichas e escolhe os dados finais. Nada é alterado antes da confirmação.</p>
     {!reviews && <p role="status">A carregar ocorrências…</p>}{reviews?.error && <p role="alert" className="notice error">{reviews.error}</p>}
     {reviews?.items?.length === 0 && <p>Não existem ocorrências por resolver.</p>}
-    {reviews?.items?.slice((page - 1) * 8, page * 8).map(review => <ReviewCard key={review.id} review={review} busy={busy} onDecide={decision => decide(review, decision)} />)}
+    {reviews?.items?.slice((page - 1) * 8, page * 8).map(review => <ClientReviewCard key={review.id + ":" + review.version + ":" + review.source?.version + ":" + review.candidates.map(row => row.id + ":" + row.version).join(",")} review={review} busy={busy} onDecide={decision => decide(review, decision)} />)}
     {reviews?.items && <Pagination total={reviews.items.length} page={page} showTotal onChange={setPage} />}
   </section>
-}
-
-const fieldLabels = { FirstName: 'Nome', LastName: 'Apelido', Locality: 'Localidade', BirthDate: 'Nascimento', Gender: 'Género', Email: 'Email', Phone: 'Telefone e indicativo', Address: 'Morada', PostalCode: 'Código postal', ChildrenCount: 'Número de filhos', RelationshipStatus: 'Estado civil', DisplayName: 'Nome público' }
-function ReviewCard({ review, busy, onDecide }) {
-  const [candidateId, setCandidateId] = useState('')
-  const [comparisonId, setComparisonId] = useState(null)
-  const [primaryChoice, setPrimaryChoice] = useState('')
-  const candidate = review.candidates.find(row => row.id === candidateId)
-  const primary = primaryChoice === 'Existing' ? candidate : primaryChoice === 'Current' ? review.source : null
-  const donor = primaryChoice === 'Current' ? candidate?.data : review.source?.data ?? review.proposal
-  const destinationLabel = primaryChoice === 'Existing' ? 'perfil existente selecionado' : 'perfil atual do pedido'
-  const originLabel = primaryChoice === 'Current' ? 'perfil existente selecionado' : review.source ? 'perfil atual do pedido' : 'dados recebidos no pedido'
-  const retainedAccess = primary?.hasAccount ? primary : primaryChoice === 'Existing' ? review.source : candidate
-  function accept(event) { event.preventDefault(); const fields = new FormData(event.currentTarget).getAll('selectedFields'); onDecide({ accept: true, candidateId, candidateVersion: candidate.version, sourceVersion: review.source?.version, selectedFields: fields, primaryPersonId: primaryChoice === 'Existing' ? candidateId : review.source.id }) }
-  return <article className="review-card"><h3>{review.origin === 'GuestRequest' ? 'Pedido de visitante com contactos coincidentes' : ({ Registration: 'Novo registo', Manual: 'Nova ficha manual', Edit: 'Alteração da ficha' })[review.kind]}</h3><p>Recebida em {dateOf(review.createdAt)}</p>
-    <h4>Dados recebidos no pedido</h4><ClientDataSummary data={review.proposal} showEmpty={false} />
-    {review.source && <p>Ficha atual: {nameOf(review.source)} · {review.source.data.email || review.source.data.phone}</p>}
-    {review.needsConsolidation && <p className="notice" role="status">A identidade já foi aprovada, mas as duas fichas ficaram ativas. Conclui a consolidação escolhendo a ficha principal e os dados finais.</p>}
-    {review.kind === 'Registration' && review.source?.hasAccount && <p>Confirmar a mesma pessoa consolida os perfis numa única ficha ativa. Se apenas uma ficha tiver conta de acesso, essa conta será ligada à ficha principal.</p>}
-    {review.source && <button type="button" className="text-button" onClick={() => setComparisonId(review.source.id)}>Ver ficha atual para comparar</button>}
-    {review.candidates.length > 0 && <div className="comparison-links"><h4>Fichas com dados coincidentes</h4>{review.candidates.map(row => <button key={row.id} type="button" className="text-button" onClick={() => setComparisonId(row.id)}>Ver ficha de {nameOf(row)} para comparar</button>)}</div>}
-    {comparisonId && <ClientComparison personId={comparisonId} onClose={() => setComparisonId(null)} />}
-    <form onSubmit={accept} data-protect-draft><label>Ficha a associar após verificar a identidade<AdaptiveSelect aria-label="Ficha a associar após verificar a identidade" value={candidateId} onChange={event => { setCandidateId(event.target.value); setPrimaryChoice('') }} required><option value="">Seleciona depois de comparar as fichas</option>{review.candidates.map(row => <option value={row.id} key={row.id}>{nameOf(row)} · {row.data.email || row.data.phone}</option>)}</AdaptiveSelect></label>
-      {candidate && <label>Qual perfil deve ficar ativo?<AdaptiveSelect aria-label="Ficha principal a manter" value={primaryChoice} onChange={event => setPrimaryChoice(event.target.value)} required><option value="">Escolhe o perfil que vai permanecer</option><option value="Existing">Perfil existente selecionado · {nameOf(candidate)}</option>{review.source && <option value="Current">Perfil atual do pedido · {nameOf(review.source)}</option>}</AdaptiveSelect></label>}
-      {candidate && primary && <div key={`${candidateId}:${primaryChoice}`}><p><strong>Fica ativo: {destinationLabel} — {nameOf(primary)}.</strong> Conserva o seu identificador e a data de criação.{review.source && <> O {originLabel} será desativado, mesmo que não copies nenhum campo.</>}</p><p>Cópia opcional: do {originLabel} para o {destinationLabel}. Se não selecionares nenhum campo, todos os dados do perfil que fica ativo são mantidos.</p><fieldset><legend>Campos a copiar para o perfil que fica ativo (opcional)</legend>{Object.entries(fieldLabels).filter(([key]) => key !== 'DisplayName' || review.kind !== 'Manual').map(([key, label]) => <label className="checkbox" key={key}><input name="selectedFields" value={key} type="checkbox" />{label}: {String(donor[key[0].toLowerCase() + key.slice(1)] ?? 'Não indicado')}</label>)}</fieldset>
-        <p className="field-help">As marcações, consultas, packs, movimentos e histórico das duas fichas ficam reunidos na ficha escolhida, sem duplicar registos. As notas privadas continuam apenas na gestão. A outra ficha deixa de estar ativa. O email final deve corresponder à conta de acesso mantida.</p>{retainedAccess?.hasAccount && <p>Acesso a manter: <strong>{retainedAccess.data.email}</strong>.</p>}{review.source?.hasAccount && candidate.hasAccount && <p className="notice">As duas fichas têm acesso. Será mantido o acesso da ficha principal; o outro será encerrado e as suas sessões deixarão de ser válidas. As palavras-passe e os autenticadores não são misturados.</p>}<label className="checkbox"><input type="checkbox" required />Verifiquei que se trata da mesma pessoa e confirmo a ficha principal e os dados finais.</label><button disabled={busy}>Confirmar identidade e consolidar perfis</button></div>}
-      {review.candidates.length === 0 && <p>O identificador já pertence a uma conta de acesso que não pode ser unida neste painel. Não é possível criar outra conta com esse email.</p>}
-      {!review.needsConsolidation && <button type="button" className="secondary" disabled={busy} onClick={() => onDecide({ accept: false })}>{review.kind === 'Registration' && review.source?.hasAccount ? 'Manter fichas separadas' : 'Rejeitar proposta e preservar dados atuais'}</button>}
-    </form>
-  </article>
 }

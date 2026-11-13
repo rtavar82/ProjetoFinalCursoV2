@@ -1,6 +1,4 @@
 .profile { min-width: 0; }
-.notifications { margin-block: 1rem 1.5rem; min-width: 0; }
-.notifications button { width: 100%; min-height: 44px; white-space: normal; }
 .sections {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

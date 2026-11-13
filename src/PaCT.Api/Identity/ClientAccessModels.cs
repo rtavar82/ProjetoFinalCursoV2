@@ -4,7 +4,7 @@ public sealed record ClientAccessRequest(Guid OperationId, ulong Version, string
 public sealed record ClientAccessAction(string Id, string AccountId, string PersonId, string? CreatedByAccountId,
     string Kind, string Status, string SecurityStamp, byte[] PreviousEmailHash, byte[]? EmailHash,
     byte[] Details, DateTime CreatedAt, DateTime ExpiresAt, DateTime? CompletedAt = null);
-public sealed record ClientAccessDetails(string? NewEmail, string PreviousEmail, int PasskeysRemoved = 0);
+public sealed record ClientAccessDetails(string? NewEmail, string PreviousEmail, int PasskeysRemoved = 0, string TargetRole = Roles.Client);
 
 public interface IClientAccessStore
 {

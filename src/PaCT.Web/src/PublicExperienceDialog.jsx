@@ -1,5 +1,5 @@
+import AppArrow from './AppArrow'
 import { useEffect, useState } from 'react'
-import AppIcon from './AppIcon'
 import ActionButton from './ActionButton'
 import ConsultationDialog from './ConsultationDialog'
 import Heading from './Heading'
@@ -38,7 +38,7 @@ export default function PublicExperienceDialog({ experience, service, informatio
   return <ConsultationDialog title={experience.title} label={experience.title} onClose={onClose}>
     <div className={styles.content}>
       <section className={styles.policy}><Heading level={3}>Em que consiste</Heading><p>{experience.description}</p></section>
-      <ActionButton variant="secondary" className={styles.agendaAction} onClick={onAgenda}>Ver datas e vagas <AppIcon name="arrow" /></ActionButton>
+      <ActionButton variant="secondary" className={styles.agendaAction} onClick={onAgenda}>Ver datas e vagas <AppArrow direction="right" /></ActionButton>
       <PublicPracticalInformation duration={experience.serviceKind === 'Group' ? 'Variável' : experience.durationText} modality="Presencial" />
       <section className={styles.policy}><Heading level={3}>Valor e condições</Heading>
         {constellationGroup ? <PublicContributionTerms information={information} /> : <p><strong>{experience.isFree ? 'Gratuita' : prices.join(' · ') || experience.priceText}</strong></p>}

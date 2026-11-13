@@ -2,13 +2,14 @@ import ActionButton from './ActionButton'
 import AppLayout from './AppLayout'
 import AuthPage from './AuthPage'
 import Heading from './Heading'
+import BrandButterfly from './BrandButterfly'
 import styles from './AuthPage.module.css'
 
-export default function PublicOpening({ onNavigate, onEnter, visualTheme, onThemeChange }) {
-  return <AppLayout page="PublicOpening" presentation="access" onHome={() => onNavigate('PublicOpening')} visualTheme={visualTheme} onThemeChange={onThemeChange}>
+export default function PublicOpening({ onNavigate, onEnter }) {
+  return <AppLayout page="PublicOpening" presentation="access" onHome={() => onNavigate('PublicOpening')}>
     <AuthPage presentation="access" introduction={<>
       <Heading level={1}>Um espaço para ti.</Heading>
-      <img src="/borboleta.png" width="378" height="330" alt="" />
+      <span className={styles.openingButterfly} data-ui="opening-butterfly-slot" aria-hidden="true"><BrandButterfly /></span>
     </>}>
       <div className={styles.openingActions}>
         <ActionButton onClick={onEnter}>Entrar na tua área</ActionButton>

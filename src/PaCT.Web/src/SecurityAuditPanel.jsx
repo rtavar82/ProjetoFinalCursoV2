@@ -1,3 +1,4 @@
+import DisclosureSummary from './DisclosureSummary'
 import { useCallback, useId, useState } from 'react'
 import ActionButton from './ActionButton'
 import AdaptiveSelect from './AdaptiveSelect'
@@ -157,7 +158,7 @@ function AuditEvent({ item }) {
       {item.actorRole && <span>{roleLabels[item.actorRole] || item.actorRole}</span>}
     </div>
     <details>
-      <summary>Detalhes técnicos</summary>
+      <DisclosureSummary>Detalhes técnicos</DisclosureSummary>
       <p>{detailLabels[item.detail] || item.detail || 'Evento técnico registado.'}</p>
       <dl className={styles.details}>
         {item.actorAccountId && <div><dt>Conta</dt><dd><code>{item.actorAccountId}</code></dd></div>}

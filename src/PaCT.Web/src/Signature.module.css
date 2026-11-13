@@ -1,0 +1,4 @@
+.signature {
+  display: block; aspect-ratio: 4562 / 1680; background: var(--ink);
+  mask: url('/presentation/denise-assinatura.png') center / contain no-repeat;
+}

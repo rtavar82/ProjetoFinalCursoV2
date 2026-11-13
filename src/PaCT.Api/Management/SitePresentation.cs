@@ -140,6 +140,8 @@ public static class SitePresentation
             throw new IdentityProblem(400, "Indica o telefone no formato tel:+351 seguido do número.");
         if (values["therapist.whatsapp"] is { Length: > 0 } whatsapp && !Regex.IsMatch(whatsapp, @"\Ahttps://wa\.me/[1-9][0-9]{6,14}\z"))
             throw new IdentityProblem(400, "Indica uma ligação https://wa.me/ seguida do número com indicativo.");
+        if (values["therapist.telephone"].StartsWith("tel:+351", StringComparison.Ordinal)) IdentityValidation.RequiredPhone("351", values["therapist.telephone"][4..]);
+        if (values["therapist.whatsapp"].StartsWith("https://wa.me/351", StringComparison.Ordinal)) IdentityValidation.RequiredPhone("351", "+" + values["therapist.whatsapp"][14..]);
         if (values["therapist.instagram"] is { Length: > 0 } instagram && !Regex.IsMatch(instagram, @"\Ahttps://www\.instagram\.com/[a-zA-Z0-9_.]+/\z"))
             throw new IdentityProblem(400, "Indica a ligação HTTPS do perfil de Instagram, com uma barra no fim.");
     }

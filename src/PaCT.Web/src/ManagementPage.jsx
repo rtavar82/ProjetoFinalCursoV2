@@ -1,3 +1,6 @@
+import RecoveryForm from './RecoveryForm'
+import useRecoveryEditor from './useRecoveryEditor'
+import DisclosureSummary from './DisclosureSummary'
 import { useCallback, useId, useState } from 'react'
 import ActionButton from './ActionButton'
 import AdaptiveSelect from './AdaptiveSelect'
@@ -31,7 +34,7 @@ const actions = { Created: 'Criação', Updated: 'Alteração', Reactivated: 'Re
 const decisions = { Activate: 'Reativar', Deactivate: 'Desativar', Delete: 'Eliminar' }
 
 export default function ManagementPage({ role, guard, busy }) {
-  const [kind, setKind] = useState(() => window.location.hash.split('?')[0] === '#calendario-google' ? 'GoogleCalendar' : 'Supplier')
+  const [kind, setKind] = useRecoveryState('view:' + 'management' + ':kind', () => window.location.hash.split('?')[0] === '#calendario-google' ? 'GoogleCalendar' : 'Supplier')
   const areaLabel = useId()
   const presentation = { Home: 'Página inicial', Therapist: 'Apresentação da terapeuta', Places: 'Locais e moradas',
     Contacts: 'Contactos e redes sociais', Payment: 'Formas de pagamento', WhatsApp: 'Gestão de mensagens' }
@@ -69,7 +72,7 @@ export function DirectoryPanel({ kind, guard, busy: profileBusy, onSelect, selec
   const area = areas[kind]
   const [filters, setFilters] = useState({ term: '', status: 'Active' }), [term, setTerm] = useState(''), [status, setStatus] = useState('Active')
   const [page, setPage] = useState(1), [detailId, setDetailId] = useState(null), [historyPage, setHistoryPage] = useState(1)
-  const [editor, setEditor] = useState(null), [decision, setDecision] = useState(null), [busy, setBusy] = useState(false), [error, setError] = useState('')
+  const [editor, setEditor] = useRecoveryEditor('directory:' + kind, 'management/' + kind + '/', 'managementDirectories', 'entry'), [decision, setDecision] = useState(null), [busy, setBusy] = useState(false), [error, setError] = useState('')
   const query = new URLSearchParams({ ...filters, page }).toString()
   const read = useCallback(signal => apiRequest(`management/${kind}?${query}`, undefined, { signal }), [kind, query])
   const list = useLiveResource('management', kind + ':' + query, read)
@@ -99,7 +102,7 @@ export function DirectoryPanel({ kind, guard, busy: profileBusy, onSelect, selec
   }
   return <section aria-label={area.title} data-pending-command={busy || undefined}>
     <InformationCard title={area.title} cardId="management-directory" actions={<ActionButton disabled={disabled || !list.data || !!list.error} onClick={() => guard(() => { setError(''); setEditor({ entry: null }) })}>{area.create}</ActionButton>}>
-      <details><summary>Pesquisar {area.title.toLowerCase()}</summary><form onSubmit={event => { event.preventDefault(); setFilters({ term: term.trim(), status }); setPage(1) }}><div className="fields-grid">
+      <details><DisclosureSummary>Pesquisar {area.title.toLowerCase()}</DisclosureSummary><form onSubmit={event => { event.preventDefault(); setFilters({ term: term.trim(), status }); setPage(1) }}><div className="fields-grid">
         <label>{area.search}<SearchInput value={term} showClear={!!(term || filters.term)} maxLength="200" disabled={disabled} onChange={event => setTerm(event.target.value)} onClear={() => { setTerm(''); setFilters(current => ({ ...current, term: '' })); setPage(1) }} /></label>
         <label>Disponibilidade<AdaptiveSelect value={status} disabled={disabled} onChange={event => setStatus(event.target.value)}><option value="Active">Ativos</option><option value="Inactive">Desativados</option><option value="All">Todos</option></AdaptiveSelect></label>
       </div><ActionButton type="submit" disabled={disabled}>Pesquisar</ActionButton></form></details>
@@ -124,7 +127,7 @@ export function DirectoryPanel({ kind, guard, busy: profileBusy, onSelect, selec
           <div className="button-row"><ActionButton disabled={disabled || detail.loading || !!detail.error} onClick={() => { setEditor({ entry: detail.data.entry }); closeDetail() }}>Editar {area.singular}</ActionButton>
             <ActionButton variant="secondary" disabled={disabled || detail.loading || !!detail.error} onClick={() => setDecision({ entry: detail.data.entry, action: detail.data.entry.active ? 'Deactivate' : 'Activate' })}>{detail.data.entry.active ? 'Desativar' : 'Reativar'}</ActionButton>
             <ActionButton variant="text" disabled={disabled || detail.loading || !!detail.error} onClick={() => setDecision({ entry: detail.data.entry, action: 'Delete' })}>Eliminar {area.singular}</ActionButton></div>
-          <details><summary>Histórico de alterações</summary>{detail.data.history.map(item => <InformationCard key={item.entry.version} cardId={'directory-revision-' + item.entry.version} title={actions[item.action]} headingLevel={3}>
+          <details><DisclosureSummary>Histórico de alterações</DisclosureSummary>{detail.data.history.map(item => <InformationCard key={item.entry.version} cardId={'directory-revision-' + item.entry.version} title={actions[item.action]} headingLevel={3}>
             <p>{item.entry.name}{item.entry.taxId ? ' · ' + item.entry.taxId : ''}</p>{item.entry.privateNotes && <p>{item.entry.privateNotes}</p>}
             <p>{item.entry.active ? 'Ativo' : 'Desativado'} · Versão {item.entry.version}</p><small>{detail.data.authors?.[item.entry.authorId] || 'Gestão'} · {agendaDate(item.entry.updatedAt)}</small>
           </InformationCard>)}<Pagination total={detail.data.historyTotal} page={historyPage} onChange={setHistoryPage} disabled={disabled} label="Páginas do histórico de alterações" /></details>
@@ -137,9 +140,9 @@ export function DirectoryPanel({ kind, guard, busy: profileBusy, onSelect, selec
 function DirectoryEditor({ kind, entry, disabled, guard, write, error, clearError, onClose }) {
   const area = areas[kind]
   const notesLabel = useId()
-  const [draft, setDraft] = useRecoveryState(`management:${kind}:${entry?.id || 'new'}:${entry?.version || 0}`, () => ({ name: entry?.name || '', taxId: entry?.taxId || '', privateNotes: entry?.privateNotes || '' }))
+  const [draft, setDraft] = useRecoveryState(`management:${kind}:${entry?.id || 'new'}`, () => ({ name: entry?.name || '', taxId: entry?.taxId || '', privateNotes: entry?.privateNotes || '' }))
   const [review, setReview] = useState(null), [duplicate, setDuplicate] = useState(null)
-  function close() { if (!disabled) { setDraft({ name: '', taxId: '', privateNotes: '' }); onClose() } }
+  function close() { if (!disabled) { setDraft({ name: '', taxId: '', privateNotes: '' }, false); onClose() } }
   function change(values) { setDraft(current => ({ ...current, ...values })); clearError(); setDuplicate(null) }
   async function confirm(id = entry?.id, input = review) {
     try { const result = await write(id, input); if (result.duplicate) setDuplicate(result); else close() }
@@ -151,11 +154,11 @@ function DirectoryEditor({ kind, entry, disabled, guard, write, error, clearErro
       {!duplicate.entry.active && <ActionButton disabled={disabled} onClick={() => confirm(duplicate.entry.id, { action: 'Activate', version: duplicate.entry.version })}>Confirmar reativação do registo existente</ActionButton>}
     </InformationCard>}
     {review ? <><DirectorySummary entry={{ ...review, active: entry?.active ?? true }} /><div className="button-row"><ActionButton variant="secondary" disabled={disabled} onClick={() => { setReview(null); setDuplicate(null); clearError() }}>Voltar atrás</ActionButton><ActionButton disabled={disabled || !!duplicate} onClick={() => confirm()}>Confirmar e guardar</ActionButton></div></>
-      : <form data-protect-draft onSubmit={event => { event.preventDefault(); clearError(); setDuplicate(null); setReview({ action: 'Save', version: entry?.version || 0, name: draft.name.trim(), ...(kind === 'Supplier' ? { taxId: draft.taxId.trim(), privateNotes: draft.privateNotes.trim() || null } : {}) }) }}>
-        <fieldset className={formStyles.fields} disabled={disabled}><label>{kind === 'Supplier' ? 'Nome ou designação' : 'Nome da categoria'}<input required maxLength="200" value={draft.name} onChange={event => change({ name: event.target.value })} /></label>
-          {kind === 'Supplier' && <><label>NIF / identificação fiscal<input required minLength="2" maxLength="64" value={draft.taxId} onChange={event => change({ taxId: event.target.value })} /></label><label><span id={notesLabel}>Notas privadas da gestão (opcional)</span><textarea aria-labelledby={notesLabel} maxLength="2000" rows="5" value={draft.privateNotes} onChange={event => change({ privateNotes: event.target.value })} /></label></>}
+      : <RecoveryForm recoveryKey={'directory:' + kind + ':' + (entry?.id || 'new')} recoveryVersion={entry?.version || 0} recoveryScopes={['management:' + kind + ':' + (entry?.id || 'new')]} onVerified={close} data-protect-draft onSubmit={event => { event.preventDefault(); clearError(); setDuplicate(null); setReview({ action: 'Save', version: entry?.version || 0, name: draft.name.trim(), ...(kind === 'Supplier' ? { taxId: draft.taxId.trim(), privateNotes: draft.privateNotes.trim() || null } : {}) }) }}>
+        <fieldset className={formStyles.fields} disabled={disabled}><label>{kind === 'Supplier' ? 'Nome ou designação' : 'Nome da categoria'}<input data-recovery-controlled required maxLength="200" value={draft.name} onChange={event => change({ name: event.target.value })} /></label>
+          {kind === 'Supplier' && <><label>NIF / identificação fiscal<input data-recovery-controlled required minLength="2" maxLength="64" value={draft.taxId} onChange={event => change({ taxId: event.target.value })} /></label><label><span id={notesLabel}>Notas privadas da gestão (opcional)</span><textarea data-recovery-controlled aria-labelledby={notesLabel} maxLength="2000" rows="5" value={draft.privateNotes} onChange={event => change({ privateNotes: event.target.value })} /></label></>}
           <div className="button-row"><ActionButton variant="secondary" onClick={() => guard(close)}>Voltar à lista</ActionButton><ActionButton type="submit">Rever antes de confirmar</ActionButton></div>
         </fieldset>
-      </form>}
+      </RecoveryForm>}
   </ManagerSchedulingDialog>
 }

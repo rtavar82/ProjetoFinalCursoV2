@@ -1,5 +1,6 @@
 import { useCallback, useLayoutEffect, useRef, useState } from 'react'
 import AccountSecuritySettings from './AccountSecuritySettings'
+import AppInstallationCard from './AppInstallationCard'
 import ActionButton from './ActionButton'
 import ClientPrivacyCard from './ClientPrivacyCard'
 import CloseAccount from './CloseAccount'
@@ -18,6 +19,7 @@ const areas = [
     ['available', 'Packs com sessões'],
     ['unpaid', 'Packs por pagar'],
     ['purchases', 'As minhas compras'],
+    ['installation', 'Instalar a aplicação'],
   ] },
   { id: 'privacy', label: 'Privacidade', entries: [
     ['policy', 'Política de privacidade'],
@@ -72,6 +74,7 @@ export default function ClientAccountPage({ profile, busy, perform, notify, guar
   const statuses = {
     available: countLabel(available, 'pack com sessões', 'packs com sessões', 'Sessões disponíveis nos teus packs.'),
     unpaid: countLabel(unpaid, 'pack por pagar', 'packs por pagar', 'Packs com pagamento pendente.'),
+    installation: 'Adiciona a aplicação ao teu telemóvel ou computador.',
     purchases: countLabel(purchases, 'compra registada', 'compras registadas', 'Histórico de compras e recebimentos.'),
     policy: privacy?.policy && privacy.choices.data
       ? `Versão ${privacy.policy.version} · ${privacy.reading?.accepted && privacy.reading.version === privacy.policy.version ? 'Leitura confirmada' : 'Leitura por confirmar'}`
@@ -80,10 +83,10 @@ export default function ClientAccountPage({ profile, busy, perform, notify, guar
       ? (privacy.push?.accepted ? 'Notificações autorizadas na conta.' : 'Notificações por autorizar na conta.')
       : 'Gere a autorização na conta e a ativação neste dispositivo.',
     history: 'Consulta o registo das tuas escolhas de privacidade.',
-    passkeys: profile.passkeyEnabled ? 'Proteção com Passkey ativa.' : 'Proteção com Passkey por ativar.',
+    passkeys: 'Confirma a tua identidade com a impressão digital, o rosto ou o PIN do dispositivo, depois da palavra-passe.',
     password: 'Pede um link para alterar a palavra-passe.',
     google: google?.linked ? 'Conta Google associada.' : google?.enabled ? 'Conta Google por associar.' : 'Consulta as opções de entrada com Google.',
-    browser: 'Gere o reconhecimento deste navegador.',
+    browser: 'Gere a dispensa da confirmação adicional durante 30 dias neste navegador.',
     closure: 'Consulta as condições de encerramento da conta.',
   }
 
@@ -134,6 +137,7 @@ export default function ClientAccountPage({ profile, busy, perform, notify, guar
       {areas.map(item => <ActionButton key={item.id} variant={item.id === areaId ? 'primary' : 'secondary'} aria-current={item.id === areaId ? 'true' : undefined} disabled={busy} onClick={() => changeArea(item.id)}>{item.label}</ActionButton>)}
     </nav>
 
+
     <div hidden={!!detail}>
       <Heading level={2} ref={detail ? undefined : heading} tabIndex={-1}>{area.label}</Heading>
       <div className={styles.entries}>
@@ -154,6 +158,7 @@ export default function ClientAccountPage({ profile, busy, perform, notify, guar
         <ActionButton variant="text" disabled={busy} onClick={closeDetail}>Voltar à lista</ActionButton>
         <Heading level={2} ref={heading} tabIndex={-1}>{detailTitle}</Heading>
       </header>}
+      {detail === 'installation' && <AppInstallationCard />}
       <div hidden={detail !== 'available'}>
         <SessionPacksPanel fixedScope="Available" inline inlineEntry={packEntry} enabled={detail === 'available'} disabled={busy} guard={guard} />
       </div>
@@ -167,7 +172,7 @@ export default function ClientAccountPage({ profile, busy, perform, notify, guar
         {areaId === 'privacy' && <ClientPrivacyCard key={detail} view={detail} />}
         {detail === 'passkeys' && <PasskeySettings inline enabled={profile.passkeyEnabled} busy={busy} perform={perform} onUpdated={onPasskeyUpdated} notify={notify} />}
         {['password', 'google'].includes(detail) && <AccountSecuritySettings key={detail} view={detail} busy={busy} perform={perform} notify={notify} guard={guard} onSignedOut={onSecuritySignedOut} />}
-        {detail === 'browser' && <ActionButton variant="secondary" disabled={busy} onClick={onForgetBrowser}>Deixar de reconhecer este navegador</ActionButton>}
+        {detail === 'browser' && <><p>Se escolheste reconhecer este navegador, podes entrar durante 30 dias sem repetir a confirmação adicional de segurança.</p><p>Ao retirar esse reconhecimento, a confirmação volta a ser pedida na próxima entrada. A sessão atual mantém-se aberta e a Passkey continua registada.</p><ActionButton variant="secondary" disabled={busy} onClick={onForgetBrowser}>Deixar de reconhecer este navegador</ActionButton></>}
         {detail === 'closure' && <CloseAccount inline busy={busy} perform={perform} guard={guard} onClosed={onAccountClosed} />}
       </InformationCard>}
     </div>

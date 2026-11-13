@@ -2,6 +2,7 @@
 .card p { margin: 0; }
 .extra { display: grid; gap: 8px; font-size: var(--font-size-small); line-height: 1.6; }
 .extra:empty { display: none; }
-.actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 16px; }
+.actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 16px; margin-top: auto; }
+.buttonAction { flex: 1 1 0; min-width: 0; width: 100%; margin: 0; }
 .card .action { flex: 1 1 0; width: auto; min-width: 0; min-height: 44px; margin: 0; padding: 8px 0; color: var(--accent); background: transparent; border: 0; font-size: var(--font-size-body); font-weight: 600; text-align: center; text-decoration-line: underline; }
 .card .action:hover:not(:disabled) { background: transparent; }

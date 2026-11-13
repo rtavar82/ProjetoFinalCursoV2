@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using PaCT.Api.Identity;
 
 namespace PaCT.Api.Clients;
@@ -201,7 +201,9 @@ public sealed class ClientService(IClientStore store, IdentitySecurity security,
         var donor = retained.Id == source?.Id ? View(candidate).Data : source is not null ? View(source).Data : proposal;
         var selected = ClientValidation.Select(View(retained).Data, donor, fields);
         selected = ClientValidation.Validate(selected, review.Kind == "Manual", Today);
-        if (Matches(all, selected, source?.Id).Any(match => match != candidate.Id)) throw new IdentityProblem(409, "Há outra coincidência que também precisa de revisão. Os dados não foram aplicados.");
+        // Consolidate only the explicitly reviewed pair; other active matches remain separate for review.
+        // Proposals without a source record still require the existing third-party collision check.
+        if (source is null && Matches(all, selected, null).Any(match => match != candidate.Id)) throw new IdentityProblem(409, "Há outra coincidência que também precisa de revisão. Os dados não foram aplicados.");
         if (review.Kind == "Registration" && source is null) source = await CreateRegistrationAsync(session, selected);
         var primary = decision.PrimaryPersonId is null || decision.PrimaryPersonId == candidate.Id ? candidate
             : source is not null && decision.PrimaryPersonId == source.Id ? source

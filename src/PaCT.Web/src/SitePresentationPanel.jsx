@@ -1,9 +1,13 @@
-import { useCallback, useEffect, useState } from 'react'
+import { ManagerRecoveryContext } from './managerRecoveryContext'
+import RecoveryForm from './RecoveryForm'
+import useRecoveryState from './useRecoveryState'
+import { useCallback, useContext, useEffect, useEffectEvent, useRef, useState } from 'react'
 import ActionButton from './ActionButton'
 import ConsultationPhotoPreview from './ConsultationPhotoPreview'
 import InformationCard from './InformationCard'
 import ManagerSchedulingDialog from './ManagerSchedulingDialog'
 import MbWayLogo from './MbWayLogo'
+import { contactPhonePattern } from './phoneValidation'
 import { apiRequest } from './identityApi'
 import { showSuccess } from './actionNotices'
 import useLiveResource from './useLiveResource'
@@ -17,13 +21,17 @@ export default function SitePresentationPanel({ section, title, guard, busy }) {
   const resource = useLiveResource('management', path, read)
   const [session, setSession] = useState(null), [opening, setOpening] = useState(false), [error, setError] = useState('')
 
+  const [resumeEditor, rememberEditor] = useRecoveryState('view:site:' + path, null)
+  const resumed = useRef(null)
+  const resume = useEffectEvent(() => { void open() })
+  useEffect(() => { if (resumeEditor && !session && !opening && resumed.current !== resumeEditor) { resumed.current = resumeEditor; resume() } }, [resumeEditor, session, opening])
   async function open() {
     const editor = crypto.randomUUID()
     setOpening(true)
     setError('')
     try {
       await apiRequest('management/presentation/editor', { editor })
-      try { setSession({ ...(await read()), editor }) }
+      try { setSession({ ...(await read()), editor }); rememberEditor(editor) }
       catch (failure) {
         release(editor)
         throw failure
@@ -34,7 +42,7 @@ export default function SitePresentationPanel({ section, title, guard, busy }) {
 
   function close() {
     release(session.editor)
-    setSession(null)
+    setSession(null); rememberEditor(null, false)
     resource.refresh()
   }
 
@@ -58,12 +66,13 @@ function release(editor) {
 }
 
 function SiteEditor({ title, session, path, guard, busy, onClose, messaging }) {
+  const recovery = useContext(ManagerRecoveryContext)
   const { editor, fields, version, places: publishedPlaces, images = [] } = session
   const imageFields = images ?? []
-  const [draft, setDraft] = useState(() => Object.fromEntries(fields.map(field => [field.key, field.value])))
-  const [places, setPlaces] = useState(() => (publishedPlaces ?? []).map(place => ({ ...place, key: place.name, existing: true })))
+  const [draft, setDraft] = useRecoveryState('site-editor:' + path + ':draft', () => Object.fromEntries(fields.map(field => [field.key, field.value])))
+  const [places, setPlaces] = useRecoveryState('site-editor:' + path + ':places', () => (publishedPlaces ?? []).map(place => ({ ...place, key: place.name, existing: true })))
   const [review, setReview] = useState(null), [sending, setSending] = useState(false), [error, setError] = useState('')
-  const [files, setFiles] = useState({})
+  const [files, setFiles] = useRecoveryState('site-editor:' + path + ':files', {})
   const [checkingImage, setCheckingImage] = useState(false)
   const disabled = busy || sending || checkingImage
   const dirty = fields.some(field => draft[field.key].trim() !== field.value)
@@ -81,6 +90,7 @@ function SiteEditor({ title, session, path, guard, busy, onClose, messaging }) {
   function editField(field) {
     const Control = field.multiline ? 'textarea' : 'input'
     return <label key={field.key}>{fieldLabel(field, true)}<Control required={!field.optional} maxLength={field.maximum} value={draft[field.key]}
+      pattern={contactPhonePattern(field.key, draft[field.key])} title={contactPhonePattern(field.key, draft[field.key]) ? 'Para Portugal, indica 9 algarismos no número de telefone.' : undefined}
       onChange={event => setDraft(current => ({ ...current, [field.key]: event.target.value }))} /></label>
   }
 
@@ -137,7 +147,7 @@ function SiteEditor({ title, session, path, guard, busy, onClose, messaging }) {
         body.set('publication', JSON.stringify(publication))
         for (const [key, file] of Object.entries(files)) body.set(key, file)
       }
-      await apiRequest(`${path}/publish`, body)
+      await apiRequest(`${path}/publish`, body, { expectedAccount: recovery?.owner })
       showSuccess(messaging ? 'Modelos de WhatsApp guardados.' : 'Alterações publicadas.')
       onClose()
     } catch (failure) { setError(failure.message) }
@@ -163,7 +173,7 @@ function SiteEditor({ title, session, path, guard, busy, onClose, messaging }) {
         <ActionButton disabled={disabled} onClick={publish}>{messaging ? 'Guardar modelos' : 'Publicar'}</ActionButton>
       </div>
     </>}
-    <div hidden={!!review}><form data-protect-draft onSubmit={prepare}>
+    <div hidden={!!review}><RecoveryForm recoveryKey={'site:' + path} recoveryVersion={version} recoveryScopes={['site-editor:' + path]} onVerified={onClose} data-protect-draft onSubmit={prepare}>
       <fieldset className={formStyles.fields} disabled={disabled}>
         {messaging && <p><code>{'{saudacao}'}</code> preenche «Olá» com o primeiro nome quando disponível.
           <br /><code>{'{horario}'}</code> insere a data e a hora, precedidas de « para », quando a mensagem tem cliente e horário.</p>}
@@ -186,11 +196,11 @@ function SiteEditor({ title, session, path, guard, busy, onClose, messaging }) {
           {places.map(place => <InformationCard key={place.key} title={place.existing ? place.name : 'Novo local'} headingLevel={3}
             actions={<ActionButton variant="text" aria-label={`Apagar ${place.name || 'novo local'}`}
               onClick={() => setPlaces(current => current.filter(value => value.key !== place.key))}>Apagar</ActionButton>}>
-            {!place.existing && <label>Nome do local<input value={place.name} required maxLength={120}
+            {!place.existing && <label>Nome do local<input data-recovery-controlled value={place.name} required maxLength={120}
               onChange={event => editPlace(place.key, { name: event.target.value })} /></label>}
-            <label>Descrição pública<textarea value={place.description} required maxLength={600}
+            <label>Descrição pública<textarea data-recovery-controlled value={place.description} required maxLength={600}
               onChange={event => editPlace(place.key, { description: event.target.value })} /></label>
-            <label>Morada completa<input value={place.address} required maxLength={500}
+            <label>Morada completa<input data-recovery-controlled value={place.address} required maxLength={500}
               onChange={event => editPlace(place.key, { address: event.target.value })} /></label>
           </InformationCard>)}
           <ActionButton variant="secondary" disabled={places.length >= 50} onClick={() =>
@@ -201,6 +211,6 @@ function SiteEditor({ title, session, path, guard, busy, onClose, messaging }) {
           <ActionButton type="submit" disabled={!dirty}>{messaging ? 'Rever antes de guardar' : 'Rever antes de publicar'}</ActionButton>
         </div>
       </fieldset>
-    </form></div>
+    </RecoveryForm></div>
   </ManagerSchedulingDialog>
 }

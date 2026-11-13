@@ -38,16 +38,19 @@ public sealed class SharingController(SharingStore store, SharingMedia media, Sh
     [AllowAnonymous, HttpGet]
     public async Task<IActionResult> Feed(string scope = "feed", int page = 1, DateTimeOffset? before = null, CancellationToken ct = default)
     {
+        if (ct.IsCancellationRequested) return StatusCode(StatusCodes.Status499ClientClosedRequest);
         if (page is < 1 or > 100000 || scope is not ("feed" or "mine" or "moderation"))
             throw new IdentityProblem(400, "Escolhe uma página de Partilhas válida.");
         if (scope == "mine" && Viewer is null || scope == "moderation" && !Manager) return Forbid();
         try
         {
+            // Complete this paged read within the database timeouts if the browser disconnects.
+            var readToken = CancellationToken.None;
             const int pageSize = 8;
             var now = time.GetUtcNow();
             var snapshot = before is { } date && date < now ? date : now;
-            var (total, rows, currentPage, currentSnapshot) = await store.ListAsync(scope, Viewer, snapshot, now, page, pageSize, ct);
-            var canPublish = await MayPublish(ct);
+            var (total, rows, currentPage, currentSnapshot) = await store.ListAsync(scope, Viewer, snapshot, now, page, pageSize, readToken);
+            var canPublish = await MayPublish(readToken);
             var names = new Dictionary<string, string>();
             var items = new List<object>();
             foreach (var row in rows)
@@ -71,12 +74,13 @@ public sealed class SharingController(SharingStore store, SharingMedia media, Sh
                     liked = myReaction == SharingReactions.Like, comments
                 });
             }
+            if (ct.IsCancellationRequested) return StatusCode(StatusCodes.Status499ClientClosedRequest);
             return Ok(new { total, pageSize, page = currentPage, before = currentSnapshot, canPublish, items });
 
             async Task<string> Name(string id)
             {
                 if (names.TryGetValue(id, out var existing)) return existing;
-                var name = (await accounts.FindAsync(id, ct))?.DisplayName;
+                var name = (await accounts.FindAsync(id, readToken))?.DisplayName;
                 return names[id] = string.IsNullOrWhiteSpace(name) ? "Conta PaCT" : name;
             }
         }
@@ -89,8 +93,12 @@ public sealed class SharingController(SharingStore store, SharingMedia media, Sh
     [HttpGet("capabilities")]
     public async Task<IActionResult> Capabilities(CancellationToken ct)
     {
-        try { return Ok(new { canPublish = await MayPublish(ct) }); }
-        catch (MySqlException error) when (error.Number == 1146) { return Ok(new { canPublish = false }); }
+        if (ct.IsCancellationRequested) return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        bool canPublish;
+        try { canPublish = await MayPublish(CancellationToken.None); }
+        catch (MySqlException error) when (error.Number == 1146) { canPublish = false; }
+        if (ct.IsCancellationRequested) return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        return Ok(new { canPublish });
     }
 
     [AllowAnonymous, HttpGet("agenda")]

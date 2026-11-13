@@ -59,11 +59,8 @@ public static class GuestConsultations
         var service = ClientBooking.Validate(data, input.ServiceId, input.StartsAt, input.ServiceVersion, input.DeliveryOptionId, now, registered: false);
         service = PaCT.Api.Management.SitePresentation.WithAddress(data.PublishedSite, service, service.PublicLocation);
         ConsultationConditions.ValidateRequest(service, input.ConditionsAccepted, input.TermsVersion);
-        if (!AgendaRules.IsBookableStart(input.StartsAt, now)) throw new IdentityProblem(400, "Escolhe um horário futuro dentro dos próximos seis meses.");
+        // ClientBooking.Validate applies the published start rules and all occupation checks.
         var end = input.StartsAt.AddMinutes(service.DurationMinutes);
-        AgendaRules.ValidateOccupation(data, input.StartsAt, end, now);
-        if (!AgendaRules.Covers(data, input.StartsAt, end) || AgendaRules.ActiveWindows(data).Any(w => !w.Available && AgendaRules.Overlaps(input.StartsAt, end, w.StartsAt, w.EndsAt)))
-            throw new IdentityProblem(409, "Este horário já não está disponível. Escolhe outro horário.");
         var id = Guid.NewGuid().ToString("D");
         var contact = new GuestContact(input.FirstName, input.LastName, input.DialCode, input.Phone, input.Email, input.Locality);
         data.GuestRequests.Add(new(id, input.OperationId, hash, service, input.StartsAt, end, now, encrypt(id, "guest-contact", JsonSerializer.Serialize(contact)), PersonId: Guid.NewGuid().ToString(),

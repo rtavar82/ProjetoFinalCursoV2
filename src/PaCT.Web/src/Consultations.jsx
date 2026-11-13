@@ -1,7 +1,14 @@
+import moneyText from './moneyText'
+import Heading from './Heading'
+import AgendaPresentation from './AgendaPresentation'
+import SectionTabs from './SectionTabs'
+import DisclosureSummary from './DisclosureSummary'
 import DateRangeFields from './DateRangeFields'
 import AdaptiveSelect from './AdaptiveSelect'
 import { announceOperation, dismissSuccess } from './actionNotices'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useContext, useEffect, useRef, useState } from 'react'
+import useRecoveryState from './useRecoveryState'
+import { ManagerRecoveryContext } from './managerRecoveryContext'
 import { apiRequest } from './identityApi'
 import styles from './Consultations.module.css'
 import InformationCard from './InformationCard'
@@ -45,27 +52,39 @@ const domainFromEntry = entry => entry?.events ? { kind: 'Event', ...entry } : e
 
 export default function Consultations({ manager, area, initialEntry, onCreateClient, perform, notify, profileBusy = false, guard = action => action() }) {
   const managementAgenda = manager && area === 'Agenda'
-  const [section, setSection] = useState(area === 'Consultations' ? 'Closure' : manager ? 'Upcoming' : 'Payments')
-  const [managerDialog, setManagerDialog] = useState(null)
+  const managementHistory = manager && area === 'Consultations'
+  const managementFinance = manager && area === 'Finance'
+  const [section, setSection] = useRecoveryState('view:consultations:' + area + ':section', area === 'Consultations' ? 'Closure' : manager ? 'Upcoming' : 'Payments')
+  const [managerDialog, setManagerDialog] = useRecoveryState('view:consultations:' + area + ':managerDialog', null)
   const [agendaView, setAgendaView] = useState(null)
   const agendaReturn = useRef(null)
   const [dialogWorking, setDialogWorking] = useState(false)
-  const [domainEntry, setDomainEntry] = useState(() => domainFromEntry(initialEntry))
+  const [domainEntry, setDomainEntry] = useRecoveryState('view:consultations:' + area + ':domainEntry', () => domainFromEntry(initialEntry))
   const [filterClient, setFilterClient] = useState(null)
   const [page, setPage] = useState(1)
   const [filters, setFilters] = useState('')
   const [searching, setSearching] = useState(false)
-  const [detail, setDetail] = useState(null)
+  const recovery = useContext(ManagerRecoveryContext)
+  const [detail, updateDetail] = useState(null)
+  const [recoveredDetail, rememberDetail] = useRecoveryState('view:consultations:' + area + ':detail', null)
+  const setDetail = useCallback(value => { updateDetail(value); rememberDetail(value?.id || null) }, [rememberDetail])
   const [clientProfileId, setClientProfileId] = useState(null)
-  const [approvalChoice, setApprovalChoice] = useState('')
-  const [followup, setFollowup] = useState(false)
+  const [approvalChoice, setApprovalChoice] = useRecoveryState('view:consultations:' + area + ':approvalChoice', '')
+  const [followup, setFollowup] = useRecoveryState('view:consultations:' + area + ':followup', false)
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
   const [busy, setBusy] = useState(false)
-  const [uncertain, setUncertain] = useState(false)
-  const pending = useRef(null)
+  const [pendingValue, setPendingCommand, readPending] = useRecoveryState('consultations:' + area + ':pending', null)
+  const [, rememberPendingForm, readPendingForm] = useRecoveryState('view:consultations:' + area + ':pending-form', null)
+  const uncertain = !!pendingValue
   const pendingCleanup = useRef(null)
   const detailDirty = useRef(false)
+  useEffect(() => {
+    if (!recoveredDetail || detail) return
+    let current = true
+    apiRequest('consultations/' + recoveredDetail).then(value => { if (current) updateDetail(value) }).catch(failure => { if (current) { setError(failure.message); rememberDetail(null) } })
+    return () => { current = false }
+  }, [recoveredDetail, detail, rememberDetail])
   const readList = useCallback(signal => apiRequest(`consultations?section=${section}&page=${page}&search=${searching}${!manager && section === 'Closed' ? '&state=NoShow' : ''}${filters}`, undefined, { signal }), [section, page, searching, filters, manager])
   const list = useLiveResource('consultations', `${area}|${section}|${page}|${searching}|${filters}`, readList, area === 'Consultations')
   const result = list.data
@@ -74,7 +93,7 @@ export default function Consultations({ manager, area, initialEntry, onCreateCli
     if (!entry) return
     const timer = window.setTimeout(() => setDomainEntry(entry), 0)
     return () => window.clearTimeout(timer)
-  }, [initialEntry])
+  }, [initialEntry, setDomainEntry])
   useEffect(() => {
     if (!result || list.error || page <= Math.max(1, Math.ceil(result.total / 8))) return
     const correction = window.setTimeout(() => setPage(Math.max(1, Math.ceil(result.total / 8))), 0)
@@ -91,24 +110,33 @@ export default function Consultations({ manager, area, initialEntry, onCreateCli
     if (!latestDetail.data || busy || uncertain) return
     const update = window.setTimeout(() => { if (!detailDirty.current) setDetail(latestDetail.data) }, 0)
     return () => window.clearTimeout(update)
-  }, [latestDetail.data, busy, uncertain])
+  }, [latestDetail.data, busy, uncertain, setDetail])
   useEffect(() => {
     if (!initialEntry?.id || initialEntry.payments || initialEntry.guests || initialEntry.events || initialEntry.packs) return
     let current = true
     apiRequest('consultations/' + initialEntry.id).then(value => { if (current) setDetail(value) }).catch(failure => { if (current) setError(failure.message) })
     return () => { current = false }
-  }, [initialEntry])
+  }, [initialEntry, setDetail])
   async function send(command, retry = false, onConfirmed = null, onRejected = null) {
     if (busy) return
-    if (pending.current && !retry) { setError('Confirma primeiro o resultado da operação anterior, repetindo apenas essa mesma operação.'); return }
-    const input = retry ? pending.current : { ...command, operationId: crypto.randomUUID() }
+    if (readPending() && !retry) { setError('Confirma primeiro o resultado da operação anterior, repetindo apenas essa mesma operação.'); return }
+    const input = retry ? readPending() : { ...command, operationId: crypto.randomUUID() }
     if (!input) return
-    if (!retry) pendingCleanup.current = onConfirmed
-    dismissSuccess(); pending.current = input; setBusy(true); setError(''); setMessage('')
+    if (!retry) { pendingCleanup.current = onConfirmed; rememberPendingForm(document.activeElement?.closest('form[data-recovery-key]')?.dataset.recoveryKey || null) }
+    dismissSuccess(); setPendingCommand(input); setBusy(true); setError(''); setMessage('')
     try {
-      const response = await apiRequest('consultations/commands', input)
+      await recovery?.protectIntent('consultations:' + area + ':pending', input.operationId)
+      const response = await apiRequest('consultations/commands', input, { expectedAccount: recovery?.owner })
       if (!response.id) throw new Error('Não foi possível confirmar o resultado da operação. Verifica o resultado antes de continuar.')
-      pending.current = null; setUncertain(false); announceOperation(input, response, { client: !manager })
+      setPendingCommand(null, false); announceOperation(input, response, { client: !manager })
+      recovery?.completeCommand(input.operationId)
+      if (readPendingForm()) recovery?.remove('form:' + readPendingForm())
+      rememberPendingForm(null, false)
+      if (['Publish', 'PublishEvent', 'PublishAvailability'].includes(input.action)) { recovery?.removePrefix('availability-editor:'); recovery?.removePrefix('form:availability:') }
+      if (input.action === 'Manual') { recovery?.removePrefix('manual-booking:'); recovery?.removePrefix('form:manual-booking:') }
+      if (input.action === 'Close') recovery?.remove('closure:' + input.id)
+      if (input.action === 'CloseParticipation') recovery?.remove('participation:' + input.id)
+      await recovery?.flush()
       const cleanup = pendingCleanup.current; pendingCleanup.current = null
       if (cleanup) { try { await cleanup() } catch (failure) { setError('A operação foi confirmada no servidor, mas não foi possível atualizar o formulário: ' + failure.message) } }
       if (manager && ['Approve', 'Close', 'Receipt', 'MoveToOldDebts'].includes(input.action)) {
@@ -123,7 +151,7 @@ export default function Consultations({ manager, area, initialEntry, onCreateCli
       }
       return response
     } catch (failure) {
-      if (failure.status && failure.status < 500) { pending.current = null; pendingCleanup.current = null; setUncertain(false); onRejected?.(failure) } else setUncertain(true)
+      if (failure.status && failure.status < 500) { setPendingCommand(null, false); pendingCleanup.current = null; onRejected?.(failure) }
       setError(failure.message)
     } finally { setBusy(false) }
   }
@@ -174,28 +202,13 @@ export default function Consultations({ manager, area, initialEntry, onCreateCli
       : [['Payments', 'Pagamentos pendentes'], ['Upcoming', 'Próximas consultas'], ['Other', 'Consultas pendentes e canceladas'], ['Closed', 'Não compareceu']]
   const feedback = <>{error && <p role="alert" className="notice error">{error}</p>}{message && <p role="status" className="notice">{message}</p>}
     {uncertain && <button disabled={busy} onClick={() => send(null, true)}>Verificar resultado</button>}</>
-  return <section className={styles.page} data-pending-command={busy || uncertain ? 'true' : undefined} onChangeCapture={event => { if (event.target.closest('dialog form')) detailDirty.current = true }}>
-    <div hidden={!!clientProfileId}>
-    {!managementAgenda && <h1>{area === 'Finance' ? 'Financeiro' : 'Consultas'}</h1>}
+  const content = <section className={styles.page} data-pending-command={busy || uncertain ? 'true' : undefined} onChangeCapture={event => { if (event.target.closest('dialog form')) detailDirty.current = true }}>
+    <div className={managementHistory ? styles.history : undefined} hidden={!!clientProfileId}>
+    {!managementAgenda && !managementHistory && !managementFinance && <Heading level={1}>{area === 'Finance' ? 'Financeiro' : 'Consultas'}</Heading>}
     {!detail && !managerDialog && !domainEntry && feedback}
     {names.error && <InformationCard error={names.error} onRetry={names.refresh} cardId="consultation-names-error" />}
     {area !== 'Finance' && agenda.error && <InformationCard error={agenda.error} onRetry={agenda.refresh} cardId="agenda-error" />}
-    {manager && area === 'Consultations' && <details className={styles.filters}><summary>Pesquisar consultas</summary><form className={styles.filterFields} onSubmit={e => {
-      e.preventDefault(); try {
-        const f = new FormData(e.currentTarget); const q = new URLSearchParams()
-        for (const name of ['personId', 'state', 'financial', 'sort', 'hasNotes']) if (f.get(name)) q.set(name, f.get(name))
-        setDateRangeParams(q, f.get('from'), f.get('to'))
-        setFilters('&' + q.toString()); setSearching(f.has('global')); setPage(1)
-      } catch (failure) { setError(failure.message) }
-    }}><label className={`checkbox ${styles.filterWide}`}><input name="global" type="checkbox" defaultChecked />Pesquisa global, independente dos separadores</label>
-      <label>Estado<AdaptiveSelect name="state"><option value="">Todos</option>{['Requested', 'Confirmed', 'AwaitingClosure', 'Performed', 'NoShow', 'Withdrawn', 'CancelledClient', 'CancelledManager', 'Rejected', 'Expired', 'Waiting', 'Cancelled'].map(v => <option key={v} value={v}>{labels[v] || activityStates[v]}</option>)}</AdaptiveSelect></label>
-      <label>Situação financeira<AdaptiveSelect name="financial"><option value="">Todas</option>{['Unpaid', 'ContributionUndefined', 'ContributionPending', 'Paid', 'NoDebt', 'AwaitingReceipt'].map(v => <option key={v} value={v}>{labels[v]}</option>)}<option value="OldDebt">Dívidas antigas</option></AdaptiveSelect></label>
-      <DateRangeFields type="date" startName="from" endName="to" startLabel="Desde" endLabel="Até" />
-      <label>Notas<AdaptiveSelect name="hasNotes"><option value="">Com ou sem notas</option><option value="true">Com notas</option><option value="false">Sem notas</option></AdaptiveSelect></label>
-      <label>Ordenação<AdaptiveSelect name="sort"><option value="">Inicial do separador</option><option value="Oldest">Mais antigas primeiro</option><option value="Newest">Mais recentes primeiro</option></AdaptiveSelect></label>
-      <div className={styles.filterWide}><ClientSearch purpose="filter" selected={filterClient} onSelect={setFilterClient} disabled={busy || uncertain} /></div>
-      <button className={styles.filterWide} disabled={busy || uncertain}>Pesquisar</button>{searching && <p className={styles.filterWide}>Resultados de consultas individuais, pedidos, grupos, oficinas e retiros.</p>}
-    </form></details>}
+
     {managementAgenda && agendaView === 'Visitor' && <ManagerVisitorAgenda onBack={closeAgendaView} />}
     {managementAgenda && agendaView === 'Google' && <ManagerGoogleAgenda onBack={closeAgendaView} guard={guard}
       busy={busy || uncertain} onOpen={row => guard(() => openManagementRow(row))} />}
@@ -218,10 +231,27 @@ export default function Consultations({ manager, area, initialEntry, onCreateCli
     {area === 'Finance' && <FinancePanel guard={guard} disabled={busy || uncertain || profileBusy} submit={submit} send={send} feedback={feedback}
       clearFeedback={() => { setError(''); setMessage('') }} perform={perform} notify={notify} open={open} instant={instant} onOpenDomain={openDomain} />}
     {area === 'Consultations' && <>
-      <nav className="consultation-tabs" aria-label="Separadores de consultas">{tabs.map(([key, text]) => <button key={key} className={section === key ? '' : 'secondary'} aria-pressed={section === key} onClick={() => guard(() => { setSection(key); setPage(1); setSearching(false) })}>{text}</button>)}</nav>
+      <SectionTabs label="Separadores de consultas" value={section} items={tabs.map(([id, label]) => ({ id, label }))}
+        onChange={key => guard(() => { setSection(key); setPage(1); setSearching(false) })} />
+    {manager && area === 'Consultations' && <details className={styles.filters}><DisclosureSummary>Pesquisar consultas</DisclosureSummary><form className={styles.filterFields} onSubmit={e => {
+      e.preventDefault(); try {
+        const f = new FormData(e.currentTarget); const q = new URLSearchParams()
+        for (const name of ['personId', 'state', 'financial', 'sort', 'hasNotes']) if (f.get(name)) q.set(name, f.get(name))
+        setDateRangeParams(q, f.get('from'), f.get('to'))
+        setFilters('&' + q.toString()); setSearching(f.has('global')); setPage(1)
+      } catch (failure) { setError(failure.message) }
+    }}><label className={`checkbox ${styles.filterWide}`}><input name="global" type="checkbox" defaultChecked />Pesquisa global, independente dos separadores</label>
+      <label>Estado<AdaptiveSelect name="state"><option value="">Todos</option>{['Requested', 'Confirmed', 'AwaitingClosure', 'Performed', 'NoShow', 'Withdrawn', 'CancelledClient', 'CancelledManager', 'Rejected', 'Expired', 'Waiting', 'Cancelled'].map(v => <option key={v} value={v}>{labels[v] || activityStates[v]}</option>)}</AdaptiveSelect></label>
+      <label>Situação financeira<AdaptiveSelect name="financial"><option value="">Todas</option>{['Unpaid', 'ContributionUndefined', 'ContributionPending', 'Paid', 'NoDebt', 'AwaitingReceipt'].map(v => <option key={v} value={v}>{labels[v]}</option>)}<option value="OldDebt">Dívidas antigas</option></AdaptiveSelect></label>
+      <DateRangeFields type="date" startName="from" endName="to" startLabel="Desde" endLabel="Até" />
+      <label>Notas<AdaptiveSelect name="hasNotes"><option value="">Com ou sem notas</option><option value="true">Com notas</option><option value="false">Sem notas</option></AdaptiveSelect></label>
+      <label>Ordenação<AdaptiveSelect name="sort"><option value="">Inicial do separador</option><option value="Oldest">Mais antigas primeiro</option><option value="Newest">Mais recentes primeiro</option></AdaptiveSelect></label>
+      <div className={styles.filterWide}><ClientSearch purpose="filter" selected={filterClient} onSelect={setFilterClient} disabled={busy || uncertain} /></div>
+      <button className={styles.filterWide} disabled={busy || uncertain}>Pesquisar</button>{searching && <p className={styles.filterWide}>Resultados de consultas individuais, pedidos, grupos, oficinas e retiros.</p>}
+    </form></details>}
       <InformationCard variant="plain" cardId="consultation-results" loading={list.loading} refreshing={list.refreshing} error={list.error} onRetry={list.refresh}>{result && <>
-        <SummaryCard cardId="consultation-count" label={searching ? 'Resultados da pesquisa' : tabs.find(([key]) => key === section)?.[1]} value={result.total} unit="registos" icon="calendar" />
-        <CardGrid>{result.items.map(c => <AppointmentCard key={(c.kind || 'Consultation') + ':' + c.id} consultation={c} typeLabel={c.kind === 'Guest' ? 'Pedido sem conta' : c.kind === 'Participation' ? 'Participação' : c.kind === 'Event' ? c.event?.kind === 'Retreat' ? 'Retiro' : 'Grupo' : 'Consulta individual'} clientName={manager && c.personId ? names.data?.[c.personId] || (names.loading ? 'A consultar o nome do cliente…' : 'Ficha de cliente') : null} stateLabel={c.process.processLabel} financialLabel={labels[c.financialState]} actionLabel={c.kind === 'Guest' ? 'Analisar pedido' : c.kind === 'Participation' ? 'Abrir participação' : c.kind === 'Event' ? 'Abrir atividade' : section === 'Payments' ? 'Abrir pagamento' : 'Abrir consulta'} onOpen={() => guard(() => openManagementRow(c))}><EventCardInfo event={c.event} /></AppointmentCard>)}</CardGrid>
+        <SummaryCard variant={managementHistory ? 'compact' : 'default'} cardId="consultation-count" label={searching ? 'Resultados da pesquisa' : tabs.find(([key]) => key === section)?.[1]} value={result.total} unit="registos" icon="calendar" />
+        <CardGrid layout={managementHistory ? 'appointments' : undefined}>{result.items.map(c => <AppointmentCard key={(c.kind || 'Consultation') + ':' + c.id} consultation={c} typeLabel={c.kind === 'Guest' ? 'Pedido sem conta' : c.kind === 'Participation' ? 'Participação' : c.kind === 'Event' ? c.event?.kind === 'Retreat' ? 'Retiro' : 'Grupo' : 'Consulta individual'} clientName={manager && c.personId ? names.data?.[c.personId] || (names.loading ? 'A consultar o nome do cliente…' : 'Ficha de cliente') : null} stateLabel={c.process.processLabel} financialLabel={labels[c.financialState]} actionVariant={managementHistory ? 'tinted' : 'text'} actionLabel={c.kind === 'Guest' ? 'Analisar pedido' : c.kind === 'Participation' ? 'Abrir participação' : c.kind === 'Event' ? 'Abrir atividade' : section === 'Payments' ? 'Abrir pagamento' : 'Abrir consulta'} onOpen={() => guard(() => openManagementRow(c))}><EventCardInfo event={c.event} /></AppointmentCard>)}</CardGrid>
         {result.total === 0 && <p>Não há consultas neste separador.</p>}<Pagination total={result.total} page={page} label="Páginas das consultas" onChange={setPage} />
       </>}</InformationCard>
     </>}
@@ -234,15 +264,15 @@ export default function Consultations({ manager, area, initialEntry, onCreateCli
       {latestDetail.data && latestDetail.data.version !== detail.version && <p className="notice" role="status">Esta consulta foi alterada. Os teus campos não foram substituídos. Fecha e volta a abrir para rever a informação antes de guardar.</p>}
       {manager && <WhatsAppMessage key={'whatsapp:' + detail.id} personId={detail.personId} startsAt={detail.startsAt}
         disabled={busy || uncertain || !!latestDetail.error || !!latestDetail.data && latestDetail.data.version !== detail.version} />}
-      {(!followup || manager) && <><ConsultationValue consultation={detail} manager={manager} /><p>Crédito disponível: {money(detail.balance)}</p></>}
+      {(!followup || manager) && <><ConsultationValue consultation={detail} manager={manager} /><p>Crédito disponível: {moneyText(money(detail.balance))}</p></>}
       {detail.advanceSatisfiedAt && <p>Condição de antecipação satisfeita.</p>}
 
       {manager && detail.paymentAlert && <div className="notice"><p>O cliente comunicou o pagamento. Confirma o recebimento quando o dinheiro chegar.</p></div>}
-      {manager && !detail.actions?.includes('Settle') && detail.creditProposals?.some(p => !p.decision) && <div className="notice"><p>O cliente propõe utilizar {money(detail.creditProposals.find(p => !p.decision).amount)} de crédito.</p><button className="text-button" disabled={busy || uncertain} onClick={() => act('DeclineCreditProposal', { relatedId: detail.creditProposals.find(p => !p.decision).id })}>Não aplicar esta proposta</button></div>}
+      {manager && !detail.actions?.includes('Settle') && detail.creditProposals?.some(p => !p.decision) && <div className="notice"><p>O cliente propõe utilizar {moneyText(money(detail.creditProposals.find(p => !p.decision).amount))} de crédito.</p><button className="text-button" disabled={busy || uncertain} onClick={() => act('DeclineCreditProposal', { relatedId: detail.creditProposals.find(p => !p.decision).id })}>Não aplicar esta proposta</button></div>}
       {detail.actions?.includes('DeclarePayment') && <button className="secondary" disabled={busy || uncertain} onClick={() => act('DeclarePayment')}>Comunicar pagamento à terapeuta</button>}
       {detail.actions?.includes('MoveToOldDebts') && <button type="button" className="secondary" disabled={busy || uncertain} onClick={() => { if (window.confirm('Passar para Dívidas antigas? A dívida mantém-se e poderá ser paga mais tarde.')) void act('MoveToOldDebts') }}>Passar para dívidas antigas</button>}
-      {manager && detail.collectionHistory?.length > 0 && <details><summary>Histórico da classificação da dívida</summary>{detail.collectionHistory.map(h => <p key={h.id}>{date(h.at)} · {h.closed ? 'Classificada como dívida antiga' : 'Classificação anterior alterada'} · {h.reason}</p>)}</details>}
-      {manager && detail.paymentCommunications?.length > 0 && <details><summary>Comunicações de pagamento</summary>{detail.paymentCommunications.map(h => <p key={h.id}>{date(h.at)} · Comunicação recebida</p>)}</details>}
+      {manager && detail.collectionHistory?.length > 0 && <details><DisclosureSummary>Histórico da classificação da dívida</DisclosureSummary>{detail.collectionHistory.map(h => <p key={h.id}>{date(h.at)} · {h.closed ? 'Classificada como dívida antiga' : 'Classificação anterior alterada'} · {h.reason}</p>)}</details>}
+      {manager && detail.paymentCommunications?.length > 0 && <details><DisclosureSummary>Comunicações de pagamento</DisclosureSummary>{detail.paymentCommunications.map(h => <p key={h.id}>{date(h.at)} · Comunicação recebida</p>)}</details>}
       {detail.state === 'Requested' && <>{manager && <form data-protect-draft onSubmit={e => submit(e, f => ({ action: 'Approve', id: detail.id, version: detail.version, choice: f.get('choice'), ...(f.has('allowClientCredit') && { allowClientCredit: true }) }))}><label>Método de pagamento para este cliente pagar a consulta<AdaptiveSelect aria-label="Método de pagamento para este cliente pagar a consulta" name="choice" disabled={!!detail.acceptedAt} value={approvalChoice || detail.paymentMode} onChange={event => setApprovalChoice(event.target.value)}>{[...new Set([detail.paymentMode, 'Postpayment', 'Gift'])].map(x => <option key={x} value={x}>{labels[x]}</option>)}</AdaptiveSelect></label>{(approvalChoice || detail.paymentMode) === 'Prepayment' && <CreditAuthorizationCard balance={detail.balance} amount={detail.referencePrice} disabled={busy || uncertain} />}<button disabled={busy || uncertain}>Aprovar marcação</button></form>}<button className="secondary" disabled={busy || uncertain} onClick={() => act('Reject')}>{manager ? 'Recusar marcação' : 'Desistir do pedido'}</button></>}
       {detail.state === 'Confirmed' && <>{!manager && detail.actions?.includes('Accept') && <ConsultationConditionsForm key={`${detail.id}:${detail.version}:${detail.termsVersion}`} consultation={detail} disabled={busy || uncertain} onAccept={values => act('Accept', values)} />}{!manager && <button className="secondary" disabled={busy || uncertain} onClick={() => { if (window.confirm('Confirmas o cancelamento? Não há penalização financeira.')) act('Cancel', { choice: 'Client' }) }}>Cancelar marcação</button>}</>}
       {manager && detail.actions?.includes('Keep') && <button disabled={busy || uncertain} onClick={() => act('Keep')}>Manter o intervalo bloqueado</button>}
@@ -260,6 +290,7 @@ export default function Consultations({ manager, area, initialEntry, onCreateCli
     </div>
     {clientProfileId && <><button type="button" className="secondary" onClick={() => guard(() => setClientProfileId(null))}>Voltar à confirmação do agendamento</button><Clients initialId={clientProfileId} busy={busy || profileBusy} perform={perform} notify={notify} guard={guard} /></>}
   </section>
+  return managementHistory || managementFinance ? <AgendaPresentation title={managementFinance ? 'Financeiro' : 'Consultas'} description={null} eyebrow={null}>{content}</AgendaPresentation> : content
 }
 
 
