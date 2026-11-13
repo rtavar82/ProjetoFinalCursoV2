@@ -12,7 +12,7 @@ export default function SubmittedForms() {
     function submit(event) {
       const form = event.target
       if (resuming.has(form)) { resuming.delete(form); return }
-      if (!contentUnavailable()) return
+      if (form.hasAttribute('data-explicit-submit') || !contentUnavailable()) return
       event.preventDefault(); event.stopImmediatePropagation()
       if (pending.has(form)) return
       reportStaleContent()

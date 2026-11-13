@@ -41,7 +41,7 @@ function AccessAction({ kind, busy, therapist, onSubmit }) {
     <p>{email ? therapist ? 'A terapeuta confirma o novo endereço por email. A palavra-passe e as Passkeys mantêm-se.' : 'O cliente confirma o novo endereço por email e continua a usar a mesma palavra-passe e as mesmas Passkeys.'
       : therapist ? 'Remove todas as Passkeys da terapeuta e termina os acessos anteriores. Mantém a palavra-passe. Na próxima entrada, terá de registar uma nova Passkey antes de aceder à gestão.'
         : 'Remove todas as Passkeys desta conta e termina os acessos anteriores. O cliente poderá entrar com a mesma palavra-passe e escolher se quer registar uma nova Passkey.'}</p>
-    <form data-protect-draft onSubmit={event => { event.preventDefault(); onSubmit(event.currentTarget, kind, operationId.current, () => { operationId.current = crypto.randomUUID() }) }}>
+    <form data-explicit-submit data-protect-draft onSubmit={event => { event.preventDefault(); onSubmit(event.currentTarget, kind, operationId.current, () => { operationId.current = crypto.randomUUID() }) }}>
       {email && <label>Novo email de acesso<input name="newEmail" type="email" autoComplete="off" required maxLength="256" onChange={() => { operationId.current = crypto.randomUUID() }} /></label>}
       <PasswordField label="A tua palavra-passe de gestão" name="password" required maxLength="128" autoComplete="current-password" />
       <label className="checkbox"><input name="confirmIdentity" type="checkbox" required />{therapist ? 'Verifiquei a identidade da terapeuta e confirmo esta alteração.' : 'Verifiquei a identidade do cliente e confirmo esta alteração.'}</label>

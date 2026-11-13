@@ -1,6 +1,6 @@
 import { announceSuccessfulWrite } from './liveUpdates.js'
 import { reportFreshContent, reportStaleContent } from './readFreshness.js'
-import { cancelSubmittedWrites, canReplay, clientOperation, submittedWrite } from './submittedWrites.js'
+import { cancelSubmittedWrites, canReplay, clientOperation, requiresExplicitSubmission, submittedWrite } from './submittedWrites.js'
 
 import { prepareManagerWrite, managerAccountHeaders, managerAccountIsCurrent } from './managerWriteRecovery.js'
 
@@ -106,6 +106,22 @@ export async function apiRequest(path, body, { signal, publicOnly = false, respo
   if (publicOnly && body !== undefined) throw new Error('A visualização de visitante permite apenas consultar.')
   if (body !== undefined) {
     if (path === 'identity/sign-out') cancelSubmittedWrites()
+    if (requiresExplicitSubmission(path)) {
+      if (!navigator.onLine) {
+        reportStaleContent()
+        throw new Error('Sem ligação. Volta a carregar no botão quando a ligação regressar. Este pedido não ficou em fila.')
+      }
+      const submitted = JSON.stringify(body)
+      let result
+      try { result = await sendWrite(path, submitted, () => {}, undefined, async () => {}, accountHeaders) }
+      catch (failure) {
+        if (failure.status && failure.status < 500) throw failure
+        reportStaleContent()
+        throw new Error('Não foi possível confirmar este pedido de segurança. Não será reenviado automaticamente. Verifica o resultado antes de tentar novamente.', { cause: failure })
+      }
+      announceSuccessfulWrite(path, body)
+      return result
+    }
     let submitted = body instanceof FormData ? body : JSON.stringify(body)
     let operationKey = clientOperation(path) ? crypto.randomUUID() : undefined
     const recovery = prepareManagerWrite(path, submitted, operationKey, recoveryScope, accountHeaders['X-PaCT-Account'])

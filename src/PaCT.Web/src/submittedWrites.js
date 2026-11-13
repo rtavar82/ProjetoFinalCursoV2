@@ -4,8 +4,9 @@ import { reportStaleContent } from './readFreshness.js'
 // authentication data here. Optional encrypted manager checkpoints are handled
 // separately; never repeat an uncertain write without replay protection.
 const pending = new Set()
+let cancellationVersion = 0
 const cancelled = () => new Error('O envio pendente foi cancelado. O preenchimento não foi enviado.')
-export function cancelSubmittedWrites() { for (const cancel of [...pending]) cancel() }
+export function cancelSubmittedWrites() { cancellationVersion++; for (const cancel of [...pending]) cancel() }
 
 export function waitForConnection(isCurrent = () => true) {
   return new Promise((resolve, reject) => {
@@ -43,11 +44,20 @@ export function waitForConnection(isCurrent = () => true) {
 }
 
 export async function submittedWrite(attempt, replaySafe = false) {
+  const version = cancellationVersion
+  const current = () => { if (version !== cancellationVersion) throw cancelled() }
   for (;;) {
+    current()
     if (!navigator.onLine) { reportStaleContent(); await waitForConnection() }
     let sent = false
-    try { return await attempt(() => { sent = true }) }
+    current()
+    try {
+      const result = await attempt(() => { current(); sent = true })
+      current()
+      return result
+    }
     catch (error) {
+      current()
       if (error.status && error.status < 500 || error.name === 'AbortError') throw error
       reportStaleContent()
       if (sent && !(typeof replaySafe === 'function' ? replaySafe() : replaySafe)) throw new Error('O envio ficou sem confirmação. O preenchimento foi mantido; é necessário verificar o resultado antes de repetir.', { cause: error })
@@ -63,13 +73,16 @@ export function clientOperation(path) {
   return /^(clients(?:\/[0-9a-f-]+(?:\/notes(?:\/[0-9a-f-]+)?)?|\/reviews\/[0-9a-f-]+)?|profile|identity\/client-registration|identity\/email-operations\/[0-9a-f-]+\/review)$/.test(path)
 }
 
+// Security actions require another explicit click after a failed or uncertain request.
+export function requiresExplicitSubmission(path) {
+  return /^identity\/(password-change(?:\/|$)|google\/(start|unlink)$|therapist-management\/access\/(email|reset-passkeys)$)/.test(path)
+    || /^clients\/[^/]+\/access\/(email|reset-passkeys)$/.test(path)
+}
+
 export function canReplay(path, body, operationKey) {
   if (path === 'management/tasks') return !!body?.operationId
   if (/^management\/tasks\/[0-9a-f-]+\/(complete|read-reminder)$/.test(path)) return true
   return !!operationKey && clientOperation(path) || ['consultations/manual-preview', 'consultations/publication-preview'].includes(path)
     || /^consultations\/[0-9a-f-]+\/price-correction-preview$/.test(path) || !!body?.operationId && (path === 'consultations/commands' || path === 'consultations/guests'
-    || /^consultations\/events\/[^/]+\/requests$/.test(path)
-    || /^clients\/[^/]+\/access\/(email|reset-passkeys)$/.test(path)
-    || /^identity\/therapist-management\/access\/(email|reset-passkeys)$/.test(path)
-    || path === 'identity/password-change')
+    || /^consultations\/events\/[^/]+\/requests$/.test(path))
 }

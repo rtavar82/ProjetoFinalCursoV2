@@ -326,7 +326,7 @@ export default function App() {
           {stage === 'AccessEmailConfirmed' && <h2>O teu email foi atualizado</h2>}
           {stage === 'GoogleReturn' && <p role="status">A concluir a entrada…</p>}
           {stage === 'PasswordRecoveryRequest' && <><h2>Recuperar acesso</h2>
-            <form onSubmit={submitPasswordRecovery}>
+            <form data-explicit-submit onSubmit={submitPasswordRecovery}>
               <label>Email<input name="email" type="email" autoComplete="email" required maxLength="256" /></label>
               <button disabled={busy}>{busy ? 'A enviar o pedido…' : 'Pedir link de recuperação'}</button>
             </form>
@@ -334,7 +334,7 @@ export default function App() {
           {stage === 'PasswordRecoveryRequested' && <h2>Pedido recebido</h2>}
           {(stage === 'PasswordChangeLink' || isRecovery) && <><h2>Escolhe a nova palavra-passe</h2>
             <p>Depois de guardares, entra novamente com o teu email e a nova palavra-passe.</p>
-            <form onSubmit={submitNewPassword}>
+            <form data-explicit-submit onSubmit={submitNewPassword}>
               <PasswordField label="Nova palavra-passe" name="password" autoComplete="new-password" required minLength="12" maxLength="128" />
               <PasswordField label="Confirmar nova palavra-passe" name="confirmPassword" autoComplete="new-password" required minLength="12" maxLength="128" />
               <p className="field-help">12 a 128 caracteres, com maiúscula, minúscula, algarismo e símbolo.</p>

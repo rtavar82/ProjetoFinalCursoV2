@@ -43,7 +43,7 @@ export default function AccountSecuritySettings({ busy, perform, notify, guard, 
       {!view && <h3 id="password-settings-title">Palavra-passe</h3>}
       <details className={styles.action} open={initiallyOpen || undefined}><DisclosureSummary>Alterar palavra-passe</DisclosureSummary>
         <p>Recebe um email com o link para escolheres a nova palavra-passe.</p>
-        <form data-protect-draft={!!view || undefined} onSubmit={passwordChange}><PasswordField label="Palavra-passe atual" name="password" autoComplete="current-password" required maxLength="128" />
+        <form data-explicit-submit data-protect-draft={!!view || undefined} onSubmit={passwordChange}><PasswordField label="Palavra-passe atual" name="password" autoComplete="current-password" required maxLength="128" />
           <button disabled={busy}>Enviar email para alterar a palavra-passe</button>
         </form>
       </details>
@@ -55,7 +55,7 @@ export default function AccountSecuritySettings({ busy, perform, notify, guard, 
       {google?.enabled === false && !google.linked && <p>A entrada com Google ainda não está disponível.</p>}
       {(google?.enabled || google?.linked) && <details className={styles.action} open={initiallyOpen || undefined}><DisclosureSummary>{google.linked ? 'Desassociar Google' : 'Associar conta Google'}</DisclosureSummary>
         <p>{google.linked ? 'Poderás continuar a entrar com o teu email e a palavra-passe.' : 'Usa a tua conta Google para entrar. A tua palavra-passe e as Passkeys mantêm-se.'}</p>
-        <form data-protect-draft={!!view || undefined} onSubmit={googleChange}><PasswordField label="Confirma a tua palavra-passe" name="password" autoComplete="current-password" required maxLength="128" />
+        <form data-explicit-submit data-protect-draft={!!view || undefined} onSubmit={googleChange}><PasswordField label="Confirma a tua palavra-passe" name="password" autoComplete="current-password" required maxLength="128" />
           <button disabled={busy}>{google.linked ? 'Confirmar desassociação' : 'Continuar para o Google'}</button>
         </form>
       </details>}
